@@ -46,6 +46,17 @@
   let isEditing = $state(false);
   let selectedImage = $state<string | null>(null);
   let currentUser = $state('default');
+  let showAllImages = $state(false);
+  let showAllVideos = $state(false);
+  let showAllDocuments = $state(false);
+
+  const IMAGE_LIMIT = 6;
+  const VIDEO_LIMIT = 3;
+  const DOCUMENT_LIMIT = 3;
+
+  let displayedImages = $derived(showAllImages ? images : images.slice(0, IMAGE_LIMIT));
+  let displayedVideos = $derived(showAllVideos ? videos : videos.slice(0, VIDEO_LIMIT));
+  let displayedDocuments = $derived(showAllDocuments ? documents : documents.slice(0, DOCUMENT_LIMIT));
 
   async function loadLocation() {
     try {
@@ -349,7 +360,7 @@
           <h3 class="text-sm font-medium text-gray-500 mb-3">Images ({images.length})</h3>
           {#if images.length > 0}
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {#each images as image}
+              {#each displayedImages as image}
                 <button
                   onclick={() => openLightbox(image.imgloc)}
                   class="aspect-square bg-gray-100 rounded overflow-hidden hover:opacity-90 transition relative group"
@@ -367,6 +378,16 @@
                 </button>
               {/each}
             </div>
+            {#if images.length > IMAGE_LIMIT}
+              <div class="mt-3 text-center">
+                <button
+                  onclick={() => (showAllImages = !showAllImages)}
+                  class="text-sm text-accent hover:underline"
+                >
+                  {showAllImages ? `Show Less` : `Show All (${images.length - IMAGE_LIMIT} more)`}
+                </button>
+              </div>
+            {/if}
           {:else}
             <div class="text-center text-gray-400 py-8 border-2 border-dashed border-gray-200 rounded">
               <p class="text-sm">No images</p>
@@ -379,7 +400,7 @@
           <h3 class="text-sm font-medium text-gray-500 mb-3">Videos ({videos.length})</h3>
           {#if videos.length > 0}
             <div class="space-y-2">
-              {#each videos as video}
+              {#each displayedVideos as video}
                 <button
                   onclick={() => openMediaFile(video.vidloc)}
                   class="w-full flex items-center justify-between p-3 bg-gray-50 rounded hover:bg-gray-100 transition text-left"
@@ -407,6 +428,16 @@
                 </button>
               {/each}
             </div>
+            {#if videos.length > VIDEO_LIMIT}
+              <div class="mt-3 text-center">
+                <button
+                  onclick={() => (showAllVideos = !showAllVideos)}
+                  class="text-sm text-accent hover:underline"
+                >
+                  {showAllVideos ? `Show Less` : `Show All (${videos.length - VIDEO_LIMIT} more)`}
+                </button>
+              </div>
+            {/if}
           {:else}
             <div class="text-center text-gray-400 py-8 border-2 border-dashed border-gray-200 rounded">
               <p class="text-sm">No videos</p>
@@ -419,7 +450,7 @@
           <h3 class="text-sm font-medium text-gray-500 mb-3">Documents ({documents.length})</h3>
           {#if documents.length > 0}
             <div class="space-y-2">
-              {#each documents as doc}
+              {#each displayedDocuments as doc}
                 <button
                   onclick={() => openMediaFile(doc.docloc)}
                   class="w-full flex items-center justify-between p-3 bg-gray-50 rounded hover:bg-gray-100 transition text-left"
@@ -436,6 +467,16 @@
                 </button>
               {/each}
             </div>
+            {#if documents.length > DOCUMENT_LIMIT}
+              <div class="mt-3 text-center">
+                <button
+                  onclick={() => (showAllDocuments = !showAllDocuments)}
+                  class="text-sm text-accent hover:underline"
+                >
+                  {showAllDocuments ? `Show Less` : `Show All (${documents.length - DOCUMENT_LIMIT} more)`}
+                </button>
+              </div>
+            {/if}
           {:else}
             <div class="text-center text-gray-400 py-8 border-2 border-dashed border-gray-200 rounded">
               <p class="text-sm">No documents</p>
