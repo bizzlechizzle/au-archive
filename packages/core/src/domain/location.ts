@@ -6,7 +6,7 @@ export const GPSCoordinatesSchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   accuracy: z.number().optional(),
-  source: z.enum(['user_map_click', 'photo_exif', 'geocoded_address', 'manual_entry', 'imported']),
+  source: z.enum(['user_map_click', 'photo_exif', 'geocoded_address', 'manual_entry']),
   verifiedOnMap: z.boolean().default(false),
   capturedAt: z.string().datetime().optional(),
   leafletData: z.record(z.unknown()).optional()
