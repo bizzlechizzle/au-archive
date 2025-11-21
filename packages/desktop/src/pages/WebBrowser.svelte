@@ -358,202 +358,230 @@
       <h2 class="text-lg font-semibold text-foreground">Research Tools</h2>
     </div>
 
-    <div class="flex-1 overflow-y-auto p-4 space-y-6">
-      <!-- Save Bookmark Section - per spec: save bookmark with buttons -->
-      <div>
-        <button
-          onclick={() => { showSaveBookmark = !showSaveBookmark; bookmarkTitle = pageTitle; }}
-          class="w-full px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition text-sm font-medium"
-        >
-          Save Bookmark
-        </button>
+    <div class="flex-1 overflow-y-auto p-4 space-y-4">
+      <!-- BOX 1: Save Bookmarks Bar - Quick save destination shortcuts -->
+      <div class="bg-gray-50 rounded-lg border border-gray-200 p-4">
+        <h3 class="text-sm font-semibold text-gray-800 mb-3">Save Bookmark To</h3>
 
-        {#if showSaveBookmark}
-          <div class="mt-3 p-3 bg-gray-50 rounded border space-y-3">
-            <div>
-              <p class="text-xs text-gray-600 mb-1 truncate" title={currentUrl}>{currentUrl}</p>
-            </div>
+        <!-- Save Bookmark Button & Form -->
+        <div class="mb-3">
+          <button
+            onclick={() => { showSaveBookmark = !showSaveBookmark; bookmarkTitle = pageTitle; }}
+            class="w-full px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition text-sm font-medium"
+          >
+            {showSaveBookmark ? 'Cancel' : 'Save Current Page'}
+          </button>
 
-            <div>
-              <label for="bookmark-title" class="block text-xs text-gray-700 mb-1">Title</label>
-              <input
-                id="bookmark-title"
-                type="text"
-                bind:value={bookmarkTitle}
-                placeholder="Bookmark title"
-                class="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-            </div>
+          {#if showSaveBookmark}
+            <div class="mt-3 p-3 bg-white rounded border space-y-3">
+              <div>
+                <p class="text-xs text-gray-600 mb-1 truncate" title={currentUrl}>{currentUrl}</p>
+              </div>
 
-            <!-- Per spec: search with autofill based on database -->
-            <div>
-              <label for="location-search" class="block text-xs text-gray-700 mb-1">Link to Location (optional)</label>
-              <input
-                id="location-search"
-                type="text"
-                bind:value={locationSearchQuery}
-                oninput={handleLocationSearch}
-                placeholder="Search locations..."
-                class="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-accent"
-              />
+              <div>
+                <label for="bookmark-title" class="block text-xs text-gray-700 mb-1">Title</label>
+                <input
+                  id="bookmark-title"
+                  type="text"
+                  bind:value={bookmarkTitle}
+                  placeholder="Bookmark title"
+                  class="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-accent"
+                />
+              </div>
 
-              {#if autocompleteResults.length > 0}
-                <div class="max-h-32 overflow-y-auto border rounded mt-1 bg-white">
-                  {#each autocompleteResults as loc}
-                    <button
-                      onclick={() => selectLocation(loc)}
-                      class="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 truncate"
-                    >
-                      {loc.locnam}
-                      {#if loc.address?.state}
-                        <span class="text-gray-400 text-xs">({loc.address.state})</span>
-                      {/if}
-                    </button>
-                  {/each}
-                </div>
-              {/if}
+              <!-- Search with autofill based on database -->
+              <div>
+                <label for="location-search" class="block text-xs text-gray-700 mb-1">Link to Location (optional)</label>
+                <input
+                  id="location-search"
+                  type="text"
+                  bind:value={locationSearchQuery}
+                  oninput={handleLocationSearch}
+                  placeholder="Search locations..."
+                  class="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-accent"
+                />
 
-              {#if bookmarkLocid}
-                <p class="text-xs text-green-600 mt-1">Linked to: {locationSearchQuery}</p>
-              {/if}
-            </div>
+                {#if autocompleteResults.length > 0}
+                  <div class="max-h-32 overflow-y-auto border rounded mt-1 bg-white">
+                    {#each autocompleteResults as loc}
+                      <button
+                        onclick={() => selectLocation(loc)}
+                        class="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 truncate"
+                      >
+                        {loc.locnam}
+                        {#if loc.address?.state}
+                          <span class="text-gray-400 text-xs">({loc.address.state})</span>
+                        {/if}
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
 
-            <div class="flex gap-2">
+                {#if bookmarkLocid}
+                  <p class="text-xs text-green-600 mt-1">Linked to: {locationSearchQuery}</p>
+                {/if}
+              </div>
+
               <button
                 onclick={saveBookmark}
                 disabled={savingBookmark}
-                class="flex-1 px-3 py-1.5 bg-accent text-white text-sm rounded hover:opacity-90 disabled:opacity-50 transition"
+                class="w-full px-3 py-1.5 bg-accent text-white text-sm rounded hover:opacity-90 disabled:opacity-50 transition"
               >
-                {savingBookmark ? 'Saving...' : 'Save'}
-              </button>
-              <button
-                onclick={() => { showSaveBookmark = false; bookmarkLocid = null; locationSearchQuery = ''; }}
-                class="px-3 py-1.5 bg-gray-200 text-sm rounded hover:bg-gray-300 transition"
-              >
-                Cancel
+                {savingBookmark ? 'Saving...' : 'Save Bookmark'}
               </button>
             </div>
-          </div>
-        {/if}
-      </div>
+          {/if}
+        </div>
 
-      <!-- Recents Section - per spec: recents list top 5 -->
-      <div>
-        <h3 class="text-sm font-medium text-gray-700 mb-2">Recents</h3>
-        {#if recentBookmarks.length === 0}
-          <p class="text-xs text-gray-400">No recent bookmarks</p>
-        {:else}
-          <div class="space-y-1">
-            {#each recentBookmarks as bookmark}
-              <button
-                onclick={() => openBookmark(bookmark.url)}
-                class="w-full text-left px-2 py-1.5 text-sm bg-gray-50 rounded hover:bg-gray-100 truncate transition"
-                title={bookmark.url}
-              >
-                {bookmark.title || bookmark.url}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-
-      <!-- Pinned/Favorites Section - per spec: "projects" means pinned items, list top 5 -->
-      <div>
-        <h3 class="text-sm font-medium text-gray-700 mb-2">Pinned Locations</h3>
-        {#if pinnedLocations.length === 0}
-          <p class="text-xs text-gray-400">No pinned locations</p>
-        {:else}
-          <div class="space-y-1">
-            {#each pinnedLocations as loc}
-              <div class="px-2 py-1.5 text-sm bg-gray-50 rounded">
-                <span class="truncate block">{loc.locnam}</span>
-                {#if loc.address?.state}
-                  <span class="text-xs text-gray-400">{loc.address.state}</span>
-                {/if}
+        <!-- Quick Save Destinations -->
+        <div class="space-y-3 border-t border-gray-200 pt-3">
+          <!-- Recents - quick save destinations -->
+          <div>
+            <h4 class="text-xs font-medium text-gray-600 mb-1.5">Recents</h4>
+            {#if recentBookmarks.length === 0}
+              <p class="text-xs text-gray-400 italic">No recent bookmarks</p>
+            {:else}
+              <div class="space-y-1">
+                {#each recentBookmarks.slice(0, 5) as bookmark}
+                  <button
+                    onclick={() => {
+                      // Quick save to same location as this recent bookmark
+                      if (bookmark.locid) {
+                        bookmarkLocid = bookmark.locid;
+                      }
+                      showSaveBookmark = true;
+                      bookmarkTitle = pageTitle;
+                    }}
+                    class="w-full text-left px-2 py-1 text-xs bg-white rounded hover:bg-gray-100 truncate transition border border-gray-100"
+                    title="Save to same location as: {bookmark.title || bookmark.url}"
+                  >
+                    {bookmark.title || bookmark.url}
+                  </button>
+                {/each}
               </div>
-            {/each}
+            {/if}
           </div>
-        {/if}
-      </div>
 
-      <!-- Uploads Section - per spec: uploads list top 5 -->
-      <div>
-        <h3 class="text-sm font-medium text-gray-700 mb-2">Recent Uploads</h3>
-        {#if recentUploads.length === 0}
-          <p class="text-xs text-gray-400">No recent uploads</p>
-        {:else}
-          <div class="space-y-1">
-            {#each recentUploads as upload}
-              <div class="px-2 py-1.5 text-sm bg-gray-50 rounded">
-                <span class="text-xs text-gray-600">
-                  {new Date(upload.import_date).toLocaleDateString()}
-                </span>
-                <span class="text-xs text-gray-400 ml-1">
-                  ({upload.img_count || 0} imgs, {upload.vid_count || 0} vids)
-                </span>
+          <!-- Pinned Locations - quick save destinations -->
+          <div>
+            <h4 class="text-xs font-medium text-gray-600 mb-1.5">Pinned Locations</h4>
+            {#if pinnedLocations.length === 0}
+              <p class="text-xs text-gray-400 italic">No pinned locations</p>
+            {:else}
+              <div class="space-y-1">
+                {#each pinnedLocations.slice(0, 5) as loc}
+                  <button
+                    onclick={() => {
+                      // Quick save to this pinned location
+                      bookmarkLocid = loc.locid;
+                      locationSearchQuery = loc.locnam;
+                      showSaveBookmark = true;
+                      bookmarkTitle = pageTitle;
+                    }}
+                    class="w-full text-left px-2 py-1 text-xs bg-white rounded hover:bg-gray-100 truncate transition border border-gray-100"
+                    title="Save to: {loc.locnam}"
+                  >
+                    <span class="truncate block">{loc.locnam}</span>
+                    {#if loc.address?.state}
+                      <span class="text-gray-400">({loc.address.state})</span>
+                    {/if}
+                  </button>
+                {/each}
               </div>
-            {/each}
+            {/if}
           </div>
-        {/if}
+
+          <!-- Recent Uploads - quick save destinations -->
+          <div>
+            <h4 class="text-xs font-medium text-gray-600 mb-1.5">Recent Uploads</h4>
+            {#if recentUploads.length === 0}
+              <p class="text-xs text-gray-400 italic">No recent uploads</p>
+            {:else}
+              <div class="space-y-1">
+                {#each recentUploads.slice(0, 5) as upload}
+                  <button
+                    onclick={() => {
+                      // Quick save to this upload's location
+                      if (upload.locid) {
+                        bookmarkLocid = upload.locid;
+                      }
+                      showSaveBookmark = true;
+                      bookmarkTitle = pageTitle;
+                    }}
+                    class="w-full text-left px-2 py-1 text-xs bg-white rounded hover:bg-gray-100 truncate transition border border-gray-100"
+                    title="Save to upload location"
+                  >
+                    <span class="text-gray-600">
+                      {new Date(upload.import_date).toLocaleDateString()}
+                    </span>
+                    <span class="text-gray-400 ml-1">
+                      ({upload.img_count || 0} imgs, {upload.vid_count || 0} vids)
+                    </span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        </div>
       </div>
 
-      <!-- Bookmark Browser - per spec: bookmark browser by state/type/location -->
-      <div>
+      <!-- BOX 2: Bookmark Browser - Browse existing bookmarks by state/type/location -->
+      <div class="bg-gray-50 rounded-lg border border-gray-200 p-4">
         <button
           onclick={toggleBookmarkBrowser}
-          class="w-full text-left text-sm font-medium text-gray-700 mb-2 flex items-center justify-between hover:text-accent transition"
+          class="w-full text-left text-sm font-semibold text-gray-800 mb-3 flex items-center justify-between hover:text-accent transition"
         >
           <span>Bookmark Browser</span>
-          <span class="text-xs">{showBookmarkBrowser ? '[-]' : '[+]'}</span>
+          <span class="text-xs text-gray-500">{showBookmarkBrowser ? '[-]' : '[+]'}</span>
         </button>
 
         {#if showBookmarkBrowser}
-          <div class="space-y-2 p-2 bg-gray-50 rounded border">
-            <!-- Filter by State -->
-            <div>
-              <label for="bm-state" class="block text-xs text-gray-600 mb-1">State</label>
-              <select
-                id="bm-state"
-                bind:value={bookmarkFilterState}
-                class="w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                <option value="">All States</option>
-                {#each bookmarkStates as state}
-                  <option value={state}>{state}</option>
-                {/each}
-              </select>
-            </div>
-
-            <!-- Filter by Type -->
-            <div>
-              <label for="bm-type" class="block text-xs text-gray-600 mb-1">Type</label>
-              <select
-                id="bm-type"
-                bind:value={bookmarkFilterType}
-                class="w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                <option value="">All Types</option>
-                {#each bookmarkTypes as type}
-                  <option value={type}>{type}</option>
-                {/each}
-              </select>
+          <div class="space-y-3">
+            <!-- Filters -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label for="bm-state" class="block text-xs text-gray-600 mb-1">State</label>
+                <select
+                  id="bm-state"
+                  bind:value={bookmarkFilterState}
+                  class="w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-accent bg-white"
+                >
+                  <option value="">All States</option>
+                  {#each bookmarkStates as state}
+                    <option value={state}>{state}</option>
+                  {/each}
+                </select>
+              </div>
+              <div>
+                <label for="bm-type" class="block text-xs text-gray-600 mb-1">Type</label>
+                <select
+                  id="bm-type"
+                  bind:value={bookmarkFilterType}
+                  class="w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-accent bg-white"
+                >
+                  <option value="">All Types</option>
+                  {#each bookmarkTypes as type}
+                    <option value={type}>{type}</option>
+                  {/each}
+                </select>
+              </div>
             </div>
 
             <!-- Filtered Bookmarks List -->
-            <div class="max-h-40 overflow-y-auto">
+            <div class="max-h-48 overflow-y-auto bg-white rounded border">
               {#if getFilteredBookmarks().length === 0}
-                <p class="text-xs text-gray-400 text-center py-2">No bookmarks match filters</p>
+                <p class="text-xs text-gray-400 text-center py-4">No bookmarks match filters</p>
               {:else}
-                <div class="space-y-1">
+                <div class="divide-y divide-gray-100">
                   {#each getFilteredBookmarks() as bookmark}
                     <button
                       onclick={() => openBookmark(bookmark.url)}
-                      class="w-full text-left px-2 py-1 text-xs bg-white rounded hover:bg-gray-100 truncate transition border"
+                      class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 transition"
                       title={bookmark.url}
                     >
-                      <div class="truncate">{bookmark.title || bookmark.url}</div>
+                      <div class="truncate font-medium text-gray-800">{bookmark.title || bookmark.url}</div>
                       {#if bookmark.locid && locationCache.get(bookmark.locid)}
-                        <div class="text-gray-400 truncate">
+                        <div class="text-gray-400 truncate text-[10px]">
                           {locationCache.get(bookmark.locid)?.locnam}
                         </div>
                       {/if}
@@ -563,28 +591,30 @@
               {/if}
             </div>
           </div>
+        {:else}
+          <p class="text-xs text-gray-500">Click to browse saved bookmarks by state, type, or location</p>
         {/if}
       </div>
 
       <!-- Quick Links -->
-      <div>
-        <h3 class="text-sm font-medium text-gray-700 mb-2">Quick Links</h3>
+      <div class="bg-gray-50 rounded-lg border border-gray-200 p-4">
+        <h3 class="text-sm font-semibold text-gray-800 mb-3">Quick Links</h3>
         <div class="space-y-1">
           <button
             onclick={() => { urlInput = 'https://maps.google.com'; navigate(); }}
-            class="w-full text-left px-2 py-1.5 text-sm bg-gray-50 rounded hover:bg-gray-100 transition"
+            class="w-full text-left px-2 py-1.5 text-sm bg-white rounded hover:bg-gray-100 transition border border-gray-100"
           >
             Google Maps
           </button>
           <button
             onclick={() => { urlInput = 'https://www.historicaerials.com'; navigate(); }}
-            class="w-full text-left px-2 py-1.5 text-sm bg-gray-50 rounded hover:bg-gray-100 transition"
+            class="w-full text-left px-2 py-1.5 text-sm bg-white rounded hover:bg-gray-100 transition border border-gray-100"
           >
             Historic Aerials
           </button>
           <button
             onclick={() => { urlInput = 'https://www.google.com'; navigate(); }}
-            class="w-full text-left px-2 py-1.5 text-sm bg-gray-50 rounded hover:bg-gray-100 transition"
+            class="w-full text-left px-2 py-1.5 text-sm bg-white rounded hover:bg-gray-100 transition border border-gray-100"
           >
             Google Search
           </button>
