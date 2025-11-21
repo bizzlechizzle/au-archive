@@ -9,6 +9,7 @@ export interface Database {
   maps: MapsTable;
   settings: SettingsTable;
   imports: ImportsTable;
+  notes: NotesTable;
 }
 
 // Locations table
@@ -189,4 +190,14 @@ export interface ImportsTable {
   doc_count: number;
   map_count: number;
   notes: string | null;
+}
+
+// Notes table
+export interface NotesTable {
+  note_id: string;
+  locid: string;
+  note_text: string;
+  note_date: string;
+  auth_imp: string | null;
+  note_type: string;
 }

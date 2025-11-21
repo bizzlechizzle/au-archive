@@ -86,6 +86,26 @@ function runMigrations(sqlite: Database.Database): void {
       `);
       console.log('Migration completed: imports table created');
     }
+
+    // Migration 3: Create notes table if it doesn't exist
+    const hasNotes = tables.some(t => t.name === 'notes');
+
+    if (!hasNotes) {
+      console.log('Running migration: Creating notes table');
+      sqlite.exec(`
+        CREATE TABLE notes (
+          note_id TEXT PRIMARY KEY,
+          locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+          note_text TEXT NOT NULL,
+          note_date TEXT NOT NULL,
+          auth_imp TEXT,
+          note_type TEXT DEFAULT 'general'
+        );
+        CREATE INDEX idx_notes_locid ON notes(locid);
+        CREATE INDEX idx_notes_date ON notes(note_date DESC);
+      `);
+      console.log('Migration completed: notes table created');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

@@ -106,6 +106,31 @@ const api = {
     openFile: (filePath: string): Promise<void> =>
       ipcRenderer.invoke('media:openFile', filePath),
   },
+
+  notes: {
+    create: (input: {
+      locid: string;
+      note_text: string;
+      auth_imp?: string | null;
+      note_type?: string;
+    }): Promise<unknown> =>
+      ipcRenderer.invoke('notes:create', input),
+    findById: (note_id: string): Promise<unknown> =>
+      ipcRenderer.invoke('notes:findById', note_id),
+    findByLocation: (locid: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('notes:findByLocation', locid),
+    findRecent: (limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke('notes:findRecent', limit),
+    update: (note_id: string, updates: {
+      note_text?: string;
+      note_type?: string;
+    }): Promise<unknown> =>
+      ipcRenderer.invoke('notes:update', note_id, updates),
+    delete: (note_id: string): Promise<void> =>
+      ipcRenderer.invoke('notes:delete', note_id),
+    countByLocation: (locid: string): Promise<number> =>
+      ipcRenderer.invoke('notes:countByLocation', locid),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

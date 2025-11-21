@@ -3,6 +3,7 @@
   import { router } from '../stores/router';
   import Map from '../components/Map.svelte';
   import LocationEditForm from '../components/LocationEditForm.svelte';
+  import NotesSection from '../components/NotesSection.svelte';
   import type { Location, LocationInput } from '@au-archive/core';
 
   interface Props {
@@ -44,6 +45,7 @@
   let error = $state<string | null>(null);
   let isEditing = $state(false);
   let selectedImage = $state<string | null>(null);
+  let currentUser = $state('default');
 
   async function loadLocation() {
     try {
@@ -114,8 +116,16 @@
     return `${width}x${height}`;
   }
 
-  onMount(() => {
+  onMount(async () => {
     loadLocation();
+
+    // Load current user from settings
+    try {
+      const settings = await window.electronAPI.settings.getAll();
+      currentUser = settings.current_user || 'default';
+    } catch (error) {
+      console.error('Error loading user settings:', error);
+    }
   });
 </script>
 
@@ -432,6 +442,11 @@
             </div>
           {/if}
         </div>
+      </div>
+
+      <!-- Notes Section -->
+      <div class="mt-6">
+        <NotesSection locid={location.locid} currentUser={currentUser} />
       </div>
 
       <div class="mt-6 bg-white rounded-lg shadow p-6">
