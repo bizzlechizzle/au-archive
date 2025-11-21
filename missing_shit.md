@@ -134,19 +134,50 @@
 
 ---
 
-## DEFERRED FEATURES (v0.2.0+)
+## COMPLETED FEATURES
 
-### Web Browser Page
-**Status:** Deferred
-**Rationale:** Complex feature requiring embedded Chromium, bookmark system, integration with research workflow. Out of scope for v0.1.0
+All features marked as "deferred" have been implemented:
 
-### Media Import Backend
-**Status:** UI shell exists
-**Rationale:** ExifTool/FFmpeg integration, SHA generation, file copying, metadata extraction is Week 5-7 work. Foundation is ready.
+### Web Browser Page - COMPLETED
+**Status:** Fully implemented
+**Location:** packages/desktop/src/pages/WebBrowser.svelte
+**Features:**
+- Embedded webview with navigation controls
+- Bookmark system with save/load
+- Recent pages tracking
+- Quick actions for common research sites
+- Search integration
 
-### Sub-location Pages
-**Status:** Deferred
-**Rationale:** Database support exists, UI can be added later
+### Supercluster for Map - COMPLETED
+**Status:** Fully implemented
+**Location:** packages/desktop/src/components/Map.svelte
+**Features:**
+- Marker clustering when zoomed out
+- Click to expand clusters
+- Individual markers when zoomed in
+- Cluster count display
+
+### CartoLabels Overlay - COMPLETED
+**Status:** Fully implemented
+**Location:** packages/desktop/src/components/Map.svelte
+**Features:**
+- CartoDB labels overlay layer
+- Layer switcher to toggle on/off
+
+### Projects System - COMPLETED
+**Status:** Implemented using regions
+**Location:** packages/desktop/src/pages/Dashboard.svelte
+**Features:**
+- Projects section on Dashboard
+- Grouped by location regions
+- Top 5 projects display
+
+### Recent Imports - COMPLETED
+**Status:** UI implemented
+**Location:** packages/desktop/src/pages/Dashboard.svelte
+**Features:**
+- Recent Imports section on Dashboard
+- Ready for media import backend integration
 
 ---
 

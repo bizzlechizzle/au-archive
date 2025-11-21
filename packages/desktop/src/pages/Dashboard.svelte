@@ -44,7 +44,39 @@
       <p class="text-gray-500">Loading...</p>
     </div>
   {:else}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold mb-2 text-foreground">Projects</h3>
+        <p class="text-gray-500 text-sm mb-4">Location groupings</p>
+        <div class="space-y-2">
+          <p class="text-xs text-gray-400">Grouped by region</p>
+          {#each recentLocations.slice(0, 3) as location}
+            {#if location.regions && location.regions.length > 0}
+              <div class="text-sm">
+                <span class="font-medium">{location.regions[0]}</span>
+              </div>
+            {/if}
+          {/each}
+          {#if recentLocations.every(l => !l.regions || l.regions.length === 0)}
+            <p class="text-sm text-gray-400">No projects yet</p>
+          {/if}
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold mb-2 text-foreground">Recent Imports</h3>
+        <p class="text-gray-500 text-sm mb-4">Latest media imports</p>
+        <div class="text-center text-gray-400 py-4">
+          <p class="text-sm">No imports yet</p>
+          <button
+            onclick={() => router.navigate('/imports')}
+            class="mt-2 text-xs text-accent hover:underline"
+          >
+            Import Media
+          </button>
+        </div>
+      </div>
+
       <div class="bg-white rounded-lg shadow p-6">
         <h3 class="text-lg font-semibold mb-2 text-foreground">Recent Locations</h3>
         <p class="text-gray-500 text-sm mb-4">Last 5 added locations</p>

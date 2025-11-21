@@ -8,6 +8,7 @@
   import Imports from './pages/Imports.svelte';
   import Settings from './pages/Settings.svelte';
   import Search from './pages/Search.svelte';
+  import WebBrowser from './pages/WebBrowser.svelte';
   import LocationDetail from './pages/LocationDetail.svelte';
 
   let currentRoute = $state({ path: '/dashboard', params: {} });
@@ -36,6 +37,8 @@
       <Imports />
     {:else if currentRoute.path === '/search'}
       <Search />
+    {:else if currentRoute.path === '/browser'}
+      <WebBrowser />
     {:else if currentRoute.path === '/settings'}
       <Settings />
     {:else if currentRoute.path === '/location/:id'}
