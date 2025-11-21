@@ -86,10 +86,17 @@
     </div>
   {:else}
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-      <!-- Per spec: "projects" means pinned/favorite items -->
+      <!-- Per spec: "projects" means pinned/favorite items - show top 5 [column], show all -->
       <div class="bg-white rounded-lg shadow p-6">
-        <h3 class="text-lg font-semibold mb-2 text-foreground">Pinned</h3>
-        <p class="text-gray-500 text-sm mb-4">Favorite locations</p>
+        <div class="flex justify-between items-start mb-4">
+          <div>
+            <h3 class="text-lg font-semibold text-foreground">Pinned</h3>
+            <p class="text-gray-500 text-sm">Favorite locations</p>
+          </div>
+          <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
+            show all
+          </button>
+        </div>
         {#if pinnedLocations.length > 0}
           <ul class="space-y-2">
             {#each pinnedLocations as location}
@@ -101,27 +108,27 @@
                   {location.locnam}
                 </button>
                 {#if location.address?.state}
-                  <span class="text-xs text-gray-400 ml-2">
-                    {location.address.state}
-                  </span>
+                  <span class="text-xs text-gray-400 ml-2">{location.address.state}</span>
                 {/if}
               </li>
             {/each}
           </ul>
-          <button
-            onclick={() => router.navigate('/locations')}
-            class="mt-4 text-sm text-accent hover:underline"
-          >
-            View All Favorites →
-          </button>
         {:else}
           <p class="text-sm text-gray-400">No pinned locations yet</p>
         {/if}
       </div>
 
+      <!-- Per spec: imports - show top 5 recent imports[column], show all -->
       <div class="bg-white rounded-lg shadow p-6">
-        <h3 class="text-lg font-semibold mb-2 text-foreground">Recent Imports</h3>
-        <p class="text-gray-500 text-sm mb-4">Latest media imports</p>
+        <div class="flex justify-between items-start mb-4">
+          <div>
+            <h3 class="text-lg font-semibold text-foreground">Recent Imports</h3>
+            <p class="text-gray-500 text-sm">Latest media imports</p>
+          </div>
+          <button onclick={() => router.navigate('/imports')} class="text-xs text-accent hover:underline">
+            show all
+          </button>
+        </div>
         {#if recentImports.length > 0}
           <ul class="space-y-2">
             {#each recentImports as importRecord}
@@ -164,9 +171,17 @@
         {/if}
       </div>
 
+      <!-- Per spec: recents - show top 5 recently interacted with[rows], show all -->
       <div class="bg-white rounded-lg shadow p-6">
-        <h3 class="text-lg font-semibold mb-2 text-foreground">Recent Locations</h3>
-        <p class="text-gray-500 text-sm mb-4">Last 5 added locations</p>
+        <div class="flex justify-between items-start mb-4">
+          <div>
+            <h3 class="text-lg font-semibold text-foreground">Recent Locations</h3>
+            <p class="text-gray-500 text-sm">Last 5 added</p>
+          </div>
+          <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
+            show all
+          </button>
+        </div>
         {#if recentLocations.length > 0}
           <ul class="space-y-2">
             {#each recentLocations as location}
@@ -190,9 +205,17 @@
         {/if}
       </div>
 
+      <!-- Per spec: states - show top 5 states by locations [column], show all -->
       <div class="bg-white rounded-lg shadow p-6">
-        <h3 class="text-lg font-semibold mb-2 text-foreground">Top States</h3>
-        <p class="text-gray-500 text-sm mb-4">Locations by state</p>
+        <div class="flex justify-between items-start mb-4">
+          <div>
+            <h3 class="text-lg font-semibold text-foreground">Top States</h3>
+            <p class="text-gray-500 text-sm">By location count</p>
+          </div>
+          <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
+            show all
+          </button>
+        </div>
         {#if topStates.length > 0}
           <ul class="space-y-2">
             {#each topStates as stat}
@@ -209,9 +232,17 @@
         {/if}
       </div>
 
+      <!-- Per spec: types - show top 5 types [column], show all -->
       <div class="bg-white rounded-lg shadow p-6">
-        <h3 class="text-lg font-semibold mb-2 text-foreground">Top Types</h3>
-        <p class="text-gray-500 text-sm mb-4">Locations by type</p>
+        <div class="flex justify-between items-start mb-4">
+          <div>
+            <h3 class="text-lg font-semibold text-foreground">Top Types</h3>
+            <p class="text-gray-500 text-sm">By location count</p>
+          </div>
+          <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
+            show all
+          </button>
+        </div>
         {#if topTypes.length > 0}
           <ul class="space-y-2">
             {#each topTypes as stat}

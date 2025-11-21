@@ -50,6 +50,15 @@
   let locationSearchQuery = $state('');
   let savingBookmark = $state(false);
 
+  // Bookmark browser state - per spec: bookmark browser by state/type/location
+  let allBookmarks = $state<Bookmark[]>([]);
+  let bookmarkFilterState = $state('');
+  let bookmarkFilterType = $state('');
+  let showBookmarkBrowser = $state(false);
+  let bookmarkStates = $state<string[]>([]);
+  let bookmarkTypes = $state<string[]>([]);
+  let locationCache = $state<Map<string, Location>>(new Map());
+
   let cleanupFunctions: Array<() => void> = [];
   let resizeObserver: ResizeObserver | null = null;
 
@@ -136,6 +145,59 @@
       }
     } catch (error) {
       console.error('Error loading sidebar data:', error);
+    }
+  }
+
+  // Per spec: bookmark browser by state/type/location
+  async function loadBookmarkBrowserData() {
+    if (!window.electronAPI?.bookmarks || !window.electronAPI?.locations) return;
+
+    try {
+      // Load all bookmarks
+      allBookmarks = (await window.electronAPI.bookmarks.findAll()) as Bookmark[];
+
+      // Load locations for bookmarks that have locid to get state/type info
+      const locids = [...new Set(allBookmarks.filter(b => b.locid).map(b => b.locid!))];
+      const newCache = new Map<string, Location>();
+      const states = new Set<string>();
+      const types = new Set<string>();
+
+      for (const locid of locids) {
+        const loc = await window.electronAPI.locations.findById(locid);
+        if (loc) {
+          newCache.set(locid, loc);
+          if (loc.address?.state) states.add(loc.address.state);
+          if (loc.type) types.add(loc.type);
+        }
+      }
+
+      locationCache = newCache;
+      bookmarkStates = Array.from(states).sort();
+      bookmarkTypes = Array.from(types).sort();
+    } catch (error) {
+      console.error('Error loading bookmark browser data:', error);
+    }
+  }
+
+  // Derived filtered bookmarks for bookmark browser
+  function getFilteredBookmarks(): Bookmark[] {
+    return allBookmarks.filter(bookmark => {
+      if (!bookmark.locid) return !bookmarkFilterState && !bookmarkFilterType;
+
+      const loc = locationCache.get(bookmark.locid);
+      if (!loc) return false;
+
+      const matchesState = !bookmarkFilterState || loc.address?.state === bookmarkFilterState;
+      const matchesType = !bookmarkFilterType || loc.type === bookmarkFilterType;
+
+      return matchesState && matchesType;
+    });
+  }
+
+  async function toggleBookmarkBrowser() {
+    showBookmarkBrowser = !showBookmarkBrowser;
+    if (showBookmarkBrowser && allBookmarks.length === 0) {
+      await loadBookmarkBrowserData();
     }
   }
 
@@ -431,6 +493,75 @@
                 </span>
               </div>
             {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Bookmark Browser - per spec: bookmark browser by state/type/location -->
+      <div>
+        <button
+          onclick={toggleBookmarkBrowser}
+          class="w-full text-left text-sm font-medium text-gray-700 mb-2 flex items-center justify-between hover:text-accent transition"
+        >
+          <span>Bookmark Browser</span>
+          <span class="text-xs">{showBookmarkBrowser ? '[-]' : '[+]'}</span>
+        </button>
+
+        {#if showBookmarkBrowser}
+          <div class="space-y-2 p-2 bg-gray-50 rounded border">
+            <!-- Filter by State -->
+            <div>
+              <label for="bm-state" class="block text-xs text-gray-600 mb-1">State</label>
+              <select
+                id="bm-state"
+                bind:value={bookmarkFilterState}
+                class="w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-accent"
+              >
+                <option value="">All States</option>
+                {#each bookmarkStates as state}
+                  <option value={state}>{state}</option>
+                {/each}
+              </select>
+            </div>
+
+            <!-- Filter by Type -->
+            <div>
+              <label for="bm-type" class="block text-xs text-gray-600 mb-1">Type</label>
+              <select
+                id="bm-type"
+                bind:value={bookmarkFilterType}
+                class="w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-accent"
+              >
+                <option value="">All Types</option>
+                {#each bookmarkTypes as type}
+                  <option value={type}>{type}</option>
+                {/each}
+              </select>
+            </div>
+
+            <!-- Filtered Bookmarks List -->
+            <div class="max-h-40 overflow-y-auto">
+              {#if getFilteredBookmarks().length === 0}
+                <p class="text-xs text-gray-400 text-center py-2">No bookmarks match filters</p>
+              {:else}
+                <div class="space-y-1">
+                  {#each getFilteredBookmarks() as bookmark}
+                    <button
+                      onclick={() => openBookmark(bookmark.url)}
+                      class="w-full text-left px-2 py-1 text-xs bg-white rounded hover:bg-gray-100 truncate transition border"
+                      title={bookmark.url}
+                    >
+                      <div class="truncate">{bookmark.title || bookmark.url}</div>
+                      {#if bookmark.locid && locationCache.get(bookmark.locid)}
+                        <div class="text-gray-400 truncate">
+                          {locationCache.get(bookmark.locid)?.locnam}
+                        </div>
+                      {/if}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
           </div>
         {/if}
       </div>
