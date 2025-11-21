@@ -17,6 +17,10 @@ export default {
         danger: '#dc2626',
         success: '#16a34a',
       },
+      fontFamily: {
+        heading: ['Roboto Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+        body: ['Lora', 'Georgia', 'serif'],
+      },
     },
   },
   plugins: [skeleton],
