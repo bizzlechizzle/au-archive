@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { randomUUID } from 'crypto';
-import type { Database } from '../database.types';
+import type { Database, LocsTable } from '../main/database.types';
 import {
   LocationRepository,
   LocationFilters,
@@ -47,6 +47,7 @@ export class SQLiteLocationRepository implements LocationRepository {
         documentation: input.documentation || null,
         access: input.access || null,
         historic: input.historic ? 1 : 0,
+        favorite: input.favorite ? 1 : 0,
         sublocs: null,
         sub12: null,
         locadd,
@@ -113,7 +114,7 @@ export class SQLiteLocationRepository implements LocationRepository {
   async update(id: string, input: Partial<LocationInput>): Promise<Location> {
     const locup = new Date().toISOString();
 
-    const updates: any = {
+    const updates: Record<string, unknown> = {
       locup
     };
 
@@ -148,6 +149,7 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.documentation !== undefined) updates.documentation = input.documentation;
     if (input.access !== undefined) updates.access = input.access;
     if (input.historic !== undefined) updates.historic = input.historic ? 1 : 0;
+    if (input.favorite !== undefined) updates.favorite = input.favorite ? 1 : 0;
     if (input.auth_imp !== undefined) updates.auth_imp = input.auth_imp;
 
     await this.db
@@ -198,7 +200,7 @@ export class SQLiteLocationRepository implements LocationRepository {
     return Number(result?.count || 0);
   }
 
-  private mapRowToLocation(row: any): Location {
+  private mapRowToLocation(row: LocsTable): Location {
     return {
       locid: row.locid,
       loc12: row.loc12,
@@ -233,6 +235,7 @@ export class SQLiteLocationRepository implements LocationRepository {
       documentation: row.documentation,
       access: row.access,
       historic: row.historic === 1,
+      favorite: row.favorite === 1,
       sublocs: row.sublocs ? JSON.parse(row.sublocs) : [],
       sub12: row.sub12,
       locadd: row.locadd,

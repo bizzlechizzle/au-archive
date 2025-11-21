@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS locs (
   documentation TEXT,
   access TEXT,
   historic INTEGER DEFAULT 0,
+  favorite INTEGER DEFAULT 0,
 
   -- Relationships
   sublocs TEXT,
@@ -61,6 +62,7 @@ CREATE INDEX IF NOT EXISTS idx_locs_state ON locs(address_state);
 CREATE INDEX IF NOT EXISTS idx_locs_type ON locs(type);
 CREATE INDEX IF NOT EXISTS idx_locs_gps ON locs(gps_lat, gps_lng) WHERE gps_lat IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_locs_loc12 ON locs(loc12);
+CREATE INDEX IF NOT EXISTS idx_locs_favorite ON locs(favorite) WHERE favorite = 1;
 
 -- Sub-Locations table
 CREATE TABLE IF NOT EXISTS slocs (

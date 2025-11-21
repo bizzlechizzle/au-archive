@@ -28,6 +28,10 @@ const api = {
       ipcRenderer.invoke('location:undocumented'),
     historical: (): Promise<Location[]> =>
       ipcRenderer.invoke('location:historical'),
+    favorites: (): Promise<Location[]> =>
+      ipcRenderer.invoke('location:favorites'),
+    toggleFavorite: (id: string): Promise<boolean> =>
+      ipcRenderer.invoke('location:toggleFavorite', id),
   },
 
   stats: {
@@ -44,6 +48,11 @@ const api = {
       ipcRenderer.invoke('settings:getAll'),
     set: (key: string, value: string): Promise<void> =>
       ipcRenderer.invoke('settings:set', key, value),
+  },
+
+  shell: {
+    openExternal: (url: string): Promise<void> =>
+      ipcRenderer.invoke('shell:openExternal', url),
   },
 };
 

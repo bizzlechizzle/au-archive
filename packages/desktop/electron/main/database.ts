@@ -47,6 +47,28 @@ function initializeSchema(sqlite: Database.Database): void {
 }
 
 /**
+ * Run database migrations for existing databases
+ * Checks for missing columns and adds them
+ */
+function runMigrations(sqlite: Database.Database): void {
+  try {
+    // Migration 1: Add favorite column if it doesn't exist
+    const columns = sqlite.pragma('table_info(locs)') as Array<{ name: string }>;
+    const hasFavorite = columns.some(col => col.name === 'favorite');
+
+    if (!hasFavorite) {
+      console.log('Running migration: Adding favorite column to locs table');
+      sqlite.exec('ALTER TABLE locs ADD COLUMN favorite INTEGER DEFAULT 0');
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_locs_favorite ON locs(favorite) WHERE favorite = 1');
+      console.log('Migration completed: favorite column added');
+    }
+  } catch (error) {
+    console.error('Error running migrations:', error);
+    throw error;
+  }
+}
+
+/**
  * Get or create the database instance
  * Initializes the database on first run
  */
@@ -70,6 +92,7 @@ export function getDatabase(): Kysely<DatabaseSchema> {
     initializeSchema(sqlite);
   } else {
     console.log('Using existing database at:', dbPath);
+    runMigrations(sqlite);
   }
 
   const dialect = new SqliteDialect({

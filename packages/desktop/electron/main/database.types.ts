@@ -7,6 +7,7 @@ export interface Database {
   vids: VidsTable;
   docs: DocsTable;
   maps: MapsTable;
+  settings: SettingsTable;
 }
 
 // Locations table
@@ -48,6 +49,7 @@ export interface LocsTable {
   documentation: string | null;
   access: string | null;
   historic: number;
+  favorite: number;
 
   // Relationships
   sublocs: string | null;
@@ -167,4 +169,10 @@ export interface MapsTable {
   reference: string | null;
   map_states: string | null;
   map_verified: number;
+}
+
+// Settings table
+export interface SettingsTable {
+  key: string;
+  value: string;
 }

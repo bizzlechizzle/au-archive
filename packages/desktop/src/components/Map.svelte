@@ -3,6 +3,7 @@
   import type { Map as LeafletMap, TileLayer, LayerGroup } from 'leaflet';
   import type { Location } from '@au-archive/core';
   import Supercluster from 'supercluster';
+  import { MAP_CONFIG, TILE_LAYERS, THEME } from '@/lib/constants';
 
   interface Props {
     locations?: Location[];
@@ -12,10 +13,24 @@
 
   let { locations = [], onLocationClick, onMapClick }: Props = $props();
 
+  /**
+   * Escape HTML to prevent XSS attacks
+   */
+  function escapeHtml(unsafe: string | null | undefined): string {
+    if (!unsafe) return '';
+    return unsafe
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   let mapContainer: HTMLDivElement;
   let map: LeafletMap | null = null;
   let markersLayer: LayerGroup | null = null;
   let cluster: Supercluster | null = null;
+  let lastLocationsLength = $state(0);
 
   onMount(async () => {
     const L = await import('leaflet');
@@ -23,29 +38,29 @@
 
     if (!map && mapContainer) {
       map = L.map(mapContainer, {
-        center: [40.7128, -74.0060],
-        zoom: 6,
+        center: [MAP_CONFIG.DEFAULT_CENTER.lat, MAP_CONFIG.DEFAULT_CENTER.lng],
+        zoom: MAP_CONFIG.DEFAULT_ZOOM,
       });
 
       const baseLayers: { [key: string]: TileLayer } = {
-        'Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        'Satellite': L.tileLayer(TILE_LAYERS.SATELLITE, {
           attribution: 'Tiles &copy; Esri',
-          maxZoom: 19,
+          maxZoom: MAP_CONFIG.MAX_ZOOM,
         }),
-        'Street': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        'Street': L.tileLayer(TILE_LAYERS.STREET, {
           attribution: '&copy; OpenStreetMap contributors',
-          maxZoom: 19,
+          maxZoom: MAP_CONFIG.MAX_ZOOM,
         }),
-        'Topo': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        'Topo': L.tileLayer(TILE_LAYERS.TOPO, {
           attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap',
           maxZoom: 17,
         }),
       };
 
       const overlayLayers: { [key: string]: TileLayer } = {
-        'Labels': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+        'Labels': L.tileLayer(TILE_LAYERS.LABELS, {
           attribution: '&copy; CartoDB',
-          maxZoom: 19,
+          maxZoom: MAP_CONFIG.MAX_ZOOM,
           subdomains: 'abcd',
         }),
       };
@@ -73,8 +88,9 @@
 
   function initCluster() {
     cluster = new Supercluster({
-      radius: 60,
-      maxZoom: 16,
+      radius: MAP_CONFIG.CLUSTER_RADIUS,
+      maxZoom: MAP_CONFIG.CLUSTER_MAX_ZOOM,
+      minPoints: MAP_CONFIG.CLUSTER_MIN_POINTS,
     });
 
     const points = locations
@@ -123,7 +139,7 @@
         marker.on('click', () => {
           const expansionZoom = Math.min(
             cluster!.getClusterExpansionZoom(feature.properties.cluster_id),
-            17
+            MAP_CONFIG.CLUSTER_EXPANSION_MAX_ZOOM
           );
           map!.setView([lat, lng], expansionZoom);
         });
@@ -135,9 +151,9 @@
 
         marker.bindPopup(`
           <div>
-            <strong>${location.locnam}</strong><br/>
-            ${location.type || 'Unknown Type'}<br/>
-            ${location.address?.city ? `${location.address.city}, ` : ''}${location.address?.state || ''}
+            <strong>${escapeHtml(location.locnam)}</strong><br/>
+            ${escapeHtml(location.type) || 'Unknown Type'}<br/>
+            ${location.address?.city ? `${escapeHtml(location.address.city)}, ` : ''}${escapeHtml(location.address?.state) || ''}
           </div>
         `);
 
@@ -151,13 +167,15 @@
       }
     });
 
-    if (locations.length > 0 && locations[0].gps && zoom === 6) {
-      map.setView([locations[0].gps.lat, locations[0].gps.lng], 10);
+    if (locations.length > 0 && locations[0].gps && zoom === MAP_CONFIG.DEFAULT_ZOOM) {
+      map.setView([locations[0].gps.lat, locations[0].gps.lng], MAP_CONFIG.DETAIL_ZOOM);
     }
   }
 
   $effect(() => {
-    if (map && markersLayer && locations) {
+    // Only reinitialize cluster if locations array length changed
+    if (map && markersLayer && locations.length !== lastLocationsLength) {
+      lastLocationsLength = locations.length;
       initCluster();
       import('leaflet').then((L) => updateClusters(L.default));
     }
@@ -188,7 +206,7 @@
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background-color: #b9975c;
+    background-color: var(--color-accent, #b9975c);
     color: white;
     display: flex;
     align-items: center;

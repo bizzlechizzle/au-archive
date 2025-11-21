@@ -1,7 +1,9 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { getDatabase } from './database';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
+import { LocationInputSchema } from '@au-archive/core';
 import type { LocationInput, LocationFilters } from '@au-archive/core';
+import { z } from 'zod';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -17,38 +19,55 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('location:findById', async (_event, id: string) => {
+  ipcMain.handle('location:findById', async (_event, id: unknown) => {
     try {
-      return await locationRepo.findById(id);
+      const validatedId = z.string().uuid().parse(id);
+      return await locationRepo.findById(validatedId);
     } catch (error) {
       console.error('Error finding location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
       throw error;
     }
   });
 
-  ipcMain.handle('location:create', async (_event, input: LocationInput) => {
+  ipcMain.handle('location:create', async (_event, input: unknown) => {
     try {
-      return await locationRepo.create(input);
+      const validatedInput = LocationInputSchema.parse(input);
+      return await locationRepo.create(validatedInput);
     } catch (error) {
       console.error('Error creating location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
       throw error;
     }
   });
 
-  ipcMain.handle('location:update', async (_event, id: string, input: Partial<LocationInput>) => {
+  ipcMain.handle('location:update', async (_event, id: unknown, input: unknown) => {
     try {
-      return await locationRepo.update(id, input);
+      const validatedId = z.string().uuid().parse(id);
+      const validatedInput = LocationInputSchema.partial().parse(input);
+      return await locationRepo.update(validatedId, validatedInput);
     } catch (error) {
       console.error('Error updating location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
       throw error;
     }
   });
 
-  ipcMain.handle('location:delete', async (_event, id: string) => {
+  ipcMain.handle('location:delete', async (_event, id: unknown) => {
     try {
-      await locationRepo.delete(id);
+      const validatedId = z.string().uuid().parse(id);
+      await locationRepo.delete(validatedId);
     } catch (error) {
       console.error('Error deleting location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
       throw error;
     }
   });
@@ -114,6 +133,46 @@ export function registerIpcHandlers() {
     }
   });
 
+  ipcMain.handle('location:favorites', async () => {
+    try {
+      const results = await db
+        .selectFrom('locs')
+        .selectAll()
+        .where('favorite', '=', 1)
+        .orderBy('locup', 'desc')
+        .execute();
+
+      const locations = [];
+      for (const row of results) {
+        const loc = await locationRepo.findById(row.locid);
+        if (loc) locations.push(loc);
+      }
+      return locations;
+    } catch (error) {
+      console.error('Error getting favorite locations:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('location:toggleFavorite', async (_event, id: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(id);
+      const location = await locationRepo.findById(validatedId);
+      if (!location) {
+        throw new Error('Location not found');
+      }
+      const newFavoriteState = !location.favorite;
+      await locationRepo.update(validatedId, { favorite: newFavoriteState });
+      return newFavoriteState;
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
   // Stats queries
   ipcMain.handle('stats:topStates', async (_event, limit: number = 5) => {
     try {
@@ -150,16 +209,20 @@ export function registerIpcHandlers() {
   });
 
   // Settings queries
-  ipcMain.handle('settings:get', async (_event, key: string) => {
+  ipcMain.handle('settings:get', async (_event, key: unknown) => {
     try {
+      const validatedKey = z.string().min(1).parse(key);
       const result = await db
         .selectFrom('settings')
         .select('value')
-        .where('key', '=', key)
+        .where('key', '=', validatedKey)
         .executeTakeFirst();
       return result?.value ?? null;
     } catch (error) {
       console.error('Error getting setting:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
       throw error;
     }
   });
@@ -180,15 +243,38 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('settings:set', async (_event, key: string, value: string) => {
+  ipcMain.handle('settings:set', async (_event, key: unknown, value: unknown) => {
     try {
+      const validatedKey = z.string().min(1).parse(key);
+      const validatedValue = z.string().parse(value);
       await db
         .insertInto('settings')
-        .values({ key, value })
-        .onConflict((oc) => oc.column('key').doUpdateSet({ value }))
+        .values({ key: validatedKey, value: validatedValue })
+        .onConflict((oc) => oc.column('key').doUpdateSet({ value: validatedValue }))
         .execute();
     } catch (error) {
       console.error('Error setting value:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  // Shell operations
+  ipcMain.handle('shell:openExternal', async (_event, url: unknown) => {
+    try {
+      const validatedUrl = z.string().url().parse(url);
+      // Security: Only allow http, https, and mailto protocols
+      if (!validatedUrl.match(/^(https?|mailto):/)) {
+        throw new Error('Only http, https, and mailto URLs are allowed');
+      }
+      await shell.openExternal(validatedUrl);
+    } catch (error) {
+      console.error('Error opening external URL:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
       throw error;
     }
   });
