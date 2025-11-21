@@ -16,12 +16,13 @@ import { getBackupScheduler } from '../services/backup-scheduler';
 import { getIntegrityChecker } from '../services/integrity-checker';
 import { getDiskSpaceMonitor } from '../services/disk-space-monitor';
 import { getMaintenanceScheduler } from '../services/maintenance-scheduler';
-import { getMetricsCollector } from '../services/metrics-collector';
 import { getRecoverySystem } from '../services/recovery-system';
+import { getConfigService } from '../services/config-service';
 import { LocationInputSchema } from '@au-archive/core';
 import type { LocationInput, LocationFilters } from '@au-archive/core';
 import { z } from 'zod';
 import fs from 'fs/promises';
+import { validate, UuidSchema, LimitSchema, FilePathSchema, UrlSchema } from './ipc-validation';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -203,15 +204,16 @@ export function registerIpcHandlers() {
   });
 
   // Stats queries
-  ipcMain.handle('stats:topStates', async (_event, limit: number = 5) => {
+  ipcMain.handle('stats:topStates', async (_event, limit: unknown = 5) => {
     try {
+      const validatedLimit = validate(LimitSchema, limit);
       const result = await db
         .selectFrom('locs')
         .select(['address_state as state', (eb) => eb.fn.count('locid').as('count')])
         .where('address_state', 'is not', null)
         .groupBy('address_state')
         .orderBy('count', 'desc')
-        .limit(limit)
+        .limit(validatedLimit)
         .execute();
       return result;
     } catch (error) {
@@ -220,15 +222,16 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('stats:topTypes', async (_event, limit: number = 5) => {
+  ipcMain.handle('stats:topTypes', async (_event, limit: unknown = 5) => {
     try {
+      const validatedLimit = validate(LimitSchema, limit);
       const result = await db
         .selectFrom('locs')
         .select(['type', (eb) => eb.fn.count('locid').as('count')])
         .where('type', 'is not', null)
         .groupBy('type')
         .orderBy('count', 'desc')
-        .limit(limit)
+        .limit(validatedLimit)
         .execute();
       return result;
     } catch (error) {
@@ -1073,27 +1076,7 @@ export function registerIpcHandlers() {
     }
   });
 
-  // Get performance metrics
-  ipcMain.handle('health:getMetrics', async () => {
-    try {
-      const metricsCollector = getMetricsCollector();
-      return metricsCollector.getSystemMetrics();
-    } catch (error) {
-      console.error('Error getting metrics:', error);
-      throw error;
-    }
-  });
-
-  // Get recent slow operations
-  ipcMain.handle('health:getSlowOperations', async (_event, limit?: number) => {
-    try {
-      const metricsCollector = getMetricsCollector();
-      return metricsCollector.getRecentSlowOperations(limit || 10);
-    } catch (error) {
-      console.error('Error getting slow operations:', error);
-      throw error;
-    }
-  });
+  // Metrics handlers removed - metrics-collector service deleted as part of simplification
 
   // Get recovery system state
   ipcMain.handle('health:getRecoveryState', async () => {

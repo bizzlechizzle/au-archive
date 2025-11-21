@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { statfsSync } from 'fs';
 import { getLogger } from './logger-service';
+import { getConfigService } from './config-service';
 
 const logger = getLogger();
 
@@ -17,12 +18,17 @@ export interface DiskSpaceInfo {
  * Monitors available disk space and prevents operations when critically low
  */
 export class DiskSpaceMonitor {
-  private readonly WARNING_THRESHOLD = 1 * 1024 * 1024 * 1024; // 1GB
-  private readonly CRITICAL_THRESHOLD = 500 * 1024 * 1024; // 500MB
-  private readonly EMERGENCY_THRESHOLD = 100 * 1024 * 1024; // 100MB
-
   private lastCheckTime: Date | null = null;
   private lastSpaceInfo: DiskSpaceInfo | null = null;
+
+  private getThresholds() {
+    const config = getConfigService().get();
+    return {
+      WARNING_THRESHOLD: config.monitoring.diskSpace.warningThresholdMB * 1024 * 1024,
+      CRITICAL_THRESHOLD: config.monitoring.diskSpace.criticalThresholdMB * 1024 * 1024,
+      EMERGENCY_THRESHOLD: config.monitoring.diskSpace.emergencyThresholdMB * 1024 * 1024,
+    };
+  }
 
   async checkDiskSpace(): Promise<DiskSpaceInfo> {
     try {
@@ -34,12 +40,14 @@ export class DiskSpaceMonitor {
       const used = total - available;
       const percentUsed = (used / total) * 100;
 
+      const { WARNING_THRESHOLD, CRITICAL_THRESHOLD, EMERGENCY_THRESHOLD } = this.getThresholds();
+
       let status: DiskSpaceInfo['status'] = 'healthy';
-      if (available < this.EMERGENCY_THRESHOLD) {
+      if (available < EMERGENCY_THRESHOLD) {
         status = 'emergency';
-      } else if (available < this.CRITICAL_THRESHOLD) {
+      } else if (available < CRITICAL_THRESHOLD) {
         status = 'critical';
-      } else if (available < this.WARNING_THRESHOLD) {
+      } else if (available < WARNING_THRESHOLD) {
         status = 'warning';
       }
 
@@ -85,12 +93,15 @@ export class DiskSpaceMonitor {
     }
 
     // Check if estimated operation size would exceed threshold
-    if (estimatedSize > 0 && spaceInfo.available - estimatedSize < this.CRITICAL_THRESHOLD) {
-      logger.warn('DiskSpaceMonitor', 'Operation would exceed disk space threshold', {
-        estimatedSize,
-        available: spaceInfo.available,
-      });
-      return false;
+    if (estimatedSize > 0) {
+      const { CRITICAL_THRESHOLD } = this.getThresholds();
+      if (spaceInfo.available - estimatedSize < CRITICAL_THRESHOLD) {
+        logger.warn('DiskSpaceMonitor', 'Operation would exceed disk space threshold', {
+          estimatedSize,
+          available: spaceInfo.available,
+        });
+        return false;
+      }
     }
 
     return true;

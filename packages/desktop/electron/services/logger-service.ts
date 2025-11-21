@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { getConfigService } from './config-service';
 
 export enum LogLevel {
   ERROR = 'ERROR',
@@ -20,13 +21,19 @@ export interface LogEntry {
 
 /**
  * Structured logging service with automatic rotation
- * Keeps last 7 days, max 10MB per file
+ * Keeps last N days, max configurable MB per file
  */
 export class Logger {
   private logDir: string;
   private currentLogFile: string;
-  private readonly MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-  private readonly MAX_FILES = 7;
+
+  private getLogConfig() {
+    const config = getConfigService().get();
+    return {
+      MAX_FILE_SIZE: config.logging.maxFileSizeMB * 1024 * 1024,
+      MAX_FILES: config.logging.maxFiles,
+    };
+  }
 
   constructor() {
     this.logDir = path.join(app.getPath('userData'), 'logs');
@@ -47,8 +54,9 @@ export class Logger {
         return;
       }
 
+      const { MAX_FILE_SIZE } = this.getLogConfig();
       const stats = fs.statSync(this.currentLogFile);
-      if (stats.size >= this.MAX_FILE_SIZE) {
+      if (stats.size >= MAX_FILE_SIZE) {
         this.rotate();
       }
 
@@ -59,13 +67,15 @@ export class Logger {
   }
 
   private rotate(): void {
+    const { MAX_FILES } = this.getLogConfig();
+
     // Shift existing rotated logs
-    for (let i = this.MAX_FILES - 1; i >= 1; i--) {
+    for (let i = MAX_FILES - 1; i >= 1; i--) {
       const oldFile = path.join(this.logDir, `au-archive.log.${i}`);
       const newFile = path.join(this.logDir, `au-archive.log.${i + 1}`);
 
       if (fs.existsSync(oldFile)) {
-        if (i === this.MAX_FILES - 1) {
+        if (i === MAX_FILES - 1) {
           fs.unlinkSync(oldFile); // Delete oldest
         } else {
           fs.renameSync(oldFile, newFile);
@@ -81,6 +91,8 @@ export class Logger {
   }
 
   private cleanOldLogs(): void {
+    const { MAX_FILES } = this.getLogConfig();
+
     const files = fs.readdirSync(this.logDir);
     const logFiles = files
       .filter((f) => f.startsWith('au-archive.log'))
@@ -92,7 +104,7 @@ export class Logger {
       .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
 
     // Keep only MAX_FILES + 1 (current + rotated)
-    for (let i = this.MAX_FILES; i < logFiles.length; i++) {
+    for (let i = MAX_FILES; i < logFiles.length; i++) {
       try {
         fs.unlinkSync(logFiles[i].path);
       } catch (error) {

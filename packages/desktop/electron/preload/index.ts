@@ -230,10 +230,7 @@ const api = {
       ipcRenderer.invoke('health:runMaintenance'),
     getMaintenanceSchedule: (): Promise<unknown> =>
       ipcRenderer.invoke('health:getMaintenanceSchedule'),
-    getMetrics: (): Promise<unknown> =>
-      ipcRenderer.invoke('health:getMetrics'),
-    getSlowOperations: (limit?: number): Promise<unknown> =>
-      ipcRenderer.invoke('health:getSlowOperations', limit),
+    // Note: getMetrics and getSlowOperations removed - metrics service deleted
     getRecoveryState: (): Promise<unknown> =>
       ipcRenderer.invoke('health:getRecoveryState'),
     attemptRecovery: (): Promise<unknown> =>
