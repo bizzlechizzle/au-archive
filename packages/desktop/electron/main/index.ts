@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDatabase, closeDatabase } from './database';
+import { registerIpcHandlers } from './ipc-handlers';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,6 +46,9 @@ app.whenReady().then(() => {
   } catch (error) {
     console.error('Failed to initialize database:', error);
   }
+
+  // Register IPC handlers
+  registerIpcHandlers();
 
   createWindow();
 

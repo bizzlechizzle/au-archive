@@ -1,38 +1,115 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { router } from '../stores/router';
+  import type { Location } from '@au-archive/core';
+
+  let recentLocations = $state<Location[]>([]);
+  let topStates = $state<Array<{ state: string; count: number }>>([]);
+  let topTypes = $state<Array<{ type: string; count: number }>>([]);
+  let totalCount = $state(0);
+  let loading = $state(true);
+
+  onMount(async () => {
+    try {
+      const [locations, states, types, count] = await Promise.all([
+        window.electronAPI.locations.findAll(),
+        window.electronAPI.stats.topStates(5),
+        window.electronAPI.stats.topTypes(5),
+        window.electronAPI.locations.count(),
+      ]);
+
+      recentLocations = locations.slice(0, 5);
+      topStates = states;
+      topTypes = types;
+      totalCount = count;
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      loading = false;
+    }
+  });
 </script>
 
 <div class="p-8">
   <div class="mb-8">
     <h1 class="text-3xl font-bold text-foreground mb-2">Dashboard</h1>
     <p class="text-gray-600">Overview of your abandoned location archive</p>
+    {#if !loading}
+      <p class="text-sm text-gray-500 mt-1">Total Locations: {totalCount}</p>
+    {/if}
   </div>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-    <div class="bg-white rounded-lg shadow p-6">
-      <h3 class="text-lg font-semibold mb-2 text-foreground">Recent Locations</h3>
-      <p class="text-gray-500 text-sm">Last 5 added locations</p>
-      <div class="mt-4 text-center text-gray-400">
-        No locations yet
-      </div>
+  {#if loading}
+    <div class="text-center py-12">
+      <p class="text-gray-500">Loading...</p>
     </div>
+  {:else}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold mb-2 text-foreground">Recent Locations</h3>
+        <p class="text-gray-500 text-sm mb-4">Last 5 added locations</p>
+        {#if recentLocations.length > 0}
+          <ul class="space-y-2">
+            {#each recentLocations as location}
+              <li class="text-sm">
+                <button
+                  onclick={() => router.navigate(`/location/${location.locid}`)}
+                  class="text-accent hover:underline"
+                >
+                  {location.locnam}
+                </button>
+                {#if location.address?.state}
+                  <span class="text-gray-400 text-xs ml-2">{location.address.state}</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <div class="mt-4 text-center text-gray-400">
+            No locations yet
+          </div>
+        {/if}
+      </div>
 
-    <div class="bg-white rounded-lg shadow p-6">
-      <h3 class="text-lg font-semibold mb-2 text-foreground">Top States</h3>
-      <p class="text-gray-500 text-sm">Locations by state</p>
-      <div class="mt-4 text-center text-gray-400">
-        No data yet
+      <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold mb-2 text-foreground">Top States</h3>
+        <p class="text-gray-500 text-sm mb-4">Locations by state</p>
+        {#if topStates.length > 0}
+          <ul class="space-y-2">
+            {#each topStates as stat}
+              <li class="flex justify-between text-sm">
+                <span>{stat.state}</span>
+                <span class="text-gray-500">{stat.count}</span>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <div class="mt-4 text-center text-gray-400">
+            No data yet
+          </div>
+        {/if}
       </div>
-    </div>
 
-    <div class="bg-white rounded-lg shadow p-6">
-      <h3 class="text-lg font-semibold mb-2 text-foreground">Top Types</h3>
-      <p class="text-gray-500 text-sm">Locations by type</p>
-      <div class="mt-4 text-center text-gray-400">
-        No data yet
+      <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold mb-2 text-foreground">Top Types</h3>
+        <p class="text-gray-500 text-sm mb-4">Locations by type</p>
+        {#if topTypes.length > 0}
+          <ul class="space-y-2">
+            {#each topTypes as stat}
+              <li class="flex justify-between text-sm">
+                <span>{stat.type}</span>
+                <span class="text-gray-500">{stat.count}</span>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <div class="mt-4 text-center text-gray-400">
+            No data yet
+          </div>
+        {/if}
       </div>
     </div>
-  </div>
+  {/if}
 
   <div class="mt-8">
     <h2 class="text-xl font-semibold mb-4 text-foreground">Quick Actions</h2>

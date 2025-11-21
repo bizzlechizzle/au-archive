@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { Location, LocationInput, LocationFilters } from '@au-archive/core';
 
 const api = {
   versions: {
@@ -7,6 +8,28 @@ const api = {
     electron: () => process.versions.electron,
   },
   platform: process.platform,
+
+  locations: {
+    findAll: (filters?: LocationFilters): Promise<Location[]> =>
+      ipcRenderer.invoke('location:findAll', filters),
+    findById: (id: string): Promise<Location | null> =>
+      ipcRenderer.invoke('location:findById', id),
+    create: (input: LocationInput): Promise<Location> =>
+      ipcRenderer.invoke('location:create', input),
+    update: (id: string, input: Partial<LocationInput>): Promise<Location> =>
+      ipcRenderer.invoke('location:update', id, input),
+    delete: (id: string): Promise<void> =>
+      ipcRenderer.invoke('location:delete', id),
+    count: (filters?: LocationFilters): Promise<number> =>
+      ipcRenderer.invoke('location:count', filters),
+  },
+
+  stats: {
+    topStates: (limit?: number): Promise<Array<{ state: string; count: number }>> =>
+      ipcRenderer.invoke('stats:topStates', limit),
+    topTypes: (limit?: number): Promise<Array<{ type: string; count: number }>> =>
+      ipcRenderer.invoke('stats:topTypes', limit),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);
