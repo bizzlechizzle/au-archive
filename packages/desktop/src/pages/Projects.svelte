@@ -24,6 +24,11 @@
     try {
       loading = true;
       error = null;
+      if (!window.electronAPI?.projects) {
+        console.error('Electron API not available - preload script may have failed to load');
+        error = 'API not available';
+        return;
+      }
       const result = (await window.electronAPI.projects.findAll()) as Project[];
       projects = result;
     } catch (err) {
@@ -36,6 +41,7 @@
 
   async function handleCreateProject() {
     if (!newProjectName.trim()) return;
+    if (!window.electronAPI?.projects) return;
 
     try {
       creating = true;
@@ -61,6 +67,7 @@
 
   async function handleDeleteProject(project_id: string, project_name: string) {
     if (!confirm(`Are you sure you want to delete project "${project_name}"?`)) return;
+    if (!window.electronAPI?.projects) return;
 
     try {
       error = null;
@@ -90,8 +97,10 @@
 
     // Load current user
     try {
-      const settings = await window.electronAPI.settings.getAll();
-      currentUser = settings.current_user || 'default';
+      if (window.electronAPI?.settings) {
+        const settings = await window.electronAPI.settings.getAll();
+        currentUser = settings.current_user || 'default';
+      }
     } catch (err) {
       console.error('Error loading settings:', err);
     }

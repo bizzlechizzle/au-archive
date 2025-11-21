@@ -7,7 +7,7 @@
 
 // Map Configuration
 export const MAP_CONFIG = {
-  DEFAULT_CENTER: { lat: 40.7128, lng: -74.0060 } as const,
+  DEFAULT_CENTER: { lat: 42.67917, lng: -76.87944 } as const,
   DEFAULT_ZOOM: 6,
   DETAIL_ZOOM: 10,
   MAX_ZOOM: 19,
