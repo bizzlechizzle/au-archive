@@ -448,14 +448,17 @@ export function registerIpcHandlers() {
         throw new Error('Archive folder not configured. Please set it in Settings.');
       }
 
-      // Initialize FileImportService
+      // Initialize FileImportService with all required dependencies
       const fileImportService = new FileImportService(
+        db,
         cryptoService,
         exifToolService,
         ffmpegService,
         mediaRepo,
         importRepo,
-        archivePath.value
+        locationRepo,
+        archivePath.value,
+        [] // allowedImportDirs - empty means only archive path is allowed
       );
 
       // Prepare files for import
@@ -467,10 +470,14 @@ export function registerIpcHandlers() {
         auth_imp: validatedInput.auth_imp,
       }));
 
-      // Import files
+      // Import files with progress callback
       const result = await fileImportService.importFiles(
         filesForImport,
-        validatedInput.deleteOriginals
+        validatedInput.deleteOriginals,
+        (current, total) => {
+          // Send progress update to renderer
+          _event.sender.send('media:import:progress', { current, total });
+        }
       );
 
       return result;
@@ -968,6 +975,68 @@ export function registerIpcHandlers() {
       return { success: true, path: result.filePath };
     } catch (error) {
       console.error('Error backing up database:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('database:restore', async () => {
+    try {
+      const dbPath = getDatabasePath();
+
+      // Show open dialog to select backup file
+      const result = await dialog.showOpenDialog({
+        title: 'Restore Database from Backup',
+        filters: [
+          { name: 'SQLite Database', extensions: ['db'] },
+          { name: 'All Files', extensions: ['*'] }
+        ],
+        properties: ['openFile'],
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, message: 'Restore canceled' };
+      }
+
+      const backupPath = result.filePaths[0];
+
+      // Verify the backup file is a valid SQLite database
+      try {
+        const Database = (await import('better-sqlite3')).default;
+        const testDb = new Database(backupPath, { readonly: true });
+
+        // Check if it has the expected tables
+        const tables = testDb.pragma('table_list') as Array<{ name: string }>;
+        const hasLocsTable = tables.some(t => t.name === 'locs');
+        testDb.close();
+
+        if (!hasLocsTable) {
+          return { success: false, message: 'Invalid database file: missing required tables' };
+        }
+      } catch (error) {
+        console.error('Error validating backup file:', error);
+        return { success: false, message: 'Invalid database file: not a valid SQLite database' };
+      }
+
+      // Create a backup of current database before restoring
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const autoBackupPath = dbPath.replace('.db', `-pre-restore-${timestamp}.db`);
+      await fs.copyFile(dbPath, autoBackupPath);
+
+      // Close current database connection
+      const { closeDatabase } = await import('./database.js');
+      closeDatabase();
+
+      // Copy backup file over current database
+      await fs.copyFile(backupPath, dbPath);
+
+      return {
+        success: true,
+        message: 'Database restored successfully. Please restart the application.',
+        requiresRestart: true,
+        autoBackupPath
+      };
+    } catch (error) {
+      console.error('Error restoring database:', error);
       throw error;
     }
   });

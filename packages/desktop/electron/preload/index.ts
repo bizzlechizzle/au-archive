@@ -63,6 +63,8 @@ const api = {
   database: {
     backup: (): Promise<{ success: boolean; path?: string; message?: string }> =>
       ipcRenderer.invoke('database:backup'),
+    restore: (): Promise<{ success: boolean; message: string; requiresRestart?: boolean; autoBackupPath?: string }> =>
+      ipcRenderer.invoke('database:restore'),
   },
 
   imports: {
@@ -97,6 +99,11 @@ const api = {
       deleteOriginals: boolean;
     }): Promise<unknown> =>
       ipcRenderer.invoke('media:import', input),
+    onImportProgress: (callback: (progress: { current: number; total: number }) => void) => {
+      const listener = (_event: any, progress: { current: number; total: number }) => callback(progress);
+      ipcRenderer.on('media:import:progress', listener);
+      return () => ipcRenderer.removeListener('media:import:progress', listener);
+    },
     findByLocation: (locid: string): Promise<{
       images: unknown[];
       videos: unknown[];

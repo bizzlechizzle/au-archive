@@ -3,9 +3,14 @@ import fs from 'fs/promises';
 import { CryptoService } from './crypto-service';
 import { ExifToolService } from './exiftool-service';
 import { FFmpegService } from './ffmpeg-service';
+import { PathValidator } from './path-validator';
+import { GPSValidator } from './gps-validator';
 import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
+import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import type { ImgsTable, VidsTable, DocsTable } from '../main/database.types';
+import type { Kysely } from 'kysely';
+import type { Database } from '../main/database.types';
 
 export interface ImportFileInput {
   filePath: string;
@@ -22,7 +27,13 @@ export interface ImportResult {
   duplicate: boolean;
   archivePath?: string;
   error?: string;
-  gpsWarning?: string;
+  gpsWarning?: {
+    message: string;
+    distance: number;
+    severity: 'minor' | 'major';
+    locationGPS: { lat: number; lng: number };
+    mediaGPS: { lat: number; lng: number };
+  };
 }
 
 export interface ImportSessionResult {
@@ -43,91 +54,125 @@ export class FileImportService {
   private readonly DOCUMENT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.rtf', '.odt'];
 
   constructor(
+    private readonly db: Kysely<Database>,
     private readonly cryptoService: CryptoService,
     private readonly exifToolService: ExifToolService,
     private readonly ffmpegService: FFmpegService,
     private readonly mediaRepo: SQLiteMediaRepository,
     private readonly importRepo: SQLiteImportRepository,
-    private readonly archivePath: string
+    private readonly locationRepo: SQLiteLocationRepository,
+    private readonly archivePath: string,
+    private readonly allowedImportDirs: string[] = [] // User's home dir, downloads, etc.
   ) {}
 
   /**
    * Import multiple files in a batch
+   * CRITICAL: Wraps entire import in transaction for data integrity
    */
   async importFiles(
     files: ImportFileInput[],
-    deleteOriginals: boolean = false
+    deleteOriginals: boolean = false,
+    onProgress?: (current: number, total: number) => void
   ): Promise<ImportSessionResult> {
-    const results: ImportResult[] = [];
-    let imported = 0;
-    let duplicates = 0;
-    let errors = 0;
-
+    // Validate all file paths before starting
     for (const file of files) {
-      try {
-        const result = await this.importSingleFile(file, deleteOriginals);
-        results.push(result);
+      if (!PathValidator.isPathSafe(file.filePath, this.archivePath)) {
+        // Check if file is in allowed import directories
+        const isAllowed = this.allowedImportDirs.length === 0 ||
+          this.allowedImportDirs.some(dir => PathValidator.isPathSafe(file.filePath, dir));
 
-        if (result.success) {
-          if (result.duplicate) {
-            duplicates++;
-          } else {
-            imported++;
-          }
-        } else {
-          errors++;
+        if (!isAllowed) {
+          throw new Error(`Security: File path not allowed: ${file.filePath}`);
         }
-      } catch (error) {
-        console.error(`Error importing file ${file.originalName}:`, error);
-        results.push({
-          success: false,
-          hash: '',
-          type: 'unknown',
-          duplicate: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-        errors++;
       }
     }
 
-    // Create import record
-    const locid = files[0]?.locid || null;
-    const auth_imp = files[0]?.auth_imp || null;
-    const imgCount = results.filter((r) => r.type === 'image' && !r.duplicate).length;
-    const vidCount = results.filter((r) => r.type === 'video' && !r.duplicate).length;
-    const docCount = results.filter((r) => r.type === 'document' && !r.duplicate).length;
+    // Use transaction to ensure atomicity
+    return await this.db.transaction().execute(async (trx) => {
+      const results: ImportResult[] = [];
+      let imported = 0;
+      let duplicates = 0;
+      let errors = 0;
 
-    const importRecord = await this.importRepo.create({
-      locid,
-      auth_imp,
-      img_count: imgCount,
-      vid_count: vidCount,
-      doc_count: docCount,
-      notes: `Imported ${imported} files, ${duplicates} duplicates, ${errors} errors`,
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+
+        // Report progress
+        if (onProgress) {
+          onProgress(i + 1, files.length);
+        }
+
+        try {
+          const result = await this.importSingleFile(file, deleteOriginals, trx);
+          results.push(result);
+
+          if (result.success) {
+            if (result.duplicate) {
+              duplicates++;
+            } else {
+              imported++;
+            }
+          } else {
+            errors++;
+          }
+        } catch (error) {
+          console.error(`Error importing file ${file.originalName}:`, error);
+          results.push({
+            success: false,
+            hash: '',
+            type: 'unknown',
+            duplicate: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+          errors++;
+        }
+      }
+
+      // Create import record within same transaction
+      const locid = files[0]?.locid || null;
+      const auth_imp = files[0]?.auth_imp || null;
+      const imgCount = results.filter((r) => r.type === 'image' && !r.duplicate).length;
+      const vidCount = results.filter((r) => r.type === 'video' && !r.duplicate).length;
+      const docCount = results.filter((r) => r.type === 'document' && !r.duplicate).length;
+
+      // Use transaction context for import record creation
+      const importId = await this.createImportRecordInTransaction(trx, {
+        locid,
+        auth_imp,
+        img_count: imgCount,
+        vid_count: vidCount,
+        doc_count: docCount,
+        notes: `Imported ${imported} files, ${duplicates} duplicates, ${errors} errors`,
+      });
+
+      return {
+        total: files.length,
+        imported,
+        duplicates,
+        errors,
+        results,
+        importId,
+      };
     });
-
-    return {
-      total: files.length,
-      imported,
-      duplicates,
-      errors,
-      results,
-      importId: importRecord.import_id,
-    };
   }
 
   /**
-   * Import a single file
+   * Import a single file with transaction support
+   * CRITICAL: Validates path, checks GPS mismatch, uses transaction
    */
   private async importSingleFile(
     file: ImportFileInput,
-    deleteOriginal: boolean
+    deleteOriginal: boolean,
+    trx: any // Transaction context
   ): Promise<ImportResult> {
-    // 1. Calculate SHA256 hash
+    // 1. Validate file path security
+    const sanitizedName = PathValidator.sanitizeFilename(file.originalName);
+
+    // 2. Calculate SHA256 hash (only once)
     const hash = await this.cryptoService.calculateSHA256(file.filePath);
 
-    // 2. Determine file type
-    const ext = path.extname(file.originalName).toLowerCase();
+    // 3. Determine file type
+    const ext = path.extname(sanitizedName).toLowerCase();
     const type = this.getFileType(ext);
 
     if (type === 'unknown') {
@@ -140,8 +185,8 @@ export class FileImportService {
       };
     }
 
-    // 3. Check for duplicates
-    const isDuplicate = await this.checkDuplicate(hash, type);
+    // 4. Check for duplicates
+    const isDuplicate = await this.checkDuplicateInTransaction(trx, hash, type);
     if (isDuplicate) {
       return {
         success: true,
@@ -151,17 +196,35 @@ export class FileImportService {
       };
     }
 
-    // 4. Extract metadata
+    // 5. Extract metadata
     let metadata: any = null;
-    let gpsWarning: string | undefined;
+    let gpsWarning: ImportResult['gpsWarning'] = undefined;
 
     try {
       if (type === 'image') {
         metadata = await this.exifToolService.extractMetadata(file.filePath);
 
-        // Check GPS mismatch
-        if (metadata.gps) {
-          gpsWarning = 'GPS data found in image EXIF';
+        // CRITICAL: Check GPS mismatch
+        if (metadata.gps && GPSValidator.isValidGPS(metadata.gps.lat, metadata.gps.lng)) {
+          const location = await this.locationRepo.findById(file.locid);
+
+          if (location && location.gps?.lat && location.gps?.lng) {
+            const mismatch = GPSValidator.checkGPSMismatch(
+              { lat: location.gps.lat, lng: location.gps.lng },
+              { lat: metadata.gps.lat, lng: metadata.gps.lng },
+              10000 // 10km threshold
+            );
+
+            if (mismatch.mismatch && mismatch.distance) {
+              gpsWarning = {
+                message: `GPS coordinates differ by ${GPSValidator.formatDistance(mismatch.distance)}`,
+                distance: mismatch.distance,
+                severity: mismatch.severity as 'minor' | 'major',
+                locationGPS: { lat: location.gps.lat, lng: location.gps.lng },
+                mediaGPS: { lat: metadata.gps.lat, lng: metadata.gps.lng },
+              };
+            }
+          }
         }
       } else if (type === 'video') {
         metadata = await this.ffmpegService.extractMetadata(file.filePath);
@@ -171,18 +234,27 @@ export class FileImportService {
       // Continue without metadata
     }
 
-    // 5. Organize file to archive
+    // 6. Organize file to archive (validate path)
     const archivePath = await this.organizeFile(file, hash, ext, type);
 
-    // 6. Insert record in database
-    await this.insertMediaRecord(file, hash, type, archivePath, file.originalName, metadata);
+    // 7. Insert record in database using transaction
+    await this.insertMediaRecordInTransaction(
+      trx,
+      file,
+      hash,
+      type,
+      archivePath,
+      sanitizedName,
+      metadata
+    );
 
-    // 7. Delete original if requested
+    // 8. Delete original if requested (after DB success)
     if (deleteOriginal) {
       try {
         await fs.unlink(file.filePath);
       } catch (error) {
         console.warn('Failed to delete original file:', error);
+        // Don't fail import if deletion fails
       }
     }
 
@@ -207,21 +279,40 @@ export class FileImportService {
   }
 
   /**
-   * Check if file is a duplicate
+   * Check if file is a duplicate within transaction
    */
-  private async checkDuplicate(hash: string, type: 'image' | 'video' | 'document'): Promise<boolean> {
+  private async checkDuplicateInTransaction(
+    trx: any,
+    hash: string,
+    type: 'image' | 'video' | 'document'
+  ): Promise<boolean> {
     if (type === 'image') {
-      return await this.mediaRepo.imageExists(hash);
+      const result = await trx
+        .selectFrom('imgs')
+        .select('imgsha')
+        .where('imgsha', '=', hash)
+        .executeTakeFirst();
+      return !!result;
     } else if (type === 'video') {
-      return await this.mediaRepo.videoExists(hash);
+      const result = await trx
+        .selectFrom('vids')
+        .select('vidsha')
+        .where('vidsha', '=', hash)
+        .executeTakeFirst();
+      return !!result;
     } else if (type === 'document') {
-      return await this.mediaRepo.documentExists(hash);
+      const result = await trx
+        .selectFrom('docs')
+        .select('docsha')
+        .where('docsha', '=', hash)
+        .executeTakeFirst();
+      return !!result;
     }
     return false;
   }
 
   /**
-   * Organize file to archive folder
+   * Organize file to archive folder with path validation
    * Archive structure: [archivePath]/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-[type]-[LOC12]/[SHA256].[ext]
    */
   private async organizeFile(
@@ -236,6 +327,11 @@ export class FileImportService {
     const targetDir = path.join(this.archivePath, typeFolder, file.locid);
     const targetPath = path.join(targetDir, `${hash}${ext}`);
 
+    // CRITICAL: Validate target path doesn't escape archive
+    if (!PathValidator.validateArchivePath(targetPath, this.archivePath)) {
+      throw new Error(`Security: Target path escapes archive directory: ${targetPath}`);
+    }
+
     // Ensure directory exists
     await fs.mkdir(targetDir, { recursive: true });
 
@@ -246,9 +342,10 @@ export class FileImportService {
   }
 
   /**
-   * Insert media record in database
+   * Insert media record in database within transaction
    */
-  private async insertMediaRecord(
+  private async insertMediaRecordInTransaction(
+    trx: any,
     file: ImportFileInput,
     hash: string,
     type: 'image' | 'video' | 'document',
@@ -256,62 +353,111 @@ export class FileImportService {
     originalName: string,
     metadata: any
   ): Promise<void> {
+    const timestamp = new Date().toISOString();
+
     if (type === 'image') {
-      const imageRecord: Omit<ImgsTable, 'imgadd'> = {
-        imgsha: hash,
-        imgnam: path.basename(archivePath),
-        imgnamo: originalName,
-        imgloc: archivePath,
-        imgloco: file.filePath,
-        locid: file.locid,
-        subid: file.subid || null,
-        auth_imp: file.auth_imp,
-        meta_exiftool: metadata?.rawExif || null,
-        meta_width: metadata?.width || null,
-        meta_height: metadata?.height || null,
-        meta_date_taken: metadata?.dateTaken || null,
-        meta_camera_make: metadata?.cameraMake || null,
-        meta_camera_model: metadata?.cameraModel || null,
-        meta_gps_lat: metadata?.gps?.lat || null,
-        meta_gps_lng: metadata?.gps?.lng || null,
-      };
-      await this.mediaRepo.createImage(imageRecord);
+      await trx
+        .insertInto('imgs')
+        .values({
+          imgsha: hash,
+          imgnam: path.basename(archivePath),
+          imgnamo: originalName,
+          imgloc: archivePath,
+          imgloco: file.filePath,
+          locid: file.locid,
+          subid: file.subid || null,
+          auth_imp: file.auth_imp,
+          imgadd: timestamp,
+          meta_exiftool: metadata?.rawExif || null,
+          meta_width: metadata?.width || null,
+          meta_height: metadata?.height || null,
+          meta_date_taken: metadata?.dateTaken || null,
+          meta_camera_make: metadata?.cameraMake || null,
+          meta_camera_model: metadata?.cameraModel || null,
+          meta_gps_lat: metadata?.gps?.lat || null,
+          meta_gps_lng: metadata?.gps?.lng || null,
+        })
+        .execute();
     } else if (type === 'video') {
-      const videoRecord: Omit<VidsTable, 'vidadd'> = {
-        vidsha: hash,
-        vidnam: path.basename(archivePath),
-        vidnamo: originalName,
-        vidloc: archivePath,
-        vidloco: file.filePath,
-        locid: file.locid,
-        subid: file.subid || null,
-        auth_imp: file.auth_imp,
-        meta_ffmpeg: metadata?.rawMetadata || null,
-        meta_exiftool: null,
-        meta_duration: metadata?.duration || null,
-        meta_width: metadata?.width || null,
-        meta_height: metadata?.height || null,
-        meta_codec: metadata?.codec || null,
-        meta_fps: metadata?.fps || null,
-        meta_date_taken: metadata?.dateTaken || null,
-      };
-      await this.mediaRepo.createVideo(videoRecord);
+      await trx
+        .insertInto('vids')
+        .values({
+          vidsha: hash,
+          vidnam: path.basename(archivePath),
+          vidnamo: originalName,
+          vidloc: archivePath,
+          vidloco: file.filePath,
+          locid: file.locid,
+          subid: file.subid || null,
+          auth_imp: file.auth_imp,
+          vidadd: timestamp,
+          meta_ffmpeg: metadata?.rawMetadata || null,
+          meta_exiftool: null,
+          meta_duration: metadata?.duration || null,
+          meta_width: metadata?.width || null,
+          meta_height: metadata?.height || null,
+          meta_codec: metadata?.codec || null,
+          meta_fps: metadata?.fps || null,
+          meta_date_taken: metadata?.dateTaken || null,
+        })
+        .execute();
     } else if (type === 'document') {
-      const docRecord: Omit<DocsTable, 'docadd'> = {
-        docsha: hash,
-        docnam: path.basename(archivePath),
-        docnamo: originalName,
-        docloc: archivePath,
-        docloco: file.filePath,
-        locid: file.locid,
-        subid: file.subid || null,
-        auth_imp: file.auth_imp,
-        meta_exiftool: null,
-        meta_page_count: null,
-        meta_author: null,
-        meta_title: null,
-      };
-      await this.mediaRepo.createDocument(docRecord);
+      await trx
+        .insertInto('docs')
+        .values({
+          docsha: hash,
+          docnam: path.basename(archivePath),
+          docnamo: originalName,
+          docloc: archivePath,
+          docloco: file.filePath,
+          locid: file.locid,
+          subid: file.subid || null,
+          auth_imp: file.auth_imp,
+          docadd: timestamp,
+          meta_exiftool: null,
+          meta_page_count: null,
+          meta_author: null,
+          meta_title: null,
+        })
+        .execute();
     }
   }
+
+  /**
+   * Create import record within transaction
+   */
+  private async createImportRecordInTransaction(
+    trx: any,
+    input: {
+      locid: string | null;
+      auth_imp: string | null;
+      img_count: number;
+      vid_count: number;
+      doc_count: number;
+      notes: string;
+    }
+  ): Promise<string> {
+    const importId = randomUUID();
+    const importDate = new Date().toISOString();
+
+    await trx
+      .insertInto('imports')
+      .values({
+        import_id: importId,
+        locid: input.locid,
+        import_date: importDate,
+        auth_imp: input.auth_imp,
+        img_count: input.img_count,
+        vid_count: input.vid_count,
+        doc_count: input.doc_count,
+        map_count: 0,
+        notes: input.notes,
+      })
+      .execute();
+
+    return importId;
+  }
 }
+
+// Import randomUUID for transaction helper
+import { randomUUID } from 'crypto';

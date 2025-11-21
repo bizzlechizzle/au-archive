@@ -44,6 +44,8 @@
   let currentUser = $state('default');
   let deleteOriginals = $state(false);
   let loading = $state(true);
+  let progressCurrent = $state(0);
+  let progressTotal = $state(0);
 
   onMount(async () => {
     try {
@@ -57,6 +59,18 @@
       recentImports = imports;
       currentUser = settings.current_user || 'default';
       deleteOriginals = settings.delete_on_import === 'true';
+
+      // Set up progress listener
+      const unsubscribe = window.electronAPI.media.onImportProgress((progress) => {
+        progressCurrent = progress.current;
+        progressTotal = progress.total;
+        importProgress = `Importing ${progress.current} of ${progress.total} files...`;
+      });
+
+      // Clean up listener on unmount
+      return () => {
+        unsubscribe();
+      };
     } catch (error) {
       console.error('Error loading imports page:', error);
     } finally {
@@ -134,10 +148,14 @@
       setTimeout(() => {
         importResult = null;
         importProgress = '';
+        progressCurrent = 0;
+        progressTotal = 0;
       }, 5000);
     } catch (error) {
       console.error('Error importing files:', error);
       importProgress = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      progressCurrent = 0;
+      progressTotal = 0;
     } finally {
       isImporting = false;
     }
@@ -183,10 +201,14 @@
       setTimeout(() => {
         importResult = null;
         importProgress = '';
+        progressCurrent = 0;
+        progressTotal = 0;
       }, 5000);
     } catch (error) {
       console.error('Error importing files:', error);
       importProgress = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      progressCurrent = 0;
+      progressTotal = 0;
     } finally {
       isImporting = false;
     }
@@ -271,6 +293,19 @@
       {#if importProgress}
         <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
           <p class="text-sm text-blue-800">{importProgress}</p>
+          {#if isImporting && progressTotal > 0}
+            <div class="mt-3">
+              <div class="w-full bg-gray-200 rounded-full h-2.5">
+                <div
+                  class="bg-accent h-2.5 rounded-full transition-all duration-300"
+                  style="width: {(progressCurrent / progressTotal) * 100}%"
+                ></div>
+              </div>
+              <p class="text-xs text-gray-600 mt-1 text-right">
+                {progressCurrent} / {progressTotal} files ({Math.round((progressCurrent / progressTotal) * 100)}%)
+              </p>
+            </div>
+          {/if}
         </div>
       {/if}
 
