@@ -50,6 +50,10 @@
 
   onMount(async () => {
     try {
+      if (!window.electronAPI?.locations) {
+        console.error('Electron API not available - preload script may have failed to load');
+        return;
+      }
       const [locs, imports, settings] = await Promise.all([
         window.electronAPI.locations.findAll(),
         window.electronAPI.imports.findRecent(10) as Promise<ImportRecord[]>,
@@ -101,6 +105,7 @@
   }
 
   async function handleBrowse() {
+    if (!window.electronAPI?.media) return;
     try {
       const filePaths = await window.electronAPI.media.selectFiles();
       if (!filePaths || filePaths.length === 0) {
@@ -120,6 +125,7 @@
       importProgress = 'Please select a location first';
       return;
     }
+    if (!window.electronAPI?.media) return;
 
     try {
       isImporting = true;
@@ -167,6 +173,7 @@
       importProgress = 'Please select a location first';
       return;
     }
+    if (!window.electronAPI?.media) return;
 
     try {
       isImporting = true;

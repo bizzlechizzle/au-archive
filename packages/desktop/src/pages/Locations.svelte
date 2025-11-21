@@ -33,6 +33,10 @@
   async function loadLocations() {
     try {
       loading = true;
+      if (!window.electronAPI?.locations) {
+        console.error('Electron API not available - preload script may have failed to load');
+        return;
+      }
       locations = await window.electronAPI.locations.findAll();
     } catch (error) {
       console.error('Error loading locations:', error);

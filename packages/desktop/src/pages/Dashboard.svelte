@@ -33,6 +33,10 @@
 
   onMount(async () => {
     try {
+      if (!window.electronAPI?.locations) {
+        console.error('Electron API not available - preload script may have failed to load');
+        return;
+      }
       const [locations, imports, projects, states, types, count] = await Promise.all([
         window.electronAPI.locations.findAll(),
         window.electronAPI.imports.findRecent(5) as Promise<ImportRecord[]>,
@@ -222,6 +226,7 @@
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       <button
         onclick={async () => {
+          if (!window.electronAPI?.locations) return;
           const loc = await window.electronAPI.locations.random();
           if (loc) router.navigate(`/location/${loc.locid}`);
         }}

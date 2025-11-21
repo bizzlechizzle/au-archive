@@ -31,6 +31,10 @@
   async function loadLocations() {
     try {
       loading = true;
+      if (!window.electronAPI?.locations) {
+        console.error('Electron API not available - preload script may have failed to load');
+        return;
+      }
       const allLocations = await window.electronAPI.locations.findAll();
       locations = allLocations.filter(l => l.gps);
     } catch (error) {

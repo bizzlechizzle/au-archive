@@ -19,6 +19,10 @@
   let allTypes = $state<string[]>([]);
 
   async function loadFilterOptions() {
+    if (!window.electronAPI?.locations) {
+      console.error('Electron API not available - preload script may have failed to load');
+      return;
+    }
     const locations = await window.electronAPI.locations.findAll();
     const states = new Set(locations.map(l => l.address?.state).filter(Boolean) as string[]);
     const types = new Set(locations.map(l => l.type).filter(Boolean) as string[]);
@@ -28,6 +32,7 @@
   }
 
   async function handleSearch() {
+    if (!window.electronAPI?.locations) return;
     try {
       searching = true;
 

@@ -13,6 +13,10 @@
   async function loadSettings() {
     try {
       loading = true;
+      if (!window.electronAPI?.settings) {
+        console.error('Electron API not available - preload script may have failed to load');
+        return;
+      }
       const settings = await window.electronAPI.settings.getAll();
 
       archivePath = settings.archive_folder || '';
@@ -26,6 +30,7 @@
   }
 
   async function selectArchiveFolder() {
+    if (!window.electronAPI?.dialog) return;
     try {
       const folder = await window.electronAPI.dialog.selectFolder();
       if (folder) {
@@ -37,6 +42,7 @@
   }
 
   async function saveSettings() {
+    if (!window.electronAPI?.settings) return;
     try {
       saving = true;
       saveMessage = '';
@@ -152,10 +158,5 @@
         {saving ? 'Saving...' : 'Save Settings'}
       </button>
     </div>
-  {:else}
-    <div class="text-center p-8">
-      <p class="text-gray-600">Loading settings...</p>
-    </div>
   {/if}
-      <!-- User Management Section -->
 </div>

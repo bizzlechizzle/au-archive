@@ -21,6 +21,11 @@ import Bookmarks from './pages/Bookmarks.svelte';
 
   async function checkFirstRun() {
     try {
+      if (!window.electronAPI?.settings) {
+        console.error('Electron API not available - preload script may have failed to load');
+        setupComplete = false;
+        return;
+      }
       const setupStatus = await window.electronAPI.settings.get('setup_complete');
       setupComplete = setupStatus === 'true';
 
