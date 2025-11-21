@@ -44,16 +44,21 @@ export const PaginationSchema = z.object({
 
 // Settings validation - whitelist of allowed setting keys
 export const SettingKeySchema = z.enum([
+  // UI preferences
   'theme',
   'defaultView',
   'sortBy',
   'sortOrder',
+  // Backup settings
   'enableBackups',
   'backupInterval',
   'maxBackups',
-  'archive_folder',
-  'default_user',
   'last_backup_date',
+  // Core app settings (used by Setup/Settings pages)
+  'archive_folder',
+  'current_user',
+  'delete_on_import',
+  'setup_complete',
 ]);
 
 export const SettingValueSchema = z.union([
