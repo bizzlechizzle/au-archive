@@ -17,11 +17,15 @@
     ]
   },
   "scripts": {
+    "postinstall": "pnpm --filter core build",
     "dev": "pnpm --filter desktop dev",
     "build": "pnpm --filter core build && pnpm --filter desktop build",
+    "build:core": "pnpm --filter core build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
-    "format": "prettier --write \"**/*.{ts,tsx,svelte,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,svelte,json,md}\"",
+    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist",
+    "reinstall": "pnpm clean && pnpm install"
   },
   "devDependencies": {
     "prettier": "^3.1.1",
