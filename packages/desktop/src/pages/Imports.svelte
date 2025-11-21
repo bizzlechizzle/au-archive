@@ -245,6 +245,13 @@
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      onLocationCreated={async (newLoc) => {
+        // Refresh locations list and select the new one
+        if (window.electronAPI?.locations) {
+          locations = await window.electronAPI.locations.findAll();
+          selectedLocation = newLoc.locid;
+        }
+      }}
     />
 
     {#if importResult}

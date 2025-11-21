@@ -16,6 +16,7 @@
     onDragOver: (event: DragEvent) => void;
     onDragLeave: () => void;
     onDrop: (event: DragEvent) => void;
+    onLocationCreated?: (location: Location) => void;
   }
 
   let {
@@ -33,7 +34,61 @@
     onDragOver,
     onDragLeave,
     onDrop,
+    onLocationCreated,
   }: Props = $props();
+
+  // New location form state
+  let showNewLocationForm = $state(false);
+  let newLocName = $state('');
+  let newLocState = $state('');
+  let newLocCity = $state('');
+  let creatingLocation = $state(false);
+  let createError = $state('');
+
+  async function handleCreateLocation() {
+    if (!newLocName.trim()) {
+      createError = 'Location name is required';
+      return;
+    }
+
+    try {
+      creatingLocation = true;
+      createError = '';
+
+      const newLocation = await window.electronAPI.locations.create({
+        locnam: newLocName.trim(),
+        address: {
+          state: newLocState.trim() || undefined,
+          city: newLocCity.trim() || undefined,
+        },
+      });
+
+      // Auto-select the new location
+      onLocationChange(newLocation.locid);
+
+      // Notify parent to refresh locations list
+      onLocationCreated?.(newLocation);
+
+      // Reset form
+      showNewLocationForm = false;
+      newLocName = '';
+      newLocState = '';
+      newLocCity = '';
+    } catch (error) {
+      console.error('Error creating location:', error);
+      createError = error instanceof Error ? error.message : 'Failed to create location';
+    } finally {
+      creatingLocation = false;
+    }
+  }
+
+  function cancelNewLocation() {
+    showNewLocationForm = false;
+    newLocName = '';
+    newLocState = '';
+    newLocCity = '';
+    createError = '';
+  }
 </script>
 
 <div class="max-w-3xl">
@@ -42,22 +97,100 @@
     <label class="block text-sm font-medium text-gray-700 mb-2">
       Select Location <span class="text-red-500">*</span>
     </label>
-    <select
-      value={selectedLocation}
-      onchange={(e) => onLocationChange((e.target as HTMLSelectElement).value)}
-      disabled={isImporting}
-      class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-    >
-      <option value="">Choose a location...</option>
-      {#each locations as location}
-        <option value={location.locid}>
-          {location.locnam} {location.address?.state ? `(${location.address.state})` : ''}
-        </option>
-      {/each}
-    </select>
-    {#if locations.length === 0}
+    <div class="flex gap-2">
+      <select
+        value={selectedLocation}
+        onchange={(e) => onLocationChange((e.target as HTMLSelectElement).value)}
+        disabled={isImporting || showNewLocationForm}
+        class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+      >
+        <option value="">Choose a location...</option>
+        {#each locations as location}
+          <option value={location.locid}>
+            {location.locnam} {location.address?.state ? `(${location.address.state})` : ''}
+          </option>
+        {/each}
+      </select>
+      <button
+        type="button"
+        onclick={() => (showNewLocationForm = !showNewLocationForm)}
+        disabled={isImporting}
+        class="px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition disabled:opacity-50 text-sm whitespace-nowrap"
+        title="Add new location"
+      >
+        {showNewLocationForm ? 'Cancel' : '+ New'}
+      </button>
+    </div>
+
+    {#if showNewLocationForm}
+      <div class="mt-3 p-4 bg-gray-50 border border-gray-200 rounded space-y-3">
+        <h4 class="text-sm font-medium text-gray-800">Create New Location</h4>
+
+        {#if createError}
+          <p class="text-sm text-red-600">{createError}</p>
+        {/if}
+
+        <div>
+          <label for="new-loc-name" class="block text-sm text-gray-700 mb-1">
+            Location Name <span class="text-red-500">*</span>
+          </label>
+          <input
+            id="new-loc-name"
+            type="text"
+            bind:value={newLocName}
+            placeholder="e.g., Smith Farm, Downtown Park"
+            disabled={creatingLocation}
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+          />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="new-loc-city" class="block text-sm text-gray-700 mb-1">City</label>
+            <input
+              id="new-loc-city"
+              type="text"
+              bind:value={newLocCity}
+              placeholder="City (optional)"
+              disabled={creatingLocation}
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label for="new-loc-state" class="block text-sm text-gray-700 mb-1">State</label>
+            <input
+              id="new-loc-state"
+              type="text"
+              bind:value={newLocState}
+              placeholder="e.g., TX, CA"
+              disabled={creatingLocation}
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+            />
+          </div>
+        </div>
+
+        <div class="flex gap-2 pt-2">
+          <button
+            type="button"
+            onclick={handleCreateLocation}
+            disabled={creatingLocation || !newLocName.trim()}
+            class="flex-1 px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+          >
+            {creatingLocation ? 'Creating...' : 'Create & Select'}
+          </button>
+          <button
+            type="button"
+            onclick={cancelNewLocation}
+            disabled={creatingLocation}
+            class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    {:else if locations.length === 0}
       <p class="text-xs text-gray-500 mt-2">
-        No locations found. Create locations from the Atlas page first.
+        No locations found. Click "+ New" to create one.
       </p>
     {/if}
 
