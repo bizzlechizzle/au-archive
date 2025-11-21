@@ -13,13 +13,27 @@ function createRouter() {
     window.location.hash = path;
   }
 
+  function parseRoute(hash: string): Route {
+    const path = hash || '/dashboard';
+
+    const locationMatch = path.match(/^\/location\/([^/]+)$/);
+    if (locationMatch) {
+      return {
+        path: '/location/:id',
+        params: { id: locationMatch[1] }
+      };
+    }
+
+    return { path };
+  }
+
   function init() {
-    const hash = window.location.hash.slice(1) || '/dashboard';
-    set({ path: hash });
+    const hash = window.location.hash.slice(1);
+    set(parseRoute(hash));
 
     window.addEventListener('hashchange', () => {
-      const newHash = window.location.hash.slice(1) || '/dashboard';
-      set({ path: newHash });
+      const newHash = window.location.hash.slice(1);
+      set(parseRoute(newHash));
     });
   }
 

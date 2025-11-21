@@ -7,6 +7,7 @@
   import Atlas from './pages/Atlas.svelte';
   import Imports from './pages/Imports.svelte';
   import Settings from './pages/Settings.svelte';
+  import LocationDetail from './pages/LocationDetail.svelte';
 
   let currentRoute = $state({ path: '/dashboard', params: {} });
 
@@ -20,23 +21,6 @@
     });
     return () => unsubscribe();
   });
-
-  function getComponent() {
-    switch (currentRoute.path) {
-      case '/dashboard':
-        return Dashboard;
-      case '/locations':
-        return Locations;
-      case '/atlas':
-        return Atlas;
-      case '/imports':
-        return Imports;
-      case '/settings':
-        return Settings;
-      default:
-        return Dashboard;
-    }
-  }
 </script>
 
 <Layout>
@@ -51,6 +35,8 @@
       <Imports />
     {:else if currentRoute.path === '/settings'}
       <Settings />
+    {:else if currentRoute.path === '/location/:id'}
+      <LocationDetail locationId={currentRoute.params?.id || ''} />
     {:else}
       <Dashboard />
     {/if}
