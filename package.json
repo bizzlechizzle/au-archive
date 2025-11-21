@@ -7,6 +7,15 @@
     "type": "git",
     "url": "https://github.com/bizzlechizzle/au-archive.git"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "better-sqlite3",
+      "esbuild",
+      "sharp",
+      "7zip-bin"
+    ]
+  },
   "scripts": {
     "dev": "pnpm --filter desktop dev",
     "build": "pnpm --filter core build && pnpm --filter desktop build",
