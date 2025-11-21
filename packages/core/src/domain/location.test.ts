@@ -42,6 +42,9 @@ describe('LocationEntity', () => {
           source: 'user_map_click' as const,
           verifiedOnMap: true
         },
+        historic: false,
+        sublocs: [],
+        regions: [],
         locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);
@@ -60,6 +63,9 @@ describe('LocationEntity', () => {
           verifiedOnMap: false,
           accuracy: 5
         },
+        historic: false,
+        sublocs: [],
+        regions: [],
         locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);
@@ -77,6 +83,9 @@ describe('LocationEntity', () => {
           source: 'geocoded_address' as const,
           verifiedOnMap: false
         },
+        historic: false,
+        sublocs: [],
+        regions: [],
         locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);
@@ -88,6 +97,9 @@ describe('LocationEntity', () => {
         locid: '550e8400-e29b-41d4-a716-446655440000',
         loc12: '550e8400e29b',
         locnam: 'Test Location',
+        historic: false,
+        sublocs: [],
+        regions: [],
         locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);
@@ -107,6 +119,9 @@ describe('LocationEntity', () => {
           source: 'user_map_click' as const,
           verifiedOnMap: true
         },
+        historic: false,
+        sublocs: [],
+        regions: [],
         locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);
@@ -124,6 +139,9 @@ describe('LocationEntity', () => {
           source: 'user_map_click' as const,
           verifiedOnMap: true
         },
+        historic: false,
+        sublocs: [],
+        regions: [],
         locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);
@@ -135,6 +153,9 @@ describe('LocationEntity', () => {
         locid: '550e8400-e29b-41d4-a716-446655440000',
         loc12: '550e8400e29b',
         locnam: 'Test Location',
+        historic: false,
+        sublocs: [],
+        regions: [],
         locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);

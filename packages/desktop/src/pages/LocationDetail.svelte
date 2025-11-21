@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
   import Map from '../components/Map.svelte';
-  import type { Location } from '@au-archive/core';
+  import LocationEditForm from '../components/LocationEditForm.svelte';
+  import type { Location, LocationInput } from '@au-archive/core';
 
   interface Props {
     locationId: string;
@@ -13,6 +14,7 @@
   let location = $state<Location | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let isEditing = $state(false);
 
   async function loadLocation() {
     try {
@@ -28,6 +30,18 @@
     } finally {
       loading = false;
     }
+  }
+
+  async function handleSave(updates: Partial<LocationInput>) {
+    if (!location) return;
+
+    await window.electronAPI.locations.update(location.locid, updates);
+    await loadLocation();
+    isEditing = false;
+  }
+
+  function handleCancelEdit() {
+    isEditing = false;
   }
 
   onMount(() => {
@@ -54,18 +68,34 @@
     </div>
   {:else}
     <div class="max-w-6xl mx-auto p-8">
-      <div class="mb-6">
+      <div class="mb-6 flex justify-between items-start">
+        <div>
+          <button
+            onclick={() => router.navigate('/locations')}
+            class="text-sm text-accent hover:underline mb-2"
+          >
+            &larr; Back to Locations
+          </button>
+          <h1 class="text-3xl font-bold text-foreground">{location.locnam}</h1>
+          {#if location.akanam}
+            <p class="text-gray-500">Also Known As: {location.akanam}</p>
+          {/if}
+        </div>
         <button
-          onclick={() => router.navigate('/locations')}
-          class="text-sm text-accent hover:underline mb-2"
+          onclick={() => isEditing = !isEditing}
+          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
         >
-          &larr; Back to Locations
+          {isEditing ? 'Cancel Edit' : 'Edit'}
         </button>
-        <h1 class="text-3xl font-bold text-foreground">{location.locnam}</h1>
-        {#if location.akanam}
-          <p class="text-gray-500">Also Known As: {location.akanam}</p>
-        {/if}
       </div>
+
+      {#if isEditing}
+        <LocationEditForm
+          location={location}
+          onSave={handleSave}
+          onCancel={handleCancelEdit}
+        />
+      {:else}
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="bg-white rounded-lg shadow p-6">
@@ -161,6 +191,30 @@
       </div>
 
       <div class="mt-6 bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-semibold mb-4 text-foreground">Media</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div>
+            <h3 class="text-sm font-medium text-gray-500 mb-2">Images</h3>
+            <div class="text-center text-gray-400 py-4 border-2 border-dashed border-gray-200 rounded">
+              <p class="text-sm">No images</p>
+            </div>
+          </div>
+          <div>
+            <h3 class="text-sm font-medium text-gray-500 mb-2">Videos</h3>
+            <div class="text-center text-gray-400 py-4 border-2 border-dashed border-gray-200 rounded">
+              <p class="text-sm">No videos</p>
+            </div>
+          </div>
+          <div>
+            <h3 class="text-sm font-medium text-gray-500 mb-2">Documents</h3>
+            <div class="text-center text-gray-400 py-4 border-2 border-dashed border-gray-200 rounded">
+              <p class="text-sm">No documents</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 bg-white rounded-lg shadow p-6">
         <h2 class="text-xl font-semibold mb-4 text-foreground">Metadata</h2>
         <div class="grid grid-cols-2 gap-4 text-sm">
           <div>
@@ -187,6 +241,7 @@
           {/if}
         </div>
       </div>
+      {/if}
     </div>
   {/if}
 </div>

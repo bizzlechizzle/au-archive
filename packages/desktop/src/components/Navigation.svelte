@@ -15,6 +15,7 @@
     { path: '/locations', label: 'Locations', icon: 'list' },
     { path: '/atlas', label: 'Atlas', icon: 'map' },
     { path: '/imports', label: 'Imports', icon: 'upload' },
+    { path: '/search', label: 'Search', icon: 'search' },
     { path: '/settings', label: 'Settings', icon: 'cog' }
   ];
 

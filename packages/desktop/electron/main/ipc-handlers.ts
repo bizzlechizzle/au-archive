@@ -62,6 +62,58 @@ export function registerIpcHandlers() {
     }
   });
 
+  // Special filters
+  ipcMain.handle('location:random', async () => {
+    try {
+      const count = await db.selectFrom('locs').select((eb) => eb.fn.count('locid').as('count')).executeTakeFirst();
+      const total = Number(count?.count || 0);
+      if (total === 0) return null;
+
+      const randomOffset = Math.floor(Math.random() * total);
+      const result = await db
+        .selectFrom('locs')
+        .selectAll()
+        .limit(1)
+        .offset(randomOffset)
+        .executeTakeFirst();
+
+      if (!result) return null;
+      return await locationRepo.findById(result.locid);
+    } catch (error) {
+      console.error('Error getting random location:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('location:undocumented', async () => {
+    try {
+      return await locationRepo.findAll({ documented: false });
+    } catch (error) {
+      console.error('Error getting undocumented locations:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('location:historical', async () => {
+    try {
+      const results = await db
+        .selectFrom('locs')
+        .selectAll()
+        .where('historic', '=', 1)
+        .execute();
+
+      const locations = [];
+      for (const row of results) {
+        const loc = await locationRepo.findById(row.locid);
+        if (loc) locations.push(loc);
+      }
+      return locations;
+    } catch (error) {
+      console.error('Error getting historical locations:', error);
+      throw error;
+    }
+  });
+
   // Stats queries
   ipcMain.handle('stats:topStates', async (_event, limit: number = 5) => {
     try {
@@ -93,6 +145,50 @@ export function registerIpcHandlers() {
       return result;
     } catch (error) {
       console.error('Error getting top types:', error);
+      throw error;
+    }
+  });
+
+  // Settings queries
+  ipcMain.handle('settings:get', async (_event, key: string) => {
+    try {
+      const result = await db
+        .selectFrom('settings')
+        .select('value')
+        .where('key', '=', key)
+        .executeTakeFirst();
+      return result?.value ?? null;
+    } catch (error) {
+      console.error('Error getting setting:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('settings:getAll', async () => {
+    try {
+      const results = await db
+        .selectFrom('settings')
+        .selectAll()
+        .execute();
+      return results.reduce((acc, row) => {
+        acc[row.key] = row.value;
+        return acc;
+      }, {} as Record<string, string>);
+    } catch (error) {
+      console.error('Error getting all settings:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('settings:set', async (_event, key: string, value: string) => {
+    try {
+      await db
+        .insertInto('settings')
+        .values({ key, value })
+        .onConflict((oc) => oc.column('key').doUpdateSet({ value }))
+        .execute();
+    } catch (error) {
+      console.error('Error setting value:', error);
       throw error;
     }
   });

@@ -112,6 +112,50 @@
   {/if}
 
   <div class="mt-8">
+    <h2 class="text-xl font-semibold mb-4 text-foreground">Special Filters</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <button
+        onclick={async () => {
+          const loc = await window.electronAPI.locations.random();
+          if (loc) router.navigate(`/location/${loc.locid}`);
+        }}
+        class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
+      >
+        <div class="text-sm text-gray-500">Random</div>
+        <div class="text-lg font-semibold text-foreground">Surprise Me</div>
+      </button>
+
+      <button
+        onclick={async () => {
+          router.navigate('/locations');
+        }}
+        class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
+      >
+        <div class="text-sm text-gray-500">Undocumented</div>
+        <div class="text-lg font-semibold text-foreground">Need Visits</div>
+      </button>
+
+      <button
+        onclick={async () => {
+          router.navigate('/locations');
+        }}
+        class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
+      >
+        <div class="text-sm text-gray-500">Historical</div>
+        <div class="text-lg font-semibold text-foreground">Landmarks</div>
+      </button>
+
+      <button
+        onclick={() => router.navigate('/locations')}
+        class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
+      >
+        <div class="text-sm text-gray-500">Favorites</div>
+        <div class="text-lg font-semibold text-foreground">Starred</div>
+      </button>
+    </div>
+  </div>
+
+  <div class="mt-8">
     <h2 class="text-xl font-semibold mb-4 text-foreground">Quick Actions</h2>
     <div class="flex gap-4">
       <button

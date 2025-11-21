@@ -22,6 +22,12 @@ const api = {
       ipcRenderer.invoke('location:delete', id),
     count: (filters?: LocationFilters): Promise<number> =>
       ipcRenderer.invoke('location:count', filters),
+    random: (): Promise<Location | null> =>
+      ipcRenderer.invoke('location:random'),
+    undocumented: (): Promise<Location[]> =>
+      ipcRenderer.invoke('location:undocumented'),
+    historical: (): Promise<Location[]> =>
+      ipcRenderer.invoke('location:historical'),
   },
 
   stats: {
@@ -29,6 +35,15 @@ const api = {
       ipcRenderer.invoke('stats:topStates', limit),
     topTypes: (limit?: number): Promise<Array<{ type: string; count: number }>> =>
       ipcRenderer.invoke('stats:topTypes', limit),
+  },
+
+  settings: {
+    get: (key: string): Promise<string | null> =>
+      ipcRenderer.invoke('settings:get', key),
+    getAll: (): Promise<Record<string, string>> =>
+      ipcRenderer.invoke('settings:getAll'),
+    set: (key: string, value: string): Promise<void> =>
+      ipcRenderer.invoke('settings:set', key, value),
   },
 };
 
