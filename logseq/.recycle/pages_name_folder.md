@@ -1,0 +1,11 @@
+- objective
+	- creates folders
+-
+- script
+	- name_folders.py
+-
+- json
+	- #folder_me
+-
+- steps
+	-

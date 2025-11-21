@@ -1,0 +1,3 @@
+- objective
+	- creates unique sha256.py numbers for files
+	- creates unique serial numbers for files
