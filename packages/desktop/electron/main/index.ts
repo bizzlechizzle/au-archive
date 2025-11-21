@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, session } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDatabase, closeDatabase } from './database';
@@ -93,6 +93,58 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // SECURITY: Set Content Security Policy for production
+  if (!isDev) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self'; " +
+            "script-src 'self'; " +
+            "style-src 'self' 'unsafe-inline'; " +
+            "img-src 'self' data: blob:; " +
+            "font-src 'self'; " +
+            "connect-src 'self'; " +
+            "frame-ancestors 'none';"
+          ],
+        },
+      });
+    });
+  }
+
+  // SECURITY: Handle permission requests - deny all by default except essential ones
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowedPermissions = ['clipboard-read', 'clipboard-sanitized-write'];
+    const isAllowed = allowedPermissions.includes(permission);
+
+    if (!isAllowed) {
+      console.log(`Permission denied: ${permission}`);
+    }
+
+    callback(isAllowed);
+  });
+
+  // SECURITY: Block navigation to external URLs from main window
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const validOrigins = isDev
+      ? ['http://localhost:5173', 'file://']
+      : ['file://'];
+
+    const isValid = validOrigins.some(origin => url.startsWith(origin));
+
+    if (!isValid) {
+      console.warn('Blocked navigation to:', url);
+      event.preventDefault();
+    }
+  });
+
+  // SECURITY: Block new window creation from main window
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    console.warn('Blocked new window from main:', url);
+    return { action: 'deny' };
   });
 }
 

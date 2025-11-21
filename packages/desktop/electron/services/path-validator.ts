@@ -15,8 +15,9 @@ export class PathValidator {
       const resolvedPath = path.resolve(filePath);
       const resolvedBase = path.resolve(allowedBaseDir);
 
-      // Check if resolved path starts with allowed base
-      return resolvedPath.startsWith(resolvedBase);
+      // SECURITY: Must include path separator to prevent /archive matching /archiveXYZ
+      // The path must either BE the base dir or START WITH base dir + separator
+      return resolvedPath === resolvedBase || resolvedPath.startsWith(resolvedBase + path.sep);
     } catch (error) {
       console.error('Path validation error:', error);
       return false;

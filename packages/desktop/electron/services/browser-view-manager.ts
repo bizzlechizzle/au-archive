@@ -1,4 +1,4 @@
-import { BrowserView, BrowserWindow, ipcMain } from 'electron';
+import { BrowserView, BrowserWindow, ipcMain, shell } from 'electron';
 
 /**
  * BrowserViewManager - Manages an embedded browser view for the application.
@@ -169,9 +169,14 @@ export class BrowserViewManager {
     });
 
     // Handle new window requests - open in default browser instead
+    // SECURITY: Validate URL before opening externally
     this.browserView.webContents.setWindowOpenHandler(({ url }) => {
-      const { shell } = require('electron');
-      shell.openExternal(url);
+      const validatedUrl = this.validateUrl(url);
+      if (validatedUrl) {
+        shell.openExternal(validatedUrl);
+      } else {
+        console.warn('Blocked opening invalid URL:', url);
+      }
       return { action: 'deny' };
     });
   }

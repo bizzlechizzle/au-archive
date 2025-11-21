@@ -204,6 +204,15 @@ export class SQLiteLocationRepository implements LocationRepository {
       );
     }
 
+    // CONSISTENCY: Match findAll filters
+    if (filters?.historic === true) {
+      query = query.where('historic', '=', 1);
+    }
+
+    if (filters?.favorite === true) {
+      query = query.where('favorite', '=', 1);
+    }
+
     const result = await query.executeTakeFirst();
     return Number(result?.count || 0);
   }
