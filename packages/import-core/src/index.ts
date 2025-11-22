@@ -139,3 +139,14 @@ export {
   PhaseDump,
   type PhaseDumpDependencies,
 } from './pipeline/index.js';
+
+// ─────────────────────────────────────────────────────────────
+// Services
+// ─────────────────────────────────────────────────────────────
+
+export {
+  FixityService,
+  type FixityServiceDependencies,
+  type VerifyOptions,
+  type VerifyResult,
+} from './services/index.js';
