@@ -362,22 +362,46 @@
       auth_imp: currentUser,
       deleteOriginals: false,
     }).then((result) => {
-      // Import completed successfully
-      importStore.completeJob({
-        imported: result.imported,
-        duplicates: result.duplicates,
-        errors: result.errors,
-      });
+      // FIX 1.3 & 1.5: Check for total failure and show error details
+      if (result.imported === 0 && result.errors > 0) {
+        // All files failed - this is an error condition, not success
+        const failedFiles = result.results
+          ?.filter((r: any) => !r.success && r.error)
+          .map((r: any) => r.error)
+          .slice(0, 3);  // Show first 3 errors
+        const errorMsg = failedFiles?.length
+          ? `Import failed: ${failedFiles.join('; ')}${result.errors > 3 ? ` (+${result.errors - 3} more)` : ''}`
+          : `Import failed: ${result.errors} files could not be imported`;
+
+        importStore.completeJob(undefined, errorMsg);
+        importProgress = errorMsg;
+      } else {
+        // Import completed with at least some successes
+        importStore.completeJob({
+          imported: result.imported,
+          duplicates: result.duplicates,
+          errors: result.errors,
+        });
+
+        // FIX 1.5: Show visible message with error count if any
+        if (result.errors > 0) {
+          importProgress = `Imported ${result.imported} files (${result.errors} failed)`;
+        } else {
+          importProgress = `Imported ${result.imported} files successfully`;
+        }
+      }
       // Reload location data to show new files
       loadLocation();
     }).catch((error) => {
-      // Import failed
+      // Import failed completely
       console.error('Error importing files:', error);
-      importStore.completeJob(undefined, error instanceof Error ? error.message : 'Unknown error');
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      importStore.completeJob(undefined, errorMsg);
+      importProgress = `Import error: ${errorMsg}`;
     });
 
-    // Clear the local progress message - global progress indicator will show status
-    setTimeout(() => { importProgress = ''; }, 3000);
+    // Clear the local progress message after longer delay so user can read it
+    setTimeout(() => { importProgress = ''; }, 8000);
   }
 
   onMount(async () => {

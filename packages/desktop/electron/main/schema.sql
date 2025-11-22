@@ -133,7 +133,10 @@ CREATE TABLE IF NOT EXISTS vids (
   meta_height INTEGER,
   meta_codec TEXT,
   meta_fps REAL,
-  meta_date_taken TEXT
+  meta_date_taken TEXT,
+  -- FIX 3.2: GPS from video metadata (dashcams, phones)
+  meta_gps_lat REAL,
+  meta_gps_lng REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_vids_locid ON vids(locid);

@@ -193,11 +193,6 @@ export class FileImportService {
 
         console.log('[FileImport] Processing file', i + 1, 'of', files.length, ':', file.originalName);
 
-        // Report progress
-        if (onProgress) {
-          onProgress(i + 1, files.length);
-        }
-
         try {
           const result = await this.importSingleFile(file, deleteOriginals, trx);
           results.push(result);
@@ -214,16 +209,30 @@ export class FileImportService {
             errors++;
             console.log('[FileImport] File', i + 1, 'failed');
           }
+
+          // FIX 1.2: Report progress AFTER work completes (not before)
+          if (onProgress) {
+            onProgress(i + 1, files.length);
+          }
         } catch (error) {
           console.error('[FileImport] Error importing file', file.originalName, ':', error);
+          // FIX 1.1: Use 'document' instead of 'unknown' (valid type union value)
           results.push({
             success: false,
             hash: '',
-            type: 'unknown',
+            type: 'document',
             duplicate: false,
             error: error instanceof Error ? error.message : 'Unknown error',
           });
           errors++;
+
+          // FIX 1.2: Report progress on error too (so UI doesn't stall)
+          if (onProgress) {
+            onProgress(i + 1, files.length);
+          }
+
+          // Yield to event loop between files to prevent UI freeze
+          await new Promise(resolve => setImmediate(resolve));
         }
       }
       console.log('[FileImport] Batch processing complete:', imported, 'imported,', duplicates, 'duplicates,', errors, 'errors');
@@ -318,20 +327,39 @@ export class FileImportService {
     console.log('[FileImport] Step 5: Extracting metadata for', file.originalName, 'type:', type);
 
     try {
-      if (type === 'image') {
-        console.log('[FileImport] Calling ExifTool for image...');
+      // FIX 3.2 / C4: Extract GPS from BOTH images and videos using ExifTool
+      // ExifTool works on videos too (dashcams, phones embed GPS in video metadata)
+      if (type === 'image' || type === 'video') {
+        console.log('[FileImport] Calling ExifTool for', type, '...');
         const exifStart = Date.now();
-        metadata = await this.exifToolService.extractMetadata(file.filePath);
+        const exifData = await this.exifToolService.extractMetadata(file.filePath);
         console.log('[FileImport] ExifTool completed in', Date.now() - exifStart, 'ms');
 
-        // CRITICAL: Check GPS mismatch (use pre-fetched location, don't fetch again)
-        if (metadata.gps && GPSValidator.isValidGPS(metadata.gps.lat, metadata.gps.lng)) {
+        if (type === 'image') {
+          metadata = exifData;
+        } else {
+          // For videos, also get FFmpeg data for duration, codec, etc.
+          console.log('[FileImport] Calling FFmpeg for video details...');
+          const ffmpegData = await this.ffmpegService.extractMetadata(file.filePath);
+          console.log('[FileImport] FFmpeg completed');
+
+          // Merge: FFmpeg data + GPS from ExifTool
+          metadata = {
+            ...ffmpegData,
+            gps: exifData?.gps || null,
+            rawExif: exifData?.rawExif || null,
+          };
+        }
+
+        // Check GPS mismatch for BOTH images and videos
+        const gps = metadata?.gps || exifData?.gps;
+        if (gps && GPSValidator.isValidGPS(gps.lat, gps.lng)) {
           console.log('[FileImport] Step 5b: Checking GPS mismatch...');
           // Use pre-fetched location (from Step 0) - don't call locationRepo again!
           if (location.gps?.lat && location.gps?.lng) {
             const mismatch = GPSValidator.checkGPSMismatch(
               { lat: location.gps.lat, lng: location.gps.lng },
-              { lat: metadata.gps.lat, lng: metadata.gps.lng },
+              { lat: gps.lat, lng: gps.lng },
               10000 // 10km threshold
             );
 
@@ -341,16 +369,12 @@ export class FileImportService {
                 distance: mismatch.distance,
                 severity: mismatch.severity as 'minor' | 'major',
                 locationGPS: { lat: location.gps.lat, lng: location.gps.lng },
-                mediaGPS: { lat: metadata.gps.lat, lng: metadata.gps.lng },
+                mediaGPS: { lat: gps.lat, lng: gps.lng },
               };
             }
           }
           console.log('[FileImport] GPS check complete');
         }
-      } else if (type === 'video') {
-        console.log('[FileImport] Calling FFmpeg for video...');
-        metadata = await this.ffmpegService.extractMetadata(file.filePath);
-        console.log('[FileImport] FFmpeg completed');
       }
     } catch (error) {
       console.warn('[FileImport] Failed to extract metadata:', error);
@@ -600,13 +624,17 @@ export class FileImportService {
           auth_imp: file.auth_imp,
           vidadd: timestamp,
           meta_ffmpeg: metadata?.rawMetadata || null,
-          meta_exiftool: null,
+          // FIX 3.2: Store ExifTool data and GPS from videos
+          meta_exiftool: metadata?.rawExif || null,
           meta_duration: metadata?.duration || null,
           meta_width: metadata?.width || null,
           meta_height: metadata?.height || null,
           meta_codec: metadata?.codec || null,
           meta_fps: metadata?.fps || null,
           meta_date_taken: metadata?.dateTaken || null,
+          // FIX 3.2: Store GPS extracted from video metadata
+          meta_gps_lat: metadata?.gps?.lat || null,
+          meta_gps_lng: metadata?.gps?.lng || null,
         })
         .execute();
     } else if (type === 'map') {

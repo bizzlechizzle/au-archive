@@ -611,12 +611,19 @@ export function registerIpcHandlers() {
       }));
 
       // Import files with progress callback
+      // FIX 1.4: Validate IPC sender before sending to prevent crash if window closed
       const result = await fileImportService.importFiles(
         filesForImport,
         validatedInput.deleteOriginals,
         (current, total) => {
-          // Send progress update to renderer
-          _event.sender.send('media:import:progress', { current, total });
+          try {
+            // Check if sender is still valid (window not closed during import)
+            if (_event.sender && !_event.sender.isDestroyed()) {
+              _event.sender.send('media:import:progress', { current, total });
+            }
+          } catch (e) {
+            console.warn('[media:import] Failed to send progress (window may have closed):', e);
+          }
         }
       );
 
