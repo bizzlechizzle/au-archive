@@ -431,16 +431,574 @@ if (type === 'map') {
 
 ## PHASE 4 DETAILED FIXES
 
-### Issue 4.1-4.6: Premium UX Features
+### Issue 4.1: Progress with Current Filename
 
-These are enhancement features to implement after core bugs are fixed:
+**Problem**: Progress shows "5/15" but not WHICH file is processing
 
-1. **Progress with filename**: Send filename in progress event
-2. **Error details**: Store and display per-file errors
-3. **Cancel button**: Add abort controller
-4. **Retry failed**: Store failed files, offer retry
-5. **Dashboard banner**: Show import status globally
-6. **Toast notifications**: Add toast component
+**Location**: Multiple files need changes
+
+**Backend Change** (`file-import-service.ts`):
+```typescript
+// Change progress callback signature
+type ProgressCallback = (current: number, total: number, filename: string) => void;
+
+// In importFiles loop:
+if (onProgress) {
+  onProgress(i + 1, files.length, file.originalName);
+}
+```
+
+**IPC Handler Change** (`ipc-handlers.ts`):
+```typescript
+(current, total, filename) => {
+  try {
+    if (_event.sender && !_event.sender.isDestroyed()) {
+      _event.sender.send('media:import:progress', { current, total, filename });
+    }
+  } catch (e) {
+    console.warn('[media:import] Failed to send progress:', e);
+  }
+}
+```
+
+**Frontend Change** (`import-store.ts`):
+```typescript
+interface ImportProgress {
+  current: number;
+  total: number;
+  filename: string;  // NEW
+}
+```
+
+**UI Change** (`ImportProgress.svelte` or equivalent):
+```svelte
+<p>Importing {$progress.current}/{$progress.total}</p>
+<p class="text-sm text-gray-500">{$progress.filename}</p>
+```
+
+---
+
+### Issue 4.2: Per-File Error Details
+
+**Problem**: User sees "15 errors" but not WHY each file failed
+
+**Backend Change** (`file-import-service.ts`):
+```typescript
+// ImportResult already has error field
+interface ImportResult {
+  success: boolean;
+  hash: string;
+  type: 'image' | 'video' | 'map' | 'document';
+  duplicate: boolean;
+  error?: string;
+  filename?: string;  // ADD: original filename for display
+}
+```
+
+**IPC Response Change**:
+```typescript
+// Return full results array, not just counts
+return {
+  total: files.length,
+  imported,
+  duplicates,
+  errors,
+  results,  // Already returned - includes per-file errors
+  importId,
+};
+```
+
+**Frontend Change** (`LocationDetail.svelte`):
+```typescript
+.then((result) => {
+  // Store failed files for display
+  if (result.errors > 0) {
+    const failedFiles = result.results.filter(r => !r.success && !r.duplicate);
+    // Store in component state or store
+    importErrors = failedFiles.map(f => ({
+      filename: f.filename || 'Unknown',
+      error: f.error || 'Unknown error',
+    }));
+  }
+})
+```
+
+**UI Addition** (error list component):
+```svelte
+{#if importErrors.length > 0}
+  <div class="mt-4 p-4 bg-red-50 rounded">
+    <h4 class="font-medium text-red-800">Failed Files:</h4>
+    <ul class="mt-2 text-sm text-red-700">
+      {#each importErrors as err}
+        <li>{err.filename}: {err.error}</li>
+      {/each}
+    </ul>
+  </div>
+{/if}
+```
+
+---
+
+### Issue 4.3: Cancel Import Button
+
+**Problem**: Once import starts, user can't stop it
+
+**Backend Change** (`file-import-service.ts`):
+```typescript
+// Add abort signal support
+async importFiles(
+  files: ImportFileInput[],
+  deleteOriginals: boolean,
+  onProgress?: ProgressCallback,
+  abortSignal?: AbortSignal  // NEW
+): Promise<ImportBatchResult> {
+  // ...
+  for (let i = 0; i < files.length; i++) {
+    // Check for abort
+    if (abortSignal?.aborted) {
+      console.log('[FileImport] Import cancelled by user');
+      break;
+    }
+    // ... existing logic
+  }
+}
+```
+
+**IPC Handler Change** (`ipc-handlers.ts`):
+```typescript
+// Store active abort controllers
+const activeImports = new Map<string, AbortController>();
+
+ipcMain.handle('media:import', async (_event, input) => {
+  const importId = crypto.randomUUID();
+  const abortController = new AbortController();
+  activeImports.set(importId, abortController);
+
+  try {
+    const result = await fileImportService.importFiles(
+      filesForImport,
+      validatedInput.deleteOriginals,
+      onProgress,
+      abortController.signal
+    );
+    return { ...result, importId };
+  } finally {
+    activeImports.delete(importId);
+  }
+});
+
+ipcMain.handle('media:import:cancel', async (_event, importId: string) => {
+  const controller = activeImports.get(importId);
+  if (controller) {
+    controller.abort();
+    return { success: true };
+  }
+  return { success: false, error: 'Import not found' };
+});
+```
+
+**Preload Addition** (`preload.cjs`):
+```javascript
+media: {
+  // ... existing
+  cancelImport: (importId) => ipcRenderer.invoke('media:import:cancel', importId),
+}
+```
+
+**Frontend Change** (`LocationDetail.svelte`):
+```svelte
+<script>
+  let currentImportId: string | null = null;
+
+  async function cancelImport() {
+    if (currentImportId) {
+      await window.electronAPI.media.cancelImport(currentImportId);
+      importProgress = 'Import cancelled';
+      currentImportId = null;
+    }
+  }
+</script>
+
+{#if $isImporting}
+  <button onclick={cancelImport} class="text-red-600">
+    Cancel Import
+  </button>
+{/if}
+```
+
+---
+
+### Issue 4.4: Retry Failed Files
+
+**Problem**: If some files fail, user must start over with ALL files
+
+**Frontend Change** (`LocationDetail.svelte`):
+```typescript
+let failedFiles: { filePath: string; originalName: string; error: string }[] = [];
+
+// After import completes
+.then((result) => {
+  if (result.errors > 0) {
+    // Store failed files for retry
+    failedFiles = result.results
+      .filter(r => !r.success && !r.duplicate)
+      .map((r, i) => ({
+        filePath: filesForImport[i]?.filePath || '',
+        originalName: filesForImport[i]?.originalName || '',
+        error: r.error || 'Unknown',
+      }));
+  }
+})
+
+async function retryFailed() {
+  if (failedFiles.length === 0) return;
+
+  const filesToRetry = failedFiles.map(f => ({
+    filePath: f.filePath,
+    originalName: f.originalName,
+  }));
+
+  failedFiles = [];  // Clear for next attempt
+
+  // Re-run import with only failed files
+  await importFilePaths(filesToRetry.map(f => f.filePath));
+}
+```
+
+**UI Addition**:
+```svelte
+{#if failedFiles.length > 0 && !$isImporting}
+  <div class="mt-4 p-4 bg-yellow-50 rounded">
+    <p>{failedFiles.length} files failed to import</p>
+    <button onclick={retryFailed} class="mt-2 px-4 py-2 bg-yellow-600 text-white rounded">
+      Retry Failed Files
+    </button>
+  </div>
+{/if}
+```
+
+---
+
+### Issue 4.5: Dashboard "Import in Progress" Banner
+
+**Problem**: User navigates to Dashboard, doesn't know import is running
+
+**Global Store** (`import-store.ts` - already exists, enhance it):
+```typescript
+// Ensure isImporting is derived from activeJob
+export const isImporting = derived(importStore, $store => $store.activeJob !== null);
+
+// Add current location info
+export const importingLocation = derived(importStore, $store =>
+  $store.activeJob?.locationName || null
+);
+```
+
+**Dashboard Component** (`Dashboard.svelte`):
+```svelte
+<script>
+  import { isImporting, importingLocation, importProgress } from '$stores/import-store';
+</script>
+
+{#if $isImporting}
+  <div class="fixed top-0 left-0 right-0 bg-blue-600 text-white p-2 text-center z-50">
+    <span>Import in progress: {$importingLocation}</span>
+    <span class="ml-4">{$importProgress?.current || 0}/{$importProgress?.total || 0}</span>
+  </div>
+{/if}
+```
+
+**Alternative**: Add to App.svelte for global visibility:
+```svelte
+<!-- In App.svelte, after router -->
+{#if $isImporting}
+  <div class="fixed bottom-4 right-4 bg-blue-600 text-white p-4 rounded-lg shadow-lg z-50">
+    <div class="flex items-center gap-2">
+      <svg class="animate-spin h-5 w-5">...</svg>
+      <span>Importing to {$importingLocation}...</span>
+    </div>
+    <div class="mt-2 text-sm">
+      {$importProgress?.current || 0}/{$importProgress?.total || 0} files
+    </div>
+  </div>
+{/if}
+```
+
+---
+
+### Issue 4.6: Toast Notifications
+
+**Problem**: No toast/snackbar system for transient messages
+
+**Create Toast Store** (`src/stores/toast-store.ts`):
+```typescript
+import { writable } from 'svelte/store';
+
+interface Toast {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  duration: number;
+}
+
+function createToastStore() {
+  const { subscribe, update } = writable<Toast[]>([]);
+
+  return {
+    subscribe,
+    show(message: string, type: Toast['type'] = 'info', duration = 5000) {
+      const id = crypto.randomUUID();
+      update(toasts => [...toasts, { id, message, type, duration }]);
+
+      if (duration > 0) {
+        setTimeout(() => this.dismiss(id), duration);
+      }
+
+      return id;
+    },
+    success(message: string, duration = 5000) {
+      return this.show(message, 'success', duration);
+    },
+    error(message: string, duration = 10000) {
+      return this.show(message, 'error', duration);
+    },
+    warning(message: string, duration = 7000) {
+      return this.show(message, 'warning', duration);
+    },
+    dismiss(id: string) {
+      update(toasts => toasts.filter(t => t.id !== id));
+    },
+    clear() {
+      update(() => []);
+    },
+  };
+}
+
+export const toasts = createToastStore();
+```
+
+**Create Toast Component** (`src/components/ToastContainer.svelte`):
+```svelte
+<script lang="ts">
+  import { toasts } from '$stores/toast-store';
+
+  const typeClasses = {
+    success: 'bg-green-600',
+    error: 'bg-red-600',
+    warning: 'bg-yellow-600',
+    info: 'bg-blue-600',
+  };
+</script>
+
+<div class="fixed bottom-4 right-4 z-50 space-y-2">
+  {#each $toasts as toast (toast.id)}
+    <div class="{typeClasses[toast.type]} text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3">
+      <span>{toast.message}</span>
+      <button onclick={() => toasts.dismiss(toast.id)} class="text-white/80 hover:text-white">
+        ×
+      </button>
+    </div>
+  {/each}
+</div>
+```
+
+**Add to App.svelte**:
+```svelte
+<script>
+  import ToastContainer from '$components/ToastContainer.svelte';
+</script>
+
+<!-- At end of component -->
+<ToastContainer />
+```
+
+**Usage in LocationDetail.svelte**:
+```typescript
+import { toasts } from '$stores/toast-store';
+
+// After import completes
+.then((result) => {
+  if (result.errors > 0 && result.imported === 0) {
+    toasts.error(`Import failed: ${result.errors} files could not be imported`);
+  } else if (result.errors > 0) {
+    toasts.warning(`Imported ${result.imported} files. ${result.errors} failed.`);
+  } else if (result.imported > 0) {
+    toasts.success(`Successfully imported ${result.imported} files`);
+  } else if (result.duplicates > 0) {
+    toasts.info(`${result.duplicates} files were already in archive`);
+  }
+})
+```
+
+---
+
+## PHASE 4 FILE LOCATIONS
+
+| File | Path | Changes |
+|------|------|---------|
+| File Import Service | `electron/services/file-import-service.ts` | Add filename to progress, abort signal |
+| IPC Handlers | `electron/main/ipc-handlers.ts` | Add cancel handler, abort controller |
+| Preload | `electron/preload/preload.cjs` | Add cancelImport |
+| Import Store | `src/stores/import-store.ts` | Add location name, enhance progress |
+| Toast Store | `src/stores/toast-store.ts` | NEW FILE |
+| Toast Container | `src/components/ToastContainer.svelte` | NEW FILE |
+| Location Detail | `src/pages/LocationDetail.svelte` | Error list, retry button, cancel |
+| App | `src/App.svelte` | Global import banner, toast container |
+| Dashboard | `src/pages/Dashboard.svelte` | Import banner (optional) |
+
+---
+
+## PHASE 4 IMPLEMENTATION ORDER
+
+```
+4.6 Toast notifications      → ~50 lines (store + component) - DO FIRST
+4.1 Progress with filename   → ~15 lines across files
+4.2 Error details            → ~20 lines frontend
+4.5 Dashboard banner         → ~15 lines
+4.3 Cancel button            → ~40 lines (backend + frontend)
+4.4 Retry failed             → ~30 lines frontend
+```
+
+---
+
+## PHASE 4 VERIFICATION CHECKLIST
+
+After implementing Phase 4, verify:
+
+1. [ ] Import shows current filename being processed
+2. [ ] Failed imports show per-file error messages
+3. [ ] Cancel button stops import mid-way
+4. [ ] Retry button re-imports only failed files
+5. [ ] Dashboard shows "import in progress" when navigating away
+6. [ ] Toast notifications appear for success/error/warning
+7. [ ] Toasts auto-dismiss after timeout
+8. [ ] Multiple toasts stack properly
+
+---
+
+## ROLLBACK PLAN
+
+### Before Implementation
+
+1. **Create git branch**:
+   ```bash
+   git checkout -b feature/import-fixes
+   ```
+
+2. **Create database backup**:
+   ```bash
+   # Copy current database
+   cp ~/.config/au-archive/au-archive.db ~/.config/au-archive/au-archive-backup-pre-fix.db
+   ```
+
+3. **Note current commit**:
+   ```bash
+   git rev-parse HEAD > ~/au-archive-rollback-point.txt
+   ```
+
+### During Implementation
+
+1. **Commit after each phase**:
+   ```bash
+   git add . && git commit -m "Phase X complete"
+   ```
+
+2. **Test after each phase** before proceeding
+
+3. **If tests fail**, rollback that phase:
+   ```bash
+   git reset --hard HEAD~1
+   ```
+
+### Emergency Rollback
+
+If everything breaks:
+
+1. **Rollback code**:
+   ```bash
+   git checkout main
+   # OR
+   git reset --hard $(cat ~/au-archive-rollback-point.txt)
+   ```
+
+2. **Restore database** (if corrupted):
+   ```bash
+   cp ~/.config/au-archive/au-archive-backup-pre-fix.db ~/.config/au-archive/au-archive.db
+   ```
+
+3. **Clear backups** (if they're causing issues):
+   ```bash
+   rm -rf ~/.config/au-archive/backups/*
+   ```
+
+4. **Reset config** (if corrupted):
+   ```bash
+   rm ~/.config/au-archive/config.json
+   # App will recreate with defaults on next launch
+   ```
+
+### Per-Phase Rollback
+
+| Phase | Files Modified | Rollback Command |
+|-------|----------------|------------------|
+| Phase 1 | file-import-service.ts, LocationDetail.svelte, ipc-handlers.ts | `git checkout HEAD~1 -- packages/desktop/electron/services/file-import-service.ts packages/desktop/src/pages/LocationDetail.svelte packages/desktop/electron/main/ipc-handlers.ts` |
+| Phase 2 | file-import-service.ts | `git checkout HEAD~1 -- packages/desktop/electron/services/file-import-service.ts` |
+| Phase 3 | file-import-service.ts, database migrations | Requires DB migration rollback |
+| Phase 4 | Multiple UI files, new files | Delete new files, checkout modified |
+| Phase 5 | config-service.ts, index.ts, backup-scheduler.ts | `git checkout HEAD~1 -- packages/desktop/electron/services/config-service.ts packages/desktop/electron/main/index.ts packages/desktop/electron/services/backup-scheduler.ts` |
+
+### Database Migration Rollback
+
+If Phase 3 adds database columns:
+
+```sql
+-- Rollback video GPS columns (if added)
+ALTER TABLE vids DROP COLUMN meta_gps_lat;
+ALTER TABLE vids DROP COLUMN meta_gps_lng;
+
+-- Rollback address columns (if added)
+ALTER TABLE imgs DROP COLUMN meta_address_street;
+ALTER TABLE imgs DROP COLUMN meta_address_city;
+ALTER TABLE imgs DROP COLUMN meta_address_state;
+-- etc.
+```
+
+**Note**: SQLite doesn't support DROP COLUMN in older versions. May need to:
+1. Create new table without columns
+2. Copy data
+3. Drop old table
+4. Rename new table
+
+### Config Rollback
+
+If new config options break things:
+
+```typescript
+// Old config (restore this)
+backup: {
+  enabled: true,
+  maxBackups: 10,  // Restore to 10
+}
+
+// Delete new fields manually from config.json
+```
+
+Or just delete `~/.config/au-archive/config.json` and let app recreate defaults.
+
+### Signs You Need to Rollback
+
+1. **App won't start** - Check console for errors, rollback last change
+2. **Database locked** - Kill app, restore backup database
+3. **Imports hang forever** - Check ExifTool process, rollback import changes
+4. **UI completely broken** - Rollback UI changes, rebuild
+5. **Config errors on load** - Delete config.json
+
+### Recovery Priority
+
+1. **Data safety first** - Restore database backup if needed
+2. **App must launch** - Rollback code to working state
+3. **Basic functions** - Imports, viewing files must work
+4. **Enhancements last** - Toast, banners, etc. can wait
 
 ---
 
