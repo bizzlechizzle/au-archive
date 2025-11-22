@@ -1,0 +1,699 @@
+# Where's Waldo 11: Import Architecture - The Complete Specification
+
+Date: 2025-11-22
+Status: **ARCHITECTURE DOCUMENT - NOT CODE**
+
+---
+
+## Executive Summary
+
+This document is NOT about fixing code. It's about defining the CORRECT import architecture based on the spec files. After 11 debugging sessions, we need to step back and document what the import SHOULD do before writing any more code.
+
+**The Spec Says:**
+```
+LOG IT → SERIALIZE IT → COPY & NAME IT → DUMP
+```
+
+**Translated to auarchive_import.md steps:**
+```
+1. #import_location   → Identify target location
+2. #import_id         → Generate all IDs (uuid, sha, slug)
+3. #import_folder     → Create folder structure
+4. #import_files      → Copy/hardlink with rsync
+5. #import_exiftool   → Extract image metadata
+6. #import_ffmpeg     → Extract video metadata
+7. #import_maps       → Process map files
+8. #import_gps        → Extract/validate GPS
+9. #import_address    → Reverse geocode
+10. #import_verify    → Verify integrity
+11. import_cleanup    → Delete originals if requested
+```
+
+---
+
+## Part 1: The Spec-Compliant Import Pipeline
+
+### Phase 1: LOG IT (Steps 1-2)
+
+**Purpose:** Receive input, validate, create audit trail
+
+```
+INPUT SOURCES:
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│   GUI       │  │   CLI       │  │   API       │  │   WATCH     │
+│  (Drag &    │  │  (rsync     │  │  (REST/     │  │   FOLDER    │
+│   Drop)     │  │   --files)  │  │   GraphQL)  │  │  (daemon)   │
+└──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+       │                │                │                │
+       └────────────────┴────────────────┴────────────────┘
+                                │
+                         ┌──────▼──────┐
+                         │ VALIDATE    │
+                         │ • locid     │
+                         │ • files[]   │
+                         │ • auth_imp  │
+                         └──────┬──────┘
+                                │
+                         ┌──────▼──────┐
+                         │ CREATE      │
+                         │ MANIFEST    │
+                         │ (JSON file) │
+                         └─────────────┘
+```
+
+**#import_location:**
+- Validate locid exists in database
+- Fetch location data (locnam, slocnam, loc12, state, type)
+- Record in manifest
+
+**#import_id:**
+- Generate import_id (UUID)
+- For each file: calculate SHA256 hash
+- Check for duplicates (by hash)
+- Mark duplicates in manifest
+
+**Manifest Structure (LOG IT):**
+```json
+{
+  "import_id": "imp-20241122-abc123",
+  "version": "1.0",
+  "created_at": "2024-11-22T12:00:00Z",
+  "status": "phase_1_log",
+
+  "location": {
+    "locid": "5d652250-aa9e-409b-ac74-c629639ea55b",
+    "locnam": "St. Peter & Paul Catholic Church",
+    "slocnam": "stpeter",
+    "loc12": "STPE12345678",
+    "state": "NY",
+    "type": "Church"
+  },
+
+  "options": {
+    "delete_originals": false,
+    "use_hardlinks": false,
+    "verify_checksums": true
+  },
+
+  "files": [
+    {
+      "index": 0,
+      "original_path": "/Users/bryant/.../DSC8841.NEF",
+      "original_name": "_DSC8841.NEF",
+      "size_bytes": 26214400,
+      "sha256": null,
+      "type": null,
+      "is_duplicate": false,
+      "status": "pending"
+    }
+  ]
+}
+```
+
+---
+
+### Phase 2: SERIALIZE IT (Steps 3-9)
+
+**Purpose:** Extract ALL metadata before touching any files
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    SERIALIZE PIPELINE                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  FILES[]  ──► CLASSIFY ──► BATCH HASH ──► BATCH EXIF ──►    │
+│              (type)       (SHA256)       (metadata)          │
+│                                                              │
+│  ──► BATCH FFMPEG ──► BATCH GPS ──► BATCH ADDRESS ──►       │
+│      (videos)         (extract)    (reverse geocode)         │
+│                                                              │
+│  ──► UPDATE MANIFEST                                         │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**#import_type (Classify Files):**
+
+Per `import_type.md`, classify in order:
+1. Check `#json_img` extensions → type = "image"
+2. Check `#json_vid` extensions → type = "video"
+3. Check `#json_map` extensions → type = "map"
+4. Default → type = "document"
+
+```
+IMAGE EXTENSIONS (from claude.md + spec):
+.jpg .jpeg .jpe .jfif .png .gif .bmp .tiff .tif .webp
+.jp2 .jpx .j2k .j2c .jxl .heic .heif .hif .avif
+.psd .psb .ai .eps .epsf .svg .svgz
+.nef .nrw .cr2 .cr3 .crw .arw .dng .orf .raf .rw2 .pef .srw .x3f
+(all RAW formats supported by ExifTool)
+
+VIDEO EXTENSIONS:
+.mp4 .m4v .mov .qt .avi .mkv .webm .wmv .flv
+.mpg .mpeg .ts .mts .m2ts .vob .3gp .ogv
+(all formats supported by FFmpeg)
+
+MAP EXTENSIONS:
+.gpx .kml .kmz .geojson .topojson .shp .osm .mbtiles
+
+DOCUMENT EXTENSIONS:
+.pdf .doc .docx .xls .xlsx .ppt .pptx .odt .txt .rtf
+(everything else)
+```
+
+**#import_id (Batch Hash Calculation):**
+```
+FOR ALL FILES IN PARALLEL:
+  sha256 = calculate_sha256(file.path)
+  file.sha256 = sha256
+
+  IF sha256 EXISTS IN DATABASE:
+    file.is_duplicate = true
+    file.status = "duplicate"
+```
+
+**#import_exiftool (Batch Metadata):**
+```bash
+# ExifTool batch mode - MUCH faster than per-file
+exiftool -json -r /path/to/files > metadata.json
+```
+
+Extract per file:
+- width, height
+- date_taken (DateTimeOriginal)
+- camera_make, camera_model
+- gps_lat, gps_lng (if present)
+- full raw exif JSON
+
+**#import_ffmpeg (Video Metadata):**
+```bash
+# FFprobe for video metadata
+ffprobe -v quiet -print_format json -show_format -show_streams file.mp4
+```
+
+Extract per video:
+- duration
+- width, height
+- codec
+- fps
+- GPS (from dashcam metadata via ExifTool)
+
+**#import_maps (Map File Processing):**
+- GPX: Extract waypoints, tracks, center point
+- KML/KMZ: Extract placemarks, coordinates
+- GeoJSON: Parse features and coordinates
+- Store parsed data in `meta_map` JSON field
+
+**#import_gps (GPS Extraction & Validation):**
+
+Per `import_gps.md`:
+```
+IF file.gps EXISTS:
+  1. Validate coordinates (lat -90 to 90, lng -180 to 180)
+  2. Check against location GPS (if exists)
+  3. Calculate distance
+  4. IF distance > threshold:
+     - Record GPS mismatch warning
+  5. IF location has NO GPS:
+     - Suggest updating location GPS from file
+```
+
+**#import_address (Reverse Geocoding):**
+
+Per `import_address.md`:
+```
+IF location.address IS EMPTY AND file.gps EXISTS:
+  1. Call Nominatim reverse geocode API
+  2. Extract street, city, county, state, zipcode
+  3. Queue address update for DUMP phase
+```
+
+**Updated Manifest (SERIALIZE IT):**
+```json
+{
+  "status": "phase_2_serialize",
+
+  "files": [
+    {
+      "index": 0,
+      "original_path": "/Users/bryant/.../DSC8841.NEF",
+      "original_name": "_DSC8841.NEF",
+      "size_bytes": 26214400,
+      "sha256": "a1b2c3d4e5f6789...",
+      "type": "image",
+      "is_duplicate": false,
+      "metadata": {
+        "width": 6000,
+        "height": 4000,
+        "date_taken": "2024-06-15T14:30:00Z",
+        "camera_make": "NIKON CORPORATION",
+        "camera_model": "NIKON D850",
+        "gps": { "lat": 42.8864, "lng": -78.8784 },
+        "raw_exif": { ... }
+      },
+      "gps_warning": null,
+      "status": "serialized"
+    }
+  ],
+
+  "location_updates": {
+    "address": {
+      "street": "123 Main St",
+      "city": "Buffalo",
+      "state": "NY",
+      "zipcode": "14201"
+    }
+  }
+}
+```
+
+---
+
+### Phase 3: COPY & NAME IT (Steps 3-4 + 10)
+
+**Purpose:** Create folders, copy files with rsync, verify integrity
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    COPY PIPELINE                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  #import_folder           #import_files         #import_verify│
+│  ┌─────────────┐         ┌─────────────┐       ┌───────────┐ │
+│  │ CREATE      │         │ RSYNC       │       │ VERIFY    │ │
+│  │ FOLDER      │ ──────► │ COPY        │ ────► │ SHA256    │ │
+│  │ STRUCTURE   │         │ ALL FILES   │       │ MATCH     │ │
+│  └─────────────┘         └─────────────┘       └───────────┘ │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**#import_folder (Create Folder Structure):**
+
+Per `json_folders.md`:
+```
+[ARCHIVE_PATH]/
+└── locations/
+    └── [STATE]-[TYPE]/                    # e.g., "NY-Church"
+        └── [SLOCNAM]-[LOC12]/             # e.g., "stpeter-STPE12345678"
+            ├── org-img-[LOC12]/           # Images
+            ├── org-vid-[LOC12]/           # Videos
+            ├── org-doc-[LOC12]/           # Documents
+            └── org-map-[LOC12]/           # Maps
+```
+
+Sub-location variant:
+```
+org-img-[LOC12]-[SUB12]/
+```
+
+**#import_files (rsync Copy):**
+
+Per `import_files.md` and `deleteonimport.md`:
+```bash
+# Preferred: hardlink (same filesystem, instant, no space)
+rsync -avH --link-dest=/original/path /source/ /dest/
+
+# Alternative: copy with checksum verification
+rsync -av --checksum --progress --partial /source/ /dest/
+
+# With file list (batch mode)
+rsync -av --checksum --files-from=/tmp/import-files.txt / /dest/
+```
+
+File naming convention (from claude.md):
+```
+Original: _DSC8841.NEF
+Archive:  a1b2c3d4e5f6789...abc.nef   (SHA256.extension)
+```
+
+**#import_verify (Integrity Check):**
+```
+FOR EACH COPIED FILE:
+  new_hash = calculate_sha256(archive_path)
+  IF new_hash != original_hash:
+    file.status = "copy_failed"
+    file.error = "Integrity check failed"
+  ELSE:
+    file.status = "verified"
+    file.archive_path = archive_path
+```
+
+**Updated Manifest (COPY & NAME IT):**
+```json
+{
+  "status": "phase_3_copy",
+
+  "files": [
+    {
+      "index": 0,
+      "original_path": "/Users/bryant/.../DSC8841.NEF",
+      "original_name": "_DSC8841.NEF",
+      "sha256": "a1b2c3d4e5f6789...",
+      "type": "image",
+      "archive_path": "/archive/locations/NY-Church/stpeter-STPE12345678/org-img-STPE12345678/a1b2c3d4e5f6789.nef",
+      "archive_name": "a1b2c3d4e5f6789.nef",
+      "verified": true,
+      "status": "copied"
+    }
+  ]
+}
+```
+
+---
+
+### Phase 4: DUMP (Database Transaction)
+
+**Purpose:** Single transaction to insert ALL records
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    DATABASE DUMP                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  BEGIN TRANSACTION                                           │
+│  │                                                           │
+│  ├── INSERT INTO imgs (...) VALUES (...), (...), ...        │
+│  ├── INSERT INTO vids (...) VALUES (...), (...), ...        │
+│  ├── INSERT INTO docs (...) VALUES (...), (...), ...        │
+│  ├── INSERT INTO maps (...) VALUES (...), (...), ...        │
+│  ├── INSERT INTO imports (...) VALUES (...)                 │
+│  ├── UPDATE locs SET address_* = ... WHERE locid = ...      │
+│  │                                                           │
+│  COMMIT                                                      │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Database Records:**
+
+Per database schema, insert:
+
+**imgs table:**
+```sql
+INSERT INTO imgs (
+  imgsha, imgnam, imgnamo, imgloc, imgloco,
+  locid, subid, auth_imp, imgadd,
+  meta_exiftool, meta_width, meta_height,
+  meta_date_taken, meta_camera_make, meta_camera_model,
+  meta_gps_lat, meta_gps_lng
+) VALUES (...)
+```
+
+**vids table:**
+```sql
+INSERT INTO vids (
+  vidsha, vidnam, vidnamo, vidloc, vidloco,
+  locid, subid, auth_imp, vidadd,
+  meta_ffmpeg, meta_exiftool,
+  meta_duration, meta_width, meta_height,
+  meta_codec, meta_fps, meta_date_taken,
+  meta_gps_lat, meta_gps_lng
+) VALUES (...)
+```
+
+**imports table:**
+```sql
+INSERT INTO imports (
+  import_id, locid, import_date, auth_imp,
+  img_count, vid_count, doc_count, map_count, notes
+) VALUES (...)
+```
+
+**import_cleanup (Delete Originals):**
+```
+IF options.delete_originals = true:
+  FOR EACH FILE WHERE status = "copied" AND verified = true:
+    delete(original_path)
+    file.original_deleted = true
+```
+
+**Final Manifest (DUMP):**
+```json
+{
+  "status": "complete",
+  "completed_at": "2024-11-22T12:05:00Z",
+
+  "summary": {
+    "total": 15,
+    "imported": 12,
+    "duplicates": 2,
+    "errors": 1,
+    "images": 10,
+    "videos": 2,
+    "documents": 0,
+    "maps": 0
+  },
+
+  "files": [
+    {
+      "index": 0,
+      "status": "complete",
+      "database_id": "img-uuid-123",
+      "original_deleted": false
+    }
+  ]
+}
+```
+
+---
+
+## Part 2: Current Implementation Gap Analysis
+
+### What We Have Now (WRONG ORDER)
+
+```
+FOR EACH FILE:
+  1. Validate path
+  2. Calculate hash (SHA256)
+  3. Check duplicate
+  4. Extract metadata (ExifTool/FFmpeg)
+  5. Copy file to archive
+  6. Verify copy
+  7. INSERT into database  ← Per-file transaction!
+  8. Delete original (optional)
+```
+
+**Problems:**
+| Issue | Impact |
+|-------|--------|
+| Per-file processing | Slow, no parallelism |
+| No manifest file | No recovery if crash |
+| No rsync | Can't resume, no hardlinks |
+| Per-file DB transactions | 15 files = 15 transactions |
+| No batch ExifTool | 15 process spawns |
+| No CLI tool | GUI-only, no headless |
+
+### What We Need (CORRECT ORDER)
+
+```
+PHASE 1: LOG IT
+  - Validate all inputs
+  - Create manifest file
+  - Record original paths
+
+PHASE 2: SERIALIZE IT
+  - Batch classify types
+  - Batch calculate hashes (parallel)
+  - Batch extract metadata (single ExifTool call)
+  - Batch extract GPS
+  - Update manifest
+
+PHASE 3: COPY & NAME IT
+  - Create folder structure
+  - rsync copy all files
+  - Verify all copies
+  - Update manifest
+
+PHASE 4: DUMP
+  - Single DB transaction
+  - Insert ALL records
+  - Update location address
+  - Delete originals if requested
+  - Mark manifest complete
+```
+
+---
+
+## Part 3: WWYDD - Improvements & Futureproofing
+
+### Improvement 1: Manifest-Driven Import
+
+**Why:** Recovery, audit trail, CLI replay
+
+```
+/archive/imports/
+├── imp-20241122-abc123.json    # Active import
+├── imp-20241121-def456.json    # Completed
+└── imp-20241120-ghi789.json    # Completed
+```
+
+### Improvement 2: rsync Integration
+
+**Why:** Resume, delta transfer, hardlinks, checksum
+
+```bash
+# Batch copy with checksum verification
+rsync -av --checksum --partial \
+  --files-from=/tmp/import-list.txt \
+  / /archive/
+```
+
+### Improvement 3: Batch ExifTool
+
+**Why:** 1 process vs N processes
+
+```bash
+# Current: N spawns
+for file in files; do exiftool -json "$file"; done
+
+# Better: 1 spawn
+exiftool -json file1 file2 file3 ... fileN
+```
+
+### Improvement 4: CLI/GUI/API Parity
+
+**Why:** Headless servers, NAS, automation
+
+```bash
+# CLI import
+au-import --location abc123 --files /path/to/*.NEF
+
+# Resume failed import
+au-import --resume imp-20241122-abc123
+```
+
+### Improvement 5: Watch Folder
+
+**Why:** Auto-import, set-and-forget
+
+```
+/import-inbox/
+├── loc-abc123/    # Files here → import to location abc123
+├── loc-def456/    # Files here → import to location def456
+└── unsorted/      # Files here → prompt for location
+```
+
+### Improvement 6: Progress Streaming
+
+**Why:** Better UX, accurate ETAs
+
+```typescript
+interface ImportProgress {
+  phase: 'log' | 'serialize' | 'copy' | 'dump';
+  phaseProgress: number;  // 0-100
+  currentFile?: string;
+  eta?: number;  // seconds
+  throughput?: number;  // bytes/sec
+}
+```
+
+---
+
+## Part 4: Implementation Checklist
+
+### Phase 1: Core Architecture
+- [ ] Create `ImportManifest` class
+- [ ] Create `ImportService` (framework-agnostic)
+- [ ] Implement manifest file read/write
+- [ ] Implement phase tracking
+
+### Phase 2: Batch Operations
+- [ ] Batch SHA256 calculation (parallel workers)
+- [ ] Batch ExifTool extraction (single call)
+- [ ] Batch FFmpeg extraction
+- [ ] Single DB transaction at end
+
+### Phase 3: rsync Integration
+- [ ] Create `RsyncService` wrapper
+- [ ] Support hardlink mode
+- [ ] Support checksum verification
+- [ ] Support resume (--partial)
+
+### Phase 4: CLI Tool
+- [ ] Create `au-import` CLI command
+- [ ] Support `--files` flag
+- [ ] Support `--location` flag
+- [ ] Support `--resume` flag
+
+### Phase 5: Watch Folder
+- [ ] Create folder watcher daemon
+- [ ] Location-based inbox folders
+- [ ] Auto-import on file add
+
+---
+
+## Part 5: The 11-Version Journey
+
+| Version | Issue | Status |
+|---------|-------|--------|
+| 1 | Preload ESM/CJS mismatch | Fixed |
+| 2 | Vite bundler adds ESM wrapper | Fixed |
+| 3 | Custom copy plugin for preload | Fixed |
+| 4 | webUtils undefined, file.path fallback | Workaround |
+| 5 | RAW formats missing from extension lists | Fixed |
+| 6 | Import UX - blocking, no progress | Fixed |
+| 7 | webUtils unavailable, no Select Files button | Fixed |
+| 8 | ExifTool hang, UI overhaul | Timeout added |
+| 9 | SQLite deadlock after ExifTool | Incomplete fix |
+| 10 | Master issue list & implementation plan | Documented |
+| **11** | **Complete architecture specification** | **This document** |
+
+---
+
+## Appendix A: Spec File Cross-Reference
+
+| Spec File | Purpose | Current Status |
+|-----------|---------|----------------|
+| `auarchive_import.md` | Master pipeline | Wrong order |
+| `import_location.md` | Location validation | Implemented |
+| `import_id.md` | ID generation | Implemented |
+| `import_folder.md` | Folder creation | Implemented |
+| `import_files.md` | rsync copy | **NOT IMPLEMENTED** |
+| `import_exiftool.md` | Image metadata | Per-file (not batch) |
+| `import_ffmpeg.md` | Video metadata | Implemented |
+| `import_maps.md` | Map handling | Implemented |
+| `import_gps.md` | GPS extraction | Implemented |
+| `import_address.md` | Reverse geocode | Implemented |
+| `json_folders.md` | Folder naming | Implemented |
+| `deleteonimport.md` | Cleanup | Not via rsync |
+
+---
+
+## Appendix B: Immediate Bug Fix
+
+SQLite deadlock was fixed this session:
+
+**Problem:** Location fetch inside transaction = deadlock
+**Solution:** Pre-fetch before loop, pass as parameter
+
+This allows current imports to work while we plan the architecture rewrite.
+
+---
+
+## Appendix C: Folder Structure Reference
+
+```
+[ARCHIVE_PATH]/
+├── locations/
+│   └── [STATE]-[TYPE]/                    # NY-Church
+│       └── [SLOCNAM]-[LOC12]/             # stpeter-STPE12345678
+│           ├── org-img-[LOC12]/           # Original images
+│           │   └── [SHA256].nef           # a1b2c3d4...xyz.nef
+│           ├── org-vid-[LOC12]/           # Original videos
+│           ├── org-doc-[LOC12]/           # Original documents
+│           └── org-map-[LOC12]/           # Maps
+│
+├── documents/
+│   └── maps/
+│       ├── user-maps/                     # User uploaded
+│       └── archive-maps/                  # Historical
+│
+└── imports/                               # NEW: Manifest files
+    ├── imp-20241122-abc123.json
+    └── imp-20241121-def456.json
+```
+
+---
+
+End of Document

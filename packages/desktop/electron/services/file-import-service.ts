@@ -197,6 +197,22 @@ export class FileImportService {
 
     console.log('[FileImport] Starting batch import of', files.length, 'files');
 
+    // FIX 11: PRE-FETCH location ONCE before starting any file imports
+    // All files in one import go to the same location, so we only need to fetch it once
+    // CRITICAL: This MUST happen BEFORE any transactions to avoid SQLite deadlock
+    // (whereswaldo11 identified this as the root cause of the import hang)
+    const locid = files[0]?.locid;
+    if (!locid) {
+      throw new Error('No location ID provided');
+    }
+
+    console.log('[FileImport] Pre-fetching location data for locid:', locid);
+    const location = await this.locationRepo.findById(locid);
+    if (!location) {
+      throw new Error(`Location not found: ${locid}`);
+    }
+    console.log('[FileImport] Location pre-fetched:', location.locnam);
+
     // FIX 2.2: Per-file transactions instead of wrapping all files in one transaction
     const results: ImportResult[] = [];
     let imported = 0;
@@ -216,8 +232,9 @@ export class FileImportService {
 
       try {
         // FIX 2.2: Each file gets its own transaction - committed on success, rolled back on failure
+        // FIX 11: Pass pre-fetched location to avoid DB calls inside transaction (prevents deadlock)
         const result = await this.db.transaction().execute(async (trx) => {
-          return await this.importSingleFile(file, deleteOriginals, trx);
+          return await this.importSingleFile(file, deleteOriginals, trx, location);
         });
         results.push(result);
 
@@ -295,22 +312,19 @@ export class FileImportService {
   /**
    * Import a single file with transaction support
    * CRITICAL: Validates path, checks GPS mismatch, uses transaction
+   * FIX 11: Location is now passed as parameter (pre-fetched in importFiles) to avoid SQLite deadlock
    */
   private async importSingleFile(
     file: ImportFileInput,
     deleteOriginal: boolean,
-    trx: any // Transaction context
+    trx: any, // Transaction context
+    location: any // FIX 11: Pre-fetched location from importFiles() - do NOT fetch again inside transaction!
   ): Promise<ImportResult> {
     console.log('[FileImport] === Starting import for:', file.originalName, '===');
 
-    // 0. Pre-fetch location data OUTSIDE heavy operations to avoid deadlock
-    // CRITICAL: Fetch once here, don't call locationRepo again inside transaction operations
-    console.log('[FileImport] Step 0: Pre-fetching location data...');
-    const location = await this.locationRepo.findById(file.locid);
-    if (!location) {
-      throw new Error(`Location not found: ${file.locid}`);
-    }
-    console.log('[FileImport] Step 0 complete, location:', location.locnam);
+    // FIX 11: Location is now pre-fetched in importFiles() and passed as parameter
+    // This prevents SQLite deadlock that occurred when fetching inside a transaction
+    console.log('[FileImport] Using pre-fetched location:', location.locnam);
 
     // 1. Validate file path security
     console.log('[FileImport] Step 1: Validating file path...');
