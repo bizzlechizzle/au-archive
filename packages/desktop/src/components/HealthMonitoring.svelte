@@ -166,16 +166,24 @@
         <p class="text-sm text-gray-600">{healthDashboard.status.components.diskSpace.message}</p>
       </div>
 
-      <!-- Integrity Health -->
-      <div class="p-4 border rounded">
-        <div class="flex items-center justify-between mb-2">
-          <h4 class="font-medium text-gray-900">Data Integrity</h4>
-          <span class="text-xs px-2 py-1 rounded {getStatusBgColor(healthDashboard.status.components.integrity.status)} {getStatusColor(healthDashboard.status.components.integrity.status)}">
-            {healthDashboard.status.components.integrity.status}
-          </span>
+      <!-- Data Integrity Health (from database check) -->
+      {#if healthDashboard.status.components.database?.details?.errors !== undefined}
+        <div class="p-4 border rounded">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-medium text-gray-900">Data Integrity</h4>
+            <span class="text-xs px-2 py-1 rounded {getStatusBgColor(healthDashboard.status.components.database.status)} {getStatusColor(healthDashboard.status.components.database.status)}">
+              {healthDashboard.status.components.database.status}
+            </span>
+          </div>
+          <p class="text-sm text-gray-600">
+            {#if healthDashboard.status.components.database.details?.errors?.length > 0}
+              {healthDashboard.status.components.database.details.errors.length} integrity issues found
+            {:else}
+              Data integrity verified
+            {/if}
+          </p>
         </div>
-        <p class="text-sm text-gray-600">{healthDashboard.status.components.integrity.message}</p>
-      </div>
+      {/if}
     </div>
 
     <!-- Quick Actions -->
