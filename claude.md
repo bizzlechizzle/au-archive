@@ -909,7 +909,10 @@ webPreferences: {
 **Preload Script Example:**
 ```typescript
 // electron/preload/index.ts
-import { contextBridge, ipcRenderer } from 'electron';
+// CRITICAL: Use require() NOT import for electron in preload scripts!
+// ESM imports don't get converted to require() when electron is external
+// This causes "Cannot use import statement outside a module" errors
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   locations: {

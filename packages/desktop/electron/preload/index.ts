@@ -1,4 +1,9 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron';
+// CRITICAL: Use require() for electron in preload scripts
+// ESM imports don't get converted to require() when electron is external
+// This causes "Cannot use import statement outside a module" errors
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+// Types are import-only, they get stripped at compile time
 import type { Location, LocationInput, LocationFilters } from '@au-archive/core';
 
 const api = {
@@ -105,6 +110,27 @@ const api = {
       ipcRenderer.invoke('database:backup'),
     restore: (): Promise<{ success: boolean; message: string; requiresRestart?: boolean; autoBackupPath?: string }> =>
       ipcRenderer.invoke('database:restore'),
+    getLocation: (): Promise<{
+      currentPath: string;
+      defaultPath: string;
+      customPath: string | undefined;
+      isCustom: boolean;
+    }> =>
+      ipcRenderer.invoke('database:getLocation'),
+    changeLocation: (): Promise<{
+      success: boolean;
+      message: string;
+      newPath?: string;
+      requiresRestart?: boolean;
+    }> =>
+      ipcRenderer.invoke('database:changeLocation'),
+    resetLocation: (): Promise<{
+      success: boolean;
+      message: string;
+      newPath?: string;
+      requiresRestart?: boolean;
+    }> =>
+      ipcRenderer.invoke('database:resetLocation'),
   },
 
   imports: {
