@@ -46,6 +46,17 @@ Status: **READY FOR IMPLEMENTATION**
 | 4.5 | Dashboard during import | Appears frozen | Shows "import in progress" banner | [ ] TODO |
 | 4.6 | Toast notifications | None | Success/warning/error toasts | [ ] TODO |
 
+### PHASE 5: BACKUP SYSTEM (Data Safety)
+
+| # | Feature | Current | Target | Status |
+|---|---------|---------|--------|--------|
+| 5.1 | Auto backup on startup | NOT IMPLEMENTED | Backup before user actions | [ ] TODO |
+| 5.2 | Backup after import | NOT IMPLEMENTED | Protect new data | [ ] TODO |
+| 5.3 | Scheduled backups | NOT IMPLEMENTED | Daily/weekly option | [ ] TODO |
+| 5.4 | Backup failure alerts | NOT IMPLEMENTED | Notify user | [ ] TODO |
+| 5.5 | Backup verification | NOT IMPLEMENTED | Verify integrity | [ ] TODO |
+| 5.6 | Retention: 10 → 5 | Keeps 10 | Keep only 5 | [ ] TODO |
+
 ---
 
 ## PHASE 1 DETAILED FIXES
@@ -485,6 +496,96 @@ After implementing Phase 1, verify:
 | ExifTool Service | `packages/desktop/electron/services/exiftool-service.ts` |
 | FFmpeg Service | `packages/desktop/electron/services/ffmpeg-service.ts` |
 | Preload Script | `packages/desktop/electron/preload/preload.cjs` |
+
+---
+
+## PHASE 5: BACKUP SYSTEM ISSUES
+
+### Current Backup Architecture
+
+**Two Separate Systems (Confusing)**:
+
+| System | IPC Handler | Location | Tracked | Retention |
+|--------|-------------|----------|---------|-----------|
+| Health Backup | `health:createBackup` | `{userData}/backups/` | YES (manifest) | 10 backups |
+| User Export | `database:backup` | User-chosen | NO | None |
+
+### What's Implemented
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Manual "Create Backup" button | YES | In Health Monitoring panel |
+| Manual "Backup Database" export | YES | In Database Settings (user picks location) |
+| Retention policy | YES | Keeps last 10 (configurable in config) |
+| Automatic cleanup | YES | Deletes oldest when > maxBackups |
+| Backup manifest tracking | YES | `backups.json` with metadata |
+| Health status warnings | YES | Critical if 0, Warning if < 3 |
+| Restore from backup | YES | `database:restore` with validation |
+
+### What's NOT Implemented
+
+| # | Feature | Impact | Status |
+|---|---------|--------|--------|
+| 5.1 | **Auto backup on app startup** | No safety net before user actions | [ ] TODO |
+| 5.2 | **Backup after import completes** | Data changes unprotected | [ ] TODO |
+| 5.3 | **Scheduled backups (daily/weekly)** | User must remember to backup | [ ] TODO |
+| 5.4 | **Backup failure alerts** | Silent failures | [ ] TODO |
+| 5.5 | **Backup integrity verification** | `verified` flag never set | [ ] TODO |
+| 5.6 | **Change retention to 5** | 10 is excessive, wastes disk | [ ] TODO |
+
+### Recommended Architecture
+
+```
+APP STARTUP:
+  1. Load config
+  2. Initialize database
+  3. **CREATE STARTUP BACKUP** ← MISSING
+  4. Health check
+  5. Register IPC handlers
+  6. Show UI
+
+AFTER IMPORT:
+  1. Import completes successfully
+  2. **CREATE POST-IMPORT BACKUP** ← MISSING
+  3. Enforce retention (keep last 5)
+
+MAINTENANCE (separate from backup creation):
+  1. Check backup count
+  2. Delete backups > 5
+  3. Verify backup integrity
+  4. Log results
+```
+
+### Config Changes Needed
+
+**Current** (`config-service.ts`):
+```typescript
+backup: {
+  enabled: true,
+  maxBackups: 10,  // Too many
+}
+```
+
+**Proposed**:
+```typescript
+backup: {
+  enabled: true,
+  maxBackups: 5,           // Reduce to 5
+  backupOnStartup: true,   // NEW: Auto backup on boot
+  backupAfterImport: true, // NEW: Auto backup after imports
+}
+```
+
+### GUI Backup Clarification
+
+The "Backup Database" button in Settings should be:
+- **Purpose**: User export to external location (USB, cloud, etc.)
+- **NOT**: The system's automatic backup
+- **Label suggestion**: "Export Database Copy" (clearer than "Backup")
+
+The "Create Backup" in Health Monitoring should be:
+- **Purpose**: Manual trigger of system backup (for users who want extra)
+- **Usually**: Not needed if auto-backup is working
 
 ---
 
