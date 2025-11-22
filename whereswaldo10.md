@@ -2037,4 +2037,225 @@ This means:
 
 ---
 
+## ATLAS MAP INTERFACE ANALYSIS
+
+### Current Pin Implementation
+
+**File**: `packages/desktop/src/components/Map.svelte`
+
+#### Pin Colors: GPS Confidence Based (NOT Accent Color)
+
+Individual location pins use **GPS confidence colors**, not the app's accent color:
+
+| Confidence | Color | Hex | When Used |
+|------------|-------|-----|-----------|
+| Verified | Green | `#10b981` | User verified on map (`verifiedOnMap: true`) |
+| High | Blue | `#3b82f6` | GPS accuracy ≤ high threshold |
+| Medium | Amber | `#f59e0b` | GPS accuracy ≤ mismatch threshold |
+| Low | Red | `#ef4444` | GPS present but poor accuracy |
+| None | Gray | `#6b7280` | No GPS or state centroid fallback |
+
+**Pin Style** (lines 360-366):
+```css
+.confidence-marker {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;          /* Circle */
+  border: 2px solid white;     /* White border */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+```
+
+#### Cluster Markers: DO Use Accent Color
+
+When multiple pins are grouped, clusters use the accent color:
+
+```css
+.cluster-marker {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: var(--color-accent, #b9975c);  /* ACCENT COLOR */
+  color: white;
+  font-weight: bold;
+  font-size: 14px;
+  border: 3px solid rgba(255, 255, 255, 0.8);
+}
+```
+
+**Cluster Behavior**:
+- Shows count of locations in cluster
+- Clicking cluster zooms to expand it
+- Uses Supercluster library for performance
+
+---
+
+### Popup on Pin Click: YES - Mini Summary
+
+**Location**: `Map.svelte:286-293`
+
+When clicking a pin, a Leaflet popup appears showing:
+
+```html
+<div>
+  <strong>{location.locnam}</strong><br/>
+  {location.type || 'Unknown Type'}<br/>
+  {city}, {state}
+  <br/><span style="color: {confidence_color};">● {confidenceLabel}</span>
+</div>
+```
+
+**Current Popup Content**:
+| Field | Shown | Example |
+|-------|-------|---------|
+| Name | **YES** | "Peter & Paul Catholic Church" |
+| Type | **YES** | "Church" |
+| City, State | **YES** | "Springfield, IL" |
+| GPS Confidence | **YES** | "● High GPS" or "● Approximate (State)" |
+| Thumbnail | **NO** | - |
+| Media Count | **NO** | - |
+| Full Address | **NO** | Street, zipcode not shown |
+| Date Added | **NO** | - |
+| Quick Actions | **NO** | No edit/view buttons |
+
+---
+
+### Click Behaviors
+
+| Action | Behavior |
+|--------|----------|
+| **Single Pin Click** | Shows popup + navigates to location detail page |
+| **Cluster Click** | Zooms in to expand cluster (no popup) |
+| **Map Left-Click** | Currently does nothing (logged only) |
+| **Map Right-Click** | Opens "Quick Create Location" modal with auto-geocode |
+
+**Navigation** (Atlas.svelte:75-77):
+```typescript
+function handleLocationClick(location: Location) {
+  router.navigate(`/location/${location.locid}`);
+}
+```
+
+---
+
+### Quick Create Modal (Right-Click)
+
+Right-clicking on the map opens a modal to create a location at that GPS point:
+
+**Features**:
+1. Auto-fills GPS coordinates from click location
+2. Auto-geocodes to get address (city, state, county, street, zip)
+3. Allows manual override of address fields
+4. Sets `verifiedOnMap: true` since user clicked exact spot
+
+**Modal Fields**:
+- Location Name (required)
+- Type (dropdown from existing types)
+- Street, City, County, State, ZIP (auto-filled)
+
+---
+
+### What's Missing for Premium Atlas
+
+| # | Feature | Current | Premium Target | Priority |
+|---|---------|---------|----------------|----------|
+| 6.9 | Thumbnail in popup | NO | Show location's featured photo | MEDIUM |
+| 6.10 | Media count in popup | NO | "15 photos, 3 videos" | LOW |
+| 6.11 | Quick actions in popup | NO | Edit, View Photos buttons | LOW |
+| 6.12 | Full address in popup | NO | Street, City, State, ZIP | LOW |
+| 6.13 | Use accent color for pins | NO (GPS colors) | Option to use accent instead | LOW |
+| 6.14 | Pin size based on media count | NO | Larger pins = more content | LOW |
+| 6.15 | Custom pin icons per type | NO | Church icon, Cemetery icon, etc. | FUTURE |
+
+---
+
+### Issue 6.9: Thumbnail Preview in Popup
+
+**Current**: Popup shows text only
+
+**Premium Target**: Show location's featured/first image
+
+**Fix**: Fetch thumbnail and include in popup HTML
+
+```typescript
+// Need to pass media data with location
+const thumbnail = location.featuredImage || location.firstImage;
+
+marker.bindPopup(`
+  <div class="map-popup">
+    ${thumbnail ? `<img src="${thumbnail}" class="popup-thumb" />` : ''}
+    <strong>${escapeHtml(location.locnam)}</strong>
+    ...
+  </div>
+`);
+```
+
+**Challenge**: Popup HTML is static string, can't easily load async images
+
+**Alternative**: Use Leaflet's `bindPopup` with function callback:
+```typescript
+marker.bindPopup(async () => {
+  const media = await fetchLocationMedia(location.locid);
+  return createPopupContent(location, media);
+});
+```
+
+---
+
+### Issue 6.10: Media Count in Popup
+
+**Current**: No indication of how much content exists at location
+
+**Fix**: Add counts to popup
+
+```html
+<div>
+  <strong>${location.locnam}</strong><br/>
+  ${location.type}<br/>
+  ${location.address?.city}, ${location.address?.state}
+  <br/>
+  <span class="text-gray-500">
+    ${location.imageCount || 0} photos, ${location.videoCount || 0} videos
+  </span>
+  <br/>
+  <span style="color: ${color};">● ${confidenceLabel}</span>
+</div>
+```
+
+**Requires**: Location query includes media counts (may need join or subquery)
+
+---
+
+### Issue 6.13: Accent Color Option for Pins
+
+**Current**: Pins use GPS confidence colors (semantic meaning)
+
+**Alternative Approach**: Let user choose pin color scheme in settings:
+- GPS Confidence (current) - color indicates data quality
+- Accent Color - all pins same color, matches theme
+- Type-Based - different color per location type
+
+**Settings Addition**:
+```typescript
+mapPinStyle: 'confidence' | 'accent' | 'type'
+```
+
+---
+
+### Atlas Summary: Current vs Premium
+
+| Aspect | Current | Premium |
+|--------|---------|---------|
+| Pin Color | GPS confidence (green/blue/amber/red/gray) | Options: confidence, accent, or type |
+| Cluster Color | Accent color | Good ✓ |
+| Popup Content | Name, type, city/state, confidence | + Thumbnail, media count, actions |
+| Click Action | Navigate to detail | Good ✓ |
+| Right-Click | Quick create with geocode | Good ✓ |
+| Custom Icons | No | Per-type icons |
+| Pin Size | Fixed 16px | Variable by media count |
+
+**Verdict**: Atlas is **functional but basic**. Premium would add visual richness (thumbnails, icons) and contextual info (media counts, quick actions).
+
+---
+
 End of Report
