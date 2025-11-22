@@ -15,6 +15,8 @@
   import { importStore } from './stores/import-store';
   import Layout from './components/Layout.svelte';
   import ImportProgress from './components/ImportProgress.svelte';
+  // FIX 4.6: Toast notification system
+  import ToastContainer from './components/ToastContainer.svelte';
   import Dashboard from './pages/Dashboard.svelte';
   import Locations from './pages/Locations.svelte';
   import Atlas from './pages/Atlas.svelte';
@@ -57,9 +59,10 @@
     checkFirstRun();
 
     // Subscribe to import progress events from main process
+    // FIX 4.1: Pass filename to updateProgress
     if (window.electronAPI?.media?.onImportProgress) {
       unsubscribeProgress = window.electronAPI.media.onImportProgress((progress) => {
-        importStore.updateProgress(progress.current, progress.total);
+        importStore.updateProgress(progress.current, progress.total, progress.filename);
       });
     }
   });
@@ -113,4 +116,6 @@
   </Layout>
   <!-- Global floating import progress indicator -->
   <ImportProgress />
+  <!-- FIX 4.6: Global toast notifications -->
+  <ToastContainer />
 {/if}

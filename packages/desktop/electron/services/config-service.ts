@@ -7,6 +7,9 @@ export interface AppConfig {
   backup: {
     enabled: boolean;
     maxBackups: number;
+    // FIX 5.1 & 5.2: New backup triggers
+    backupOnStartup: boolean;
+    backupAfterImport: boolean;
   };
   monitoring: {
     diskSpace: {
@@ -27,7 +30,12 @@ export interface AppConfig {
 const DEFAULT_CONFIG: AppConfig = {
   backup: {
     enabled: true,
-    maxBackups: 10,
+    // FIX 5.6: Changed from 10 to 5 per spec
+    maxBackups: 5,
+    // FIX 5.1: Auto backup on startup
+    backupOnStartup: true,
+    // FIX 5.2: Auto backup after import
+    backupAfterImport: true,
   },
   monitoring: {
     diskSpace: {

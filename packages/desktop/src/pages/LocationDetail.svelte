@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
   import { importStore, isImporting } from '../stores/import-store';
+  // FIX 4.6: Toast notifications
+  import { toasts } from '../stores/toast-store';
   import Map from '../components/Map.svelte';
   import LocationEditForm from '../components/LocationEditForm.svelte';
   import NotesSection from '../components/NotesSection.svelte';
@@ -375,6 +377,8 @@
 
         importStore.completeJob(undefined, errorMsg);
         importProgress = errorMsg;
+        // FIX 4.6: Toast notification for total failure
+        toasts.error(errorMsg);
       } else {
         // Import completed with at least some successes
         importStore.completeJob({
@@ -383,11 +387,16 @@
           errors: result.errors,
         });
 
-        // FIX 1.5: Show visible message with error count if any
+        // FIX 1.5 & 4.6: Show visible message with error count if any
         if (result.errors > 0) {
           importProgress = `Imported ${result.imported} files (${result.errors} failed)`;
-        } else {
+          toasts.warning(`Imported ${result.imported} files. ${result.errors} failed.`);
+        } else if (result.imported > 0) {
           importProgress = `Imported ${result.imported} files successfully`;
+          toasts.success(`Successfully imported ${result.imported} files`);
+        } else if (result.duplicates > 0) {
+          importProgress = `${result.duplicates} files were already in archive`;
+          toasts.info(`${result.duplicates} files were already in archive`);
         }
       }
       // Reload location data to show new files
@@ -398,6 +407,8 @@
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       importStore.completeJob(undefined, errorMsg);
       importProgress = `Import error: ${errorMsg}`;
+      // FIX 4.6: Toast notification for errors
+      toasts.error(`Import error: ${errorMsg}`);
     });
 
     // Clear the local progress message after longer delay so user can read it

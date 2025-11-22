@@ -10,6 +10,8 @@ export interface ImportJob {
   locationName: string;
   totalFiles: number;
   processedFiles: number;
+  // FIX 4.1: Track current filename being processed
+  currentFilename?: string;
   status: 'pending' | 'running' | 'completed' | 'error';
   startedAt: Date;
   completedAt?: Date;
@@ -52,8 +54,9 @@ function createImportStore() {
 
     /**
      * Update progress of active job
+     * FIX 4.1: Now includes filename being processed
      */
-    updateProgress(current: number, total: number) {
+    updateProgress(current: number, total: number, filename?: string) {
       update(state => {
         if (state.activeJob) {
           return {
@@ -62,6 +65,7 @@ function createImportStore() {
               ...state.activeJob,
               processedFiles: current,
               totalFiles: total,
+              currentFilename: filename,
             },
           };
         }
@@ -127,6 +131,8 @@ export const importProgress = derived(importStore, $store => {
     percent,
     locationName: job.locationName,
     locid: job.locid,
+    // FIX 4.1: Include current filename
+    currentFilename: job.currentFilename,
   };
 });
 

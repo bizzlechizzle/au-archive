@@ -158,12 +158,14 @@ export class FileImportService {
 
   /**
    * Import multiple files in a batch
-   * CRITICAL: Wraps entire import in transaction for data integrity
+   * FIX 2.2: Per-file transactions - each file is committed independently
+   * This allows partial success: if file 5 fails, files 1-4 are already saved
    */
   async importFiles(
     files: ImportFileInput[],
     deleteOriginals: boolean = false,
-    onProgress?: (current: number, total: number) => void
+    // FIX 4.1: Progress callback now includes filename
+    onProgress?: (current: number, total: number, filename?: string) => void
   ): Promise<ImportSessionResult> {
     // Validate all file paths before starting
     for (const file of files) {
@@ -180,73 +182,75 @@ export class FileImportService {
 
     console.log('[FileImport] Starting batch import of', files.length, 'files');
 
-    // Use transaction to ensure atomicity
-    return await this.db.transaction().execute(async (trx) => {
-      console.log('[FileImport] Transaction started');
-      const results: ImportResult[] = [];
-      let imported = 0;
-      let duplicates = 0;
-      let errors = 0;
+    // FIX 2.2: Per-file transactions instead of wrapping all files in one transaction
+    const results: ImportResult[] = [];
+    let imported = 0;
+    let duplicates = 0;
+    let errors = 0;
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
 
-        console.log('[FileImport] Processing file', i + 1, 'of', files.length, ':', file.originalName);
+      console.log('[FileImport] Processing file', i + 1, 'of', files.length, ':', file.originalName);
 
-        try {
-          const result = await this.importSingleFile(file, deleteOriginals, trx);
-          results.push(result);
+      try {
+        // FIX 2.2: Each file gets its own transaction - committed on success, rolled back on failure
+        const result = await this.db.transaction().execute(async (trx) => {
+          return await this.importSingleFile(file, deleteOriginals, trx);
+        });
+        results.push(result);
 
-          if (result.success) {
-            if (result.duplicate) {
-              duplicates++;
-              console.log('[FileImport] File', i + 1, 'was duplicate');
-            } else {
-              imported++;
-              console.log('[FileImport] File', i + 1, 'imported successfully');
-            }
+        if (result.success) {
+          if (result.duplicate) {
+            duplicates++;
+            console.log('[FileImport] File', i + 1, 'was duplicate');
           } else {
-            errors++;
-            console.log('[FileImport] File', i + 1, 'failed');
+            imported++;
+            console.log('[FileImport] File', i + 1, 'imported successfully');
           }
-
-          // FIX 1.2: Report progress AFTER work completes (not before)
-          if (onProgress) {
-            onProgress(i + 1, files.length);
-          }
-        } catch (error) {
-          console.error('[FileImport] Error importing file', file.originalName, ':', error);
-          // FIX 1.1: Use 'document' instead of 'unknown' (valid type union value)
-          results.push({
-            success: false,
-            hash: '',
-            type: 'document',
-            duplicate: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
+        } else {
           errors++;
+          console.log('[FileImport] File', i + 1, 'failed');
+        }
 
-          // FIX 1.2: Report progress on error too (so UI doesn't stall)
-          if (onProgress) {
-            onProgress(i + 1, files.length);
-          }
+        // FIX 1.2 & 4.1: Report progress AFTER work completes with filename
+        if (onProgress) {
+          onProgress(i + 1, files.length, file.originalName);
+        }
+      } catch (error) {
+        console.error('[FileImport] Error importing file', file.originalName, ':', error);
+        // FIX 1.1: Use 'document' instead of 'unknown' (valid type union value)
+        results.push({
+          success: false,
+          hash: '',
+          type: 'document',
+          duplicate: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        errors++;
 
-          // Yield to event loop between files to prevent UI freeze
-          await new Promise(resolve => setImmediate(resolve));
+        // FIX 1.2 & 4.1: Report progress on error too with filename
+        if (onProgress) {
+          onProgress(i + 1, files.length, file.originalName);
         }
       }
-      console.log('[FileImport] Batch processing complete:', imported, 'imported,', duplicates, 'duplicates,', errors, 'errors');
 
-      // Create import record within same transaction
-      const locid = files[0]?.locid || null;
-      const auth_imp = files[0]?.auth_imp || null;
-      const imgCount = results.filter((r) => r.type === 'image' && !r.duplicate).length;
-      const vidCount = results.filter((r) => r.type === 'video' && !r.duplicate).length;
-      const mapCount = results.filter((r) => r.type === 'map' && !r.duplicate).length;
-      const docCount = results.filter((r) => r.type === 'document' && !r.duplicate).length;
+      // FIX 2.1: Yield to event loop between files to prevent UI freeze
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    console.log('[FileImport] Batch processing complete:', imported, 'imported,', duplicates, 'duplicates,', errors, 'errors');
 
-      // Use transaction context for import record creation
-      const importId = await this.createImportRecordInTransaction(trx, {
+    // Create import record in separate transaction (after all files processed)
+    const locid = files[0]?.locid || null;
+    const auth_imp = files[0]?.auth_imp || null;
+    const imgCount = results.filter((r) => r.type === 'image' && !r.duplicate).length;
+    const vidCount = results.filter((r) => r.type === 'video' && !r.duplicate).length;
+    const mapCount = results.filter((r) => r.type === 'map' && !r.duplicate).length;
+    const docCount = results.filter((r) => r.type === 'document' && !r.duplicate).length;
+
+    // Create import record in its own transaction
+    const importId = await this.db.transaction().execute(async (trx) => {
+      return await this.createImportRecordInTransaction(trx, {
         locid,
         auth_imp,
         img_count: imgCount,
@@ -255,16 +259,16 @@ export class FileImportService {
         doc_count: docCount,
         notes: `Imported ${imported} files, ${duplicates} duplicates, ${errors} errors`,
       });
-
-      return {
-        total: files.length,
-        imported,
-        duplicates,
-        errors,
-        results,
-        importId,
-      };
     });
+
+    return {
+      total: files.length,
+      imported,
+      duplicates,
+      errors,
+      results,
+      importId,
+    };
   }
 
   /**

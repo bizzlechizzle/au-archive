@@ -167,8 +167,9 @@ const api = {
       deleteOriginals: boolean;
     }): Promise<unknown> =>
       ipcRenderer.invoke('media:import', input),
-    onImportProgress: (callback: (progress: { current: number; total: number }) => void) => {
-      const listener = (_event: any, progress: { current: number; total: number }) => callback(progress);
+    // FIX 4.1: Progress callback now includes filename
+    onImportProgress: (callback: (progress: { current: number; total: number; filename?: string }) => void) => {
+      const listener = (_event: any, progress: { current: number; total: number; filename?: string }) => callback(progress);
       ipcRenderer.on('media:import:progress', listener);
       return () => ipcRenderer.removeListener('media:import:progress', listener);
     },

@@ -7,6 +7,7 @@ import { getHealthMonitor } from '../services/health-monitor';
 import { getRecoverySystem } from '../services/recovery-system';
 import { getConfigService } from '../services/config-service';
 import { getLogger } from '../services/logger-service';
+import { getBackupScheduler } from '../services/backup-scheduler';
 import { initBrowserViewManager, destroyBrowserViewManager } from '../services/browser-view-manager';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -195,9 +196,28 @@ async function startupOrchestrator(): Promise<void> {
     }
 
     // Step 5: Register IPC handlers
-    logger.info('Main', 'Step 5/5: Registering IPC handlers');
+    logger.info('Main', 'Step 5/6: Registering IPC handlers');
     registerIpcHandlers();
     logger.info('Main', 'IPC handlers registered successfully');
+
+    // FIX 5.1: Step 6 - Auto backup on startup (if enabled)
+    const config = configService.get();
+    if (config.backup.enabled && config.backup.backupOnStartup) {
+      logger.info('Main', 'Step 6/6: Creating startup backup');
+      try {
+        const backupScheduler = getBackupScheduler();
+        await backupScheduler.initialize();
+        const backupResult = await backupScheduler.createBackup();
+        if (backupResult) {
+          logger.info('Main', 'Startup backup created successfully', { path: backupResult.filePath });
+        }
+      } catch (backupError) {
+        // Non-fatal: log warning but continue startup
+        logger.warn('Main', 'Failed to create startup backup', backupError as Error);
+      }
+    } else {
+      logger.info('Main', 'Step 6/6: Startup backup skipped (disabled in config)');
+    }
 
     const duration = Date.now() - startTime;
     logger.info('Main', 'Application initialization complete', { duration });

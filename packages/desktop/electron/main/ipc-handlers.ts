@@ -612,20 +612,37 @@ export function registerIpcHandlers() {
 
       // Import files with progress callback
       // FIX 1.4: Validate IPC sender before sending to prevent crash if window closed
+      // FIX 4.1: Include filename in progress updates
       const result = await fileImportService.importFiles(
         filesForImport,
         validatedInput.deleteOriginals,
-        (current, total) => {
+        (current, total, filename) => {
           try {
             // Check if sender is still valid (window not closed during import)
             if (_event.sender && !_event.sender.isDestroyed()) {
-              _event.sender.send('media:import:progress', { current, total });
+              _event.sender.send('media:import:progress', { current, total, filename });
             }
           } catch (e) {
             console.warn('[media:import] Failed to send progress (window may have closed):', e);
           }
         }
       );
+
+      // FIX 5.2: Auto backup after import (if enabled and successful)
+      if (result.imported > 0) {
+        try {
+          const configService = getConfigService();
+          const config = configService.get();
+          if (config.backup.enabled && config.backup.backupAfterImport) {
+            const backupScheduler = getBackupScheduler();
+            await backupScheduler.createBackup();
+            console.log('[media:import] Post-import backup created');
+          }
+        } catch (backupError) {
+          // Non-fatal: log but don't fail the import
+          console.warn('[media:import] Failed to create post-import backup:', backupError);
+        }
+      }
 
       return result;
     } catch (error) {
