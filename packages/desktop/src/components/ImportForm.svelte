@@ -754,15 +754,14 @@
           </div>
         </div>
 
-        <!-- Section: GPS COORDINATES - CRITICAL -->
+        <!-- Section: GPS COORDINATES - Optional but recommended -->
         <div class="space-y-4">
-          <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wide border-b pb-2 flex items-center gap-2">
-            <span class="text-red-500">*</span>
+          <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wide border-b pb-2">
             GPS Coordinates
-            <span class="text-xs font-normal text-gray-500 normal-case">(Critical for archival accuracy)</span>
+            <span class="text-xs font-normal text-gray-500 normal-case">(Optional - enables map display)</span>
           </h3>
 
-          <div class="p-4 bg-amber-50 border border-amber-200 rounded">
+          <div class="p-4 bg-gray-50 border border-gray-200 rounded">
             <div class="space-y-4">
               <div>
                 <label for="new-gps-input" class="block text-sm font-medium text-gray-700 mb-1">
@@ -825,9 +824,9 @@
                 </div>
               {/if}
 
-              <p class="text-xs text-amber-700">
-                <strong>Why GPS matters:</strong> Without coordinates, your photos exist in a void.
-                GPS enables map views, proximity searches, and proves location authenticity.
+              <p class="text-xs text-gray-600">
+                <strong>Tip:</strong> GPS coordinates enable map views and proximity searches.
+                You can also add city+state or zipcode for map display via geocoding.
               </p>
             </div>
           </div>

@@ -20,21 +20,33 @@
   let createCity = $state('');
   let creating = $state(false);
 
+  // Show locations that are mappable: has GPS OR has address (city+state, zipcode)
+  function isMappable(loc: Location): boolean {
+    // Has GPS coordinates
+    if (loc.gps?.lat && loc.gps?.lng) return true;
+    // Has city + state (can be geocoded)
+    if (loc.address?.city && loc.address?.state) return true;
+    // Has zipcode (can be geocoded)
+    if (loc.address?.zipcode) return true;
+    return false;
+  }
+
   let filteredLocations = $derived(() => {
     return locations.filter((loc) => {
       const matchesState = !filterState || loc.address?.state === filterState;
       const matchesType = !filterType || loc.type === filterType;
-      return matchesState && matchesType && loc.gps;
+      // Show all mappable locations, not just those with GPS
+      return matchesState && matchesType && isMappable(loc);
     });
   });
 
   let uniqueStates = $derived(() => {
-    const states = new Set(locations.filter(l => l.gps).map(l => l.address?.state).filter(Boolean));
+    const states = new Set(locations.filter(isMappable).map(l => l.address?.state).filter(Boolean));
     return Array.from(states).sort();
   });
 
   let uniqueTypes = $derived(() => {
-    const types = new Set(locations.filter(l => l.gps).map(l => l.type).filter(Boolean));
+    const types = new Set(locations.filter(isMappable).map(l => l.type).filter(Boolean));
     return Array.from(types).sort();
   });
 
@@ -45,8 +57,9 @@
         console.error('Electron API not available - preload script may have failed to load');
         return;
       }
+      // Load ALL locations - filtering for mappable ones happens in filteredLocations
       const allLocations = await window.electronAPI.locations.findAll();
-      locations = allLocations.filter(l => l.gps);
+      locations = allLocations;
     } catch (error) {
       console.error('Error loading locations:', error);
     } finally {
@@ -130,7 +143,7 @@
       <h1 class="text-xl font-semibold text-foreground">Atlas</h1>
       <p class="text-xs text-gray-500">
         {#if !loading}
-          Showing {filteredLocations().length} of {locations.length} locations with GPS
+          Showing {filteredLocations().length} of {locations.length} mappable locations
         {/if}
       </p>
     </div>
@@ -177,24 +190,17 @@
   {/if}
 
   <div class="flex-1 relative">
+    <!-- ALWAYS show the map - it's an atlas, not a placeholder -->
+    <Map
+      locations={filteredLocations()}
+      onLocationClick={handleLocationClick}
+      onMapClick={handleMapClick}
+      onMapRightClick={handleMapRightClick}
+    />
     {#if loading}
-      <div class="absolute inset-0 flex items-center justify-center bg-gray-100">
-        <p class="text-gray-500">Loading map...</p>
+      <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded shadow-lg z-10">
+        <p class="text-gray-500 text-sm">Loading locations...</p>
       </div>
-    {:else if filteredLocations().length === 0}
-      <div class="absolute inset-0 flex items-center justify-center bg-gray-100">
-        <div class="text-center">
-          <p class="text-gray-500 text-lg">No locations with GPS coordinates</p>
-          <p class="text-gray-400 text-sm mt-2">Add locations with GPS data to see them on the map</p>
-        </div>
-      </div>
-    {:else}
-      <Map
-        locations={filteredLocations()}
-        onLocationClick={handleLocationClick}
-        onMapClick={handleMapClick}
-        onMapRightClick={handleMapRightClick}
-      />
     {/if}
   </div>
 </div>
