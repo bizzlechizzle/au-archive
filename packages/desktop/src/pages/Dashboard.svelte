@@ -75,12 +75,15 @@
 </script>
 
 <div class="p-8">
-  <div class="mb-8">
-    <h1 class="text-3xl font-bold text-foreground mb-2">Dashboard</h1>
-    <p class="text-gray-600">Overview of your abandoned location archive</p>
-    {#if !loading}
-      <p class="text-sm text-gray-500 mt-1">Total Locations: {totalCount}</p>
-    {/if}
+  <!-- Header with Add Location button on the right -->
+  <div class="flex justify-between items-center mb-8">
+    <h1 class="text-3xl font-bold text-foreground">Dashboard</h1>
+    <button
+      onclick={() => router.navigate('/imports')}
+      class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+    >
+      Add Location
+    </button>
   </div>
 
   {#if loading}
@@ -88,45 +91,6 @@
       <p class="text-gray-500">Loading...</p>
     </div>
   {:else}
-    <!-- Row 1: Quick Actions -->
-    <div class="mb-6">
-      <div class="flex gap-4 flex-wrap">
-        <button
-          onclick={() => router.navigate('/imports')}
-          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
-        >
-          + New Location
-        </button>
-        <button
-          onclick={() => router.navigate('/atlas')}
-          class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
-        >
-          Open Atlas
-        </button>
-        <button
-          onclick={() => router.navigate('/locations')}
-          class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
-        >
-          View All Locations
-        </button>
-        <button
-          onclick={() => router.navigate('/imports')}
-          class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
-        >
-          Import Media
-        </button>
-        <button
-          onclick={async () => {
-            if (!window.electronAPI?.locations) return;
-            const loc = await window.electronAPI.locations.random();
-            if (loc) router.navigate(`/location/${loc.locid}`);
-          }}
-          class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
-        >
-          Random Location
-        </button>
-      </div>
-    </div>
 
     <!-- Active Import Status -->
     {#if $isImporting && $importProgress}
@@ -379,9 +343,9 @@
     </div>
 
     <!-- Row 5: Special Filters -->
-    <div>
+    <div class="mb-6">
       <h2 class="text-xl font-semibold mb-4 text-foreground">Special Filters</h2>
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
         <button
           onclick={() => router.navigate('/locations', undefined, { filter: 'undocumented' })}
           class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
@@ -407,12 +371,47 @@
         </button>
 
         <button
+          onclick={async () => {
+            if (!window.electronAPI?.locations) return;
+            const loc = await window.electronAPI.locations.random();
+            if (loc) router.navigate(`/location/${loc.locid}`);
+          }}
+          class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
+        >
+          <div class="text-sm text-gray-500">Surprise Me</div>
+          <div class="text-lg font-semibold text-foreground">Random</div>
+        </button>
+
+        <button
           onclick={() => router.navigate('/atlas')}
           class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
         >
           <div class="text-sm text-gray-500">Map View</div>
           <div class="text-lg font-semibold text-foreground">Atlas</div>
         </button>
+      </div>
+    </div>
+
+    <!-- Stats Box -->
+    <div class="bg-white rounded-lg shadow p-6">
+      <h2 class="text-xl font-semibold mb-4 text-foreground">Archive Stats</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div class="text-center">
+          <div class="text-3xl font-bold text-accent">{totalCount}</div>
+          <div class="text-sm text-gray-500">Total Locations</div>
+        </div>
+        <div class="text-center">
+          <div class="text-3xl font-bold text-accent">{topStates.length > 0 ? topStates.reduce((sum, s) => sum + s.count, 0) : 0}</div>
+          <div class="text-sm text-gray-500">With GPS Data</div>
+        </div>
+        <div class="text-center">
+          <div class="text-3xl font-bold text-accent">{pinnedLocations.length}</div>
+          <div class="text-sm text-gray-500">Pinned</div>
+        </div>
+        <div class="text-center">
+          <div class="text-3xl font-bold text-accent">{recentImports.length}</div>
+          <div class="text-sm text-gray-500">Recent Imports</div>
+        </div>
       </div>
     </div>
   {/if}

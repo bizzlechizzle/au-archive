@@ -269,6 +269,15 @@ export class FileImportService {
   ): Promise<ImportResult> {
     console.log('[FileImport] === Starting import for:', file.originalName, '===');
 
+    // 0. Pre-fetch location data OUTSIDE heavy operations to avoid deadlock
+    // CRITICAL: Fetch once here, don't call locationRepo again inside transaction operations
+    console.log('[FileImport] Step 0: Pre-fetching location data...');
+    const location = await this.locationRepo.findById(file.locid);
+    if (!location) {
+      throw new Error(`Location not found: ${file.locid}`);
+    }
+    console.log('[FileImport] Step 0 complete, location:', location.locnam);
+
     // 1. Validate file path security
     console.log('[FileImport] Step 1: Validating file path...');
     const sanitizedName = PathValidator.sanitizeFilename(file.originalName);
@@ -315,12 +324,11 @@ export class FileImportService {
         metadata = await this.exifToolService.extractMetadata(file.filePath);
         console.log('[FileImport] ExifTool completed in', Date.now() - exifStart, 'ms');
 
-        // CRITICAL: Check GPS mismatch
+        // CRITICAL: Check GPS mismatch (use pre-fetched location, don't fetch again)
         if (metadata.gps && GPSValidator.isValidGPS(metadata.gps.lat, metadata.gps.lng)) {
           console.log('[FileImport] Step 5b: Checking GPS mismatch...');
-          const location = await this.locationRepo.findById(file.locid);
-
-          if (location && location.gps?.lat && location.gps?.lng) {
+          // Use pre-fetched location (from Step 0) - don't call locationRepo again!
+          if (location.gps?.lat && location.gps?.lng) {
             const mismatch = GPSValidator.checkGPSMismatch(
               { lat: location.gps.lat, lng: location.gps.lng },
               { lat: metadata.gps.lat, lng: metadata.gps.lng },
@@ -350,9 +358,10 @@ export class FileImportService {
     }
 
     // 6. Organize file to archive (validate path)
+    // Pass pre-fetched location to avoid another DB call inside transaction
     console.log('[FileImport] Step 6: Organizing file to archive...');
     const organizeStart = Date.now();
-    const archivePath = await this.organizeFile(file, hash, ext, type);
+    const archivePath = await this.organizeFileWithLocation(file, hash, ext, type, location);
     console.log('[FileImport] Step 6 complete in', Date.now() - organizeStart, 'ms, path:', archivePath);
 
     // 7. Insert record in database using transaction
@@ -448,23 +457,18 @@ export class FileImportService {
   /**
    * Organize file to archive folder with path validation
    * Archive structure per spec: [archivePath]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-[type]-[LOC12]/[SHA256].[ext]
+   *
+   * IMPORTANT: This version accepts pre-fetched location to avoid DB calls inside transaction
    */
-  private async organizeFile(
+  private async organizeFileWithLocation(
     file: ImportFileInput,
     hash: string,
     ext: string,
-    type: 'image' | 'video' | 'map' | 'document'
+    type: 'image' | 'video' | 'map' | 'document',
+    location: any // Pre-fetched location from Step 0
   ): Promise<string> {
     console.log('[organizeFile] Starting for:', file.originalName);
-
-    // Fetch location data for folder structure
-    console.log('[organizeFile] Fetching location:', file.locid);
-    const location = await this.locationRepo.findById(file.locid);
-
-    if (!location) {
-      throw new Error(`Location not found: ${file.locid}`);
-    }
-    console.log('[organizeFile] Location found:', location.locnam);
+    console.log('[organizeFile] Using pre-fetched location:', location.locnam);
 
     // Build spec-compliant folder structure
     // [STATE]-[TYPE] folder (use "XX" for unknown state, "Unknown" for unknown type)
