@@ -284,4 +284,194 @@ export class AddressNormalizer {
 
     return result;
   }
+
+  /**
+   * FIX 6.4: Enhanced address parsing (libpostal alternative)
+   * Parses full addresses like "123 Main St, Springfield, IL 62701"
+   * Extracts: house_number, street, city, state, zipcode
+   * Normalizes: "St" → "Street", abbreviations expanded
+   */
+  static parseFullAddress(input: string): ParsedAddress {
+    const result: ParsedAddress = {
+      house_number: null,
+      street: null,
+      city: null,
+      state: null,
+      zipcode: null,
+      country: 'US',
+      confidence: 'low',
+    };
+
+    if (!input || typeof input !== 'string') {
+      return result;
+    }
+
+    const cleaned = input.trim();
+    if (!cleaned) {
+      return result;
+    }
+
+    // Split by comma for major components
+    const parts = cleaned.split(',').map(p => p.trim()).filter(p => p);
+
+    // Work from right to left (most reliable order)
+    let remaining = [...parts];
+
+    // Last part: STATE ZIPCODE (e.g., "IL 62701" or "Illinois 62701")
+    if (remaining.length > 0) {
+      const lastPart = remaining[remaining.length - 1];
+
+      // Try: "STATE ZIPCODE" pattern
+      const stateZipMatch = lastPart.match(/^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+(\d{5}(?:-\d{4})?)$/);
+      if (stateZipMatch) {
+        result.state = this.normalizeStateCode(stateZipMatch[1]);
+        result.zipcode = this.normalizeZipcode(stateZipMatch[2]);
+        remaining.pop();
+      } else {
+        // Try just state or just zipcode
+        const stateOnly = this.normalizeStateCode(lastPart);
+        const zipOnly = this.normalizeZipcode(lastPart);
+
+        if (stateOnly && !zipOnly) {
+          result.state = stateOnly;
+          remaining.pop();
+        } else if (zipOnly && !stateOnly) {
+          result.zipcode = zipOnly;
+          remaining.pop();
+        } else if (stateOnly && zipOnly) {
+          // Ambiguous - prefer state
+          result.state = stateOnly;
+          remaining.pop();
+        }
+      }
+    }
+
+    // Next from right: City
+    if (remaining.length > 0) {
+      const cityPart = remaining[remaining.length - 1];
+      // Check it's not a street address (doesn't start with number)
+      if (!/^\d/.test(cityPart)) {
+        result.city = this.normalizeCity(cityPart);
+        remaining.pop();
+      }
+    }
+
+    // Remaining: Street address with potential house number
+    if (remaining.length > 0) {
+      const streetPart = remaining.join(', ');
+      const parsed = this.parseStreetAddress(streetPart);
+      result.house_number = parsed.house_number;
+      result.street = parsed.street;
+    }
+
+    // Calculate confidence based on completeness
+    const fieldCount = [result.house_number, result.street, result.city, result.state, result.zipcode]
+      .filter(f => f !== null).length;
+
+    if (fieldCount >= 4) {
+      result.confidence = 'high';
+    } else if (fieldCount >= 2) {
+      result.confidence = 'medium';
+    } else {
+      result.confidence = 'low';
+    }
+
+    return result;
+  }
+
+  /**
+   * Parse street address to extract house number and street name
+   */
+  private static parseStreetAddress(street: string): { house_number: string | null; street: string | null } {
+    if (!street) {
+      return { house_number: null, street: null };
+    }
+
+    const trimmed = street.trim();
+
+    // Match house number at start: "123 Main St" or "123A Main St"
+    const houseMatch = trimmed.match(/^(\d+[A-Za-z]?)\s+(.+)$/);
+    if (houseMatch) {
+      return {
+        house_number: houseMatch[1],
+        street: this.normalizeStreetName(houseMatch[2]),
+      };
+    }
+
+    return {
+      house_number: null,
+      street: this.normalizeStreetName(trimmed),
+    };
+  }
+
+  /**
+   * Normalize street name: expand abbreviations, proper case
+   */
+  private static normalizeStreetName(street: string): string | null {
+    if (!street) return null;
+
+    let normalized = street.trim();
+
+    // Expand common abbreviations
+    const abbreviations: Record<string, string> = {
+      'St': 'Street',
+      'St.': 'Street',
+      'Ave': 'Avenue',
+      'Ave.': 'Avenue',
+      'Blvd': 'Boulevard',
+      'Blvd.': 'Boulevard',
+      'Dr': 'Drive',
+      'Dr.': 'Drive',
+      'Rd': 'Road',
+      'Rd.': 'Road',
+      'Ln': 'Lane',
+      'Ln.': 'Lane',
+      'Ct': 'Court',
+      'Ct.': 'Court',
+      'Pl': 'Place',
+      'Pl.': 'Place',
+      'Cir': 'Circle',
+      'Cir.': 'Circle',
+      'Hwy': 'Highway',
+      'Hwy.': 'Highway',
+      'Pkwy': 'Parkway',
+      'Pkwy.': 'Parkway',
+      'N': 'North',
+      'N.': 'North',
+      'S': 'South',
+      'S.': 'South',
+      'E': 'East',
+      'E.': 'East',
+      'W': 'West',
+      'W.': 'West',
+      'NE': 'Northeast',
+      'NW': 'Northwest',
+      'SE': 'Southeast',
+      'SW': 'Southwest',
+    };
+
+    // Replace abbreviations at word boundaries
+    for (const [abbr, full] of Object.entries(abbreviations)) {
+      const regex = new RegExp(`\\b${abbr.replace('.', '\\.')}\\b`, 'gi');
+      normalized = normalized.replace(regex, full);
+    }
+
+    // Collapse multiple spaces and trim
+    normalized = normalized.replace(/\s+/g, ' ').trim();
+
+    return normalized || null;
+  }
+}
+
+/**
+ * FIX 6.4: Parsed address result from parseFullAddress
+ */
+export interface ParsedAddress {
+  house_number: string | null;
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  zipcode: string | null;
+  country: string;
+  confidence: 'high' | 'medium' | 'low';
 }

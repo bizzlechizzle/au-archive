@@ -124,9 +124,11 @@
     onLocationClick?: (location: Location) => void;
     onMapClick?: (lat: number, lng: number) => void;
     onMapRightClick?: (lat: number, lng: number) => void;
+    // FIX 6.8: Enable heat map visualization
+    showHeatMap?: boolean;
   }
 
-  let { locations = [], onLocationClick, onMapClick, onMapRightClick }: Props = $props();
+  let { locations = [], onLocationClick, onMapClick, onMapRightClick, showHeatMap = false }: Props = $props();
 
   /**
    * Escape HTML to prevent XSS attacks
@@ -144,8 +146,95 @@
   let mapContainer: HTMLDivElement;
   let map: LeafletMap | null = null;
   let markersLayer: LayerGroup | null = null;
+  // FIX 6.8: Heat map layer
+  let heatLayer: any = null;
   let cluster: Supercluster | null = null;
   let lastLocationsLength = $state(0);
+
+  /**
+   * FIX 6.8: Simple canvas-based heat map implementation
+   * Uses a custom Leaflet layer to render density visualization
+   */
+  function createHeatLayer(L: any, locations: Location[]): any {
+    // Extract coordinates with weights (media count if available, else 1)
+    const points = locations
+      .map(loc => {
+        const coords = getLocationCoordinates(loc);
+        if (!coords) return null;
+        return {
+          lat: coords.lat,
+          lng: coords.lng,
+          // Weight could be based on media count or other metrics
+          weight: 1,
+        };
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+
+    if (points.length === 0) return null;
+
+    // Create a custom canvas layer for heat visualization
+    const HeatLayer = L.Layer.extend({
+      onAdd: function(map: any) {
+        this._map = map;
+        this._canvas = L.DomUtil.create('canvas', 'leaflet-heat-layer');
+        const pane = map.getPane('overlayPane');
+        pane.appendChild(this._canvas);
+        map.on('moveend', this._update, this);
+        map.on('zoomend', this._update, this);
+        this._update();
+      },
+
+      onRemove: function(map: any) {
+        L.DomUtil.remove(this._canvas);
+        map.off('moveend', this._update, this);
+        map.off('zoomend', this._update, this);
+      },
+
+      _update: function() {
+        if (!this._map) return;
+
+        const size = this._map.getSize();
+        const bounds = this._map.getBounds();
+        const zoom = this._map.getZoom();
+        const topLeft = this._map.containerPointToLayerPoint([0, 0]);
+
+        L.DomUtil.setPosition(this._canvas, topLeft);
+        this._canvas.width = size.x;
+        this._canvas.height = size.y;
+
+        const ctx = this._canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.clearRect(0, 0, size.x, size.y);
+
+        // Calculate radius based on zoom level
+        const radius = Math.max(20, Math.min(80, zoom * 6));
+
+        // Draw heat points
+        points.forEach(point => {
+          if (!bounds.contains([point.lat, point.lng])) return;
+
+          const containerPoint = this._map.latLngToContainerPoint([point.lat, point.lng]);
+          const x = containerPoint.x;
+          const y = containerPoint.y;
+
+          // Create radial gradient for each point
+          const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+          gradient.addColorStop(0, 'rgba(255, 100, 100, 0.6)');
+          gradient.addColorStop(0.4, 'rgba(255, 200, 100, 0.4)');
+          gradient.addColorStop(0.7, 'rgba(100, 200, 255, 0.2)');
+          gradient.addColorStop(1, 'rgba(0, 100, 255, 0)');
+
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.fillStyle = gradient;
+          ctx.fill();
+        });
+      },
+    });
+
+    return new HeatLayer();
+  }
 
   onMount(async () => {
     const L = await import('leaflet');
@@ -314,6 +403,27 @@
       initCluster();
       import('leaflet').then((L) => updateClusters(L.default));
     }
+  });
+
+  // FIX 6.8: Toggle heat map layer based on showHeatMap prop
+  $effect(() => {
+    if (!map) return;
+
+    import('leaflet').then((L) => {
+      // Remove existing heat layer if any
+      if (heatLayer) {
+        map!.removeLayer(heatLayer);
+        heatLayer = null;
+      }
+
+      // Add heat layer if enabled
+      if (showHeatMap && locations.length > 0) {
+        heatLayer = createHeatLayer(L.default, locations);
+        if (heatLayer) {
+          heatLayer.addTo(map);
+        }
+      }
+    });
   });
 
   onDestroy(() => {

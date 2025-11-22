@@ -37,6 +37,9 @@ const api = {
       ipcRenderer.invoke('location:favorites'),
     toggleFavorite: (id: string): Promise<boolean> =>
       ipcRenderer.invoke('location:toggleFavorite', id),
+    // FIX 6.7: Proximity search - find locations within radius
+    findNearby: (lat: number, lng: number, radiusKm: number): Promise<Array<Location & { distance: number }>> =>
+      ipcRenderer.invoke('location:findNearby', lat, lng, radiusKm),
   },
 
   stats: {

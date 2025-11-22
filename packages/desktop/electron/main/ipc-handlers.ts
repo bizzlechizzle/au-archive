@@ -121,6 +121,26 @@ export function registerIpcHandlers() {
     }
   });
 
+  // FIX 6.7: Proximity search - find locations within radius
+  ipcMain.handle('location:findNearby', async (_event, lat: number, lng: number, radiusKm: number) => {
+    try {
+      // Validate inputs
+      if (typeof lat !== 'number' || lat < -90 || lat > 90) {
+        throw new Error('Invalid latitude');
+      }
+      if (typeof lng !== 'number' || lng < -180 || lng > 180) {
+        throw new Error('Invalid longitude');
+      }
+      if (typeof radiusKm !== 'number' || radiusKm <= 0 || radiusKm > 1000) {
+        throw new Error('Invalid radius (must be 0-1000 km)');
+      }
+      return await locationRepo.findNearby(lat, lng, radiusKm);
+    } catch (error) {
+      console.error('Error finding nearby locations:', error);
+      throw error;
+    }
+  });
+
   // Special filters
   ipcMain.handle('location:random', async () => {
     try {
