@@ -279,7 +279,7 @@ export class FileImportService {
     console.log('[FileImport] Batch processing complete:', imported, 'imported,', duplicates, 'duplicates,', errors, 'errors');
 
     // Create import record in separate transaction (after all files processed)
-    const locid = files[0]?.locid || null;
+    // NOTE: locid already pre-fetched at line 204, use auth_imp from first file
     const auth_imp = files[0]?.auth_imp || null;
     const imgCount = results.filter((r) => r.type === 'image' && !r.duplicate).length;
     const vidCount = results.filter((r) => r.type === 'video' && !r.duplicate).length;
