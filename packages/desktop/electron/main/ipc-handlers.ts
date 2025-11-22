@@ -16,6 +16,7 @@ import { CryptoService } from '../services/crypto-service';
 import { ExifToolService } from '../services/exiftool-service';
 import { FFmpegService } from '../services/ffmpeg-service';
 import { FileImportService } from '../services/file-import-service';
+import { PhaseImportService } from '../services/phase-import-service';
 import { getHealthMonitor } from '../services/health-monitor';
 import { getBackupScheduler } from '../services/backup-scheduler';
 import { getIntegrityChecker } from '../services/integrity-checker';
@@ -687,6 +688,130 @@ export function registerIpcHandlers() {
       return result;
     } catch (error) {
       console.error('Error importing media:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  // ============================================
+  // Phase-Based Import (whereswaldo11.md spec)
+  // LOG IT -> SERIALIZE IT -> COPY & NAME IT -> DUMP
+  // ============================================
+  ipcMain.handle('media:phaseImport', async (_event, input: unknown) => {
+    try {
+      console.log('[media:phaseImport] Starting phase-based import');
+
+      const ImportInputSchema = z.object({
+        files: z.array(
+          z.object({
+            filePath: z.string(),
+            originalName: z.string(),
+          })
+        ),
+        locid: z.string().uuid(),
+        subid: z.string().uuid().nullable().optional(),
+        auth_imp: z.string().nullable(),
+        deleteOriginals: z.boolean().default(false),
+        useHardlinks: z.boolean().default(false),
+        verifyChecksums: z.boolean().default(true),
+      });
+
+      const validatedInput = ImportInputSchema.parse(input);
+      console.log('[media:phaseImport] Validated input, files count:', validatedInput.files.length);
+
+      // Get archive path from settings
+      const archivePath = await db
+        .selectFrom('settings')
+        .select('value')
+        .where('key', '=', 'archive_folder')
+        .executeTakeFirst();
+
+      if (!archivePath?.value) {
+        throw new Error('Archive folder not configured. Please set it in Settings.');
+      }
+
+      // Create geocoding service
+      const geocodingService = new GeocodingService(db);
+
+      // Initialize PhaseImportService
+      const phaseImportService = new PhaseImportService(
+        db,
+        cryptoService,
+        exifToolService,
+        ffmpegService,
+        mediaRepo,
+        importRepo,
+        locationRepo,
+        archivePath.value,
+        [],
+        geocodingService
+      );
+
+      // Prepare files for import
+      const filesForImport = validatedInput.files.map((f) => ({
+        filePath: f.filePath,
+        originalName: f.originalName,
+        locid: validatedInput.locid,
+        subid: validatedInput.subid || null,
+        auth_imp: validatedInput.auth_imp,
+      }));
+
+      // Create abort controller
+      const importId = `phase-import-${Date.now()}`;
+      const abortController = new AbortController();
+      activeImports.set(importId, abortController);
+
+      let result;
+      try {
+        result = await phaseImportService.importFiles(
+          filesForImport,
+          {
+            deleteOriginals: validatedInput.deleteOriginals,
+            useHardlinks: validatedInput.useHardlinks,
+            verifyChecksums: validatedInput.verifyChecksums,
+          },
+          (progress) => {
+            try {
+              if (_event.sender && !_event.sender.isDestroyed()) {
+                _event.sender.send('media:phaseImport:progress', {
+                  importId,
+                  phase: progress.phase,
+                  phaseProgress: progress.phaseProgress,
+                  currentFile: progress.currentFile,
+                  filesProcessed: progress.filesProcessed,
+                  totalFiles: progress.totalFiles,
+                });
+              }
+            } catch (e) {
+              console.warn('[media:phaseImport] Failed to send progress:', e);
+            }
+          },
+          abortController.signal
+        );
+      } finally {
+        activeImports.delete(importId);
+      }
+
+      // Auto backup after import (if enabled and successful)
+      if (result.success && result.summary.imported > 0) {
+        try {
+          const configService = getConfigService();
+          const config = configService.get();
+          if (config.backup.enabled && config.backup.backupAfterImport) {
+            const backupScheduler = getBackupScheduler();
+            await backupScheduler.createBackup();
+            console.log('[media:phaseImport] Post-import backup created');
+          }
+        } catch (backupError) {
+          console.warn('[media:phaseImport] Failed to create post-import backup:', backupError);
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error in phase import:', error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }

@@ -765,11 +765,11 @@
           {/if}
 
           {#if location.gps}
+            {@const confidence = getGpsConfidence(location.gps)}
             <div class="mb-4">
               <div class="flex items-center justify-between mb-2">
                 <h3 class="text-sm font-medium text-gray-500">GPS Coordinates</h3>
                 <!-- FIX 6.1: GPS Confidence Badge -->
-                {@const confidence = getGpsConfidence(location.gps)}
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium
                   {confidence.color === 'green' ? 'bg-green-100 text-green-800' :
                    confidence.color === 'blue' ? 'bg-blue-100 text-blue-800' :

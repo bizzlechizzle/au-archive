@@ -170,6 +170,45 @@ const api = {
       deleteOriginals: boolean;
     }): Promise<unknown> =>
       ipcRenderer.invoke('media:import', input),
+    // Phase-based import (whereswaldo11.md spec): LOG IT -> SERIALIZE IT -> COPY & NAME IT -> DUMP
+    phaseImport: (input: {
+      files: Array<{ filePath: string; originalName: string }>;
+      locid: string;
+      subid?: string | null;
+      auth_imp: string | null;
+      deleteOriginals?: boolean;
+      useHardlinks?: boolean;
+      verifyChecksums?: boolean;
+    }): Promise<{
+      success: boolean;
+      importId: string;
+      manifestPath: string;
+      summary: {
+        total: number;
+        imported: number;
+        duplicates: number;
+        errors: number;
+        images: number;
+        videos: number;
+        documents: number;
+        maps: number;
+      };
+      errors: string[];
+    }> =>
+      ipcRenderer.invoke('media:phaseImport', input),
+    // Phase import progress with phase info
+    onPhaseImportProgress: (callback: (progress: {
+      importId: string;
+      phase: 'log' | 'serialize' | 'copy' | 'dump' | 'complete';
+      phaseProgress: number;
+      currentFile?: string;
+      filesProcessed: number;
+      totalFiles: number;
+    }) => void) => {
+      const listener = (_event: any, progress: any) => callback(progress);
+      ipcRenderer.on('media:phaseImport:progress', listener);
+      return () => ipcRenderer.removeListener('media:phaseImport:progress', listener);
+    },
     // FIX 4.1 & 4.3: Progress callback includes filename and importId
     onImportProgress: (callback: (progress: { current: number; total: number; filename?: string; importId?: string }) => void) => {
       const listener = (_event: any, progress: { current: number; total: number; filename?: string; importId?: string }) => callback(progress);
