@@ -19,29 +19,29 @@ export default defineConfig({
         },
       },
       {
-        entry: 'electron/preload/index.ts',
+        // Preload script - use static CJS file instead of Vite bundling
+        // Vite's bundling adds ESM exports to CJS files which breaks Electron
+        entry: 'electron/preload/preload.cjs',
         onstart(args) {
+          // Copy the static preload file to dist
+          const fs = require('fs');
+          const srcPath = 'electron/preload/preload.cjs';
+          const destDir = 'dist-electron/preload';
+          const destPath = destDir + '/index.cjs';
+          if (!fs.existsSync(destDir)) {
+            fs.mkdirSync(destDir, { recursive: true });
+          }
+          fs.copyFileSync(srcPath, destPath);
           args.reload();
         },
         vite: {
           build: {
             outDir: 'dist-electron/preload',
-            // Use lib mode to ensure proper CJS output
-            lib: {
-              entry: 'electron/preload/index.ts',
-              formats: ['cjs'],
-              fileName: () => 'index.cjs',
-            },
             rollupOptions: {
-              external: ['electron', '@au-archive/core'],
+              external: ['electron'],
               output: {
-                // Electron preload scripts MUST be CommonJS format
-                // Use .cjs extension so Node.js treats it as CommonJS
-                // regardless of "type": "module" in package.json
                 format: 'cjs',
                 entryFileNames: 'index.cjs',
-                // 'auto' or 'named' allows proper CJS exports conversion
-                exports: 'auto',
               },
             },
           },
