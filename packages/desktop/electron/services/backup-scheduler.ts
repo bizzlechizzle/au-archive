@@ -5,6 +5,8 @@ import { existsSync } from 'fs';
 import { getDatabasePath } from '../main/database';
 import { getLogger } from './logger-service';
 import { getConfigService } from './config-service';
+// FIX 5.4: Import sendToRenderer for backup notifications
+import { sendToRenderer } from '../main/index';
 
 const logger = getLogger();
 
@@ -288,9 +290,22 @@ export class BackupScheduler {
     this.scheduleInterval = setInterval(async () => {
       logger.info('BackupScheduler', 'Running scheduled backup');
       const backup = await this.createAndVerifyBackup();
-      if (!backup) {
+      if (backup) {
+        // FIX 5.4: Send success notification
+        sendToRenderer('backup:status', {
+          success: true,
+          message: 'Scheduled backup completed successfully',
+          timestamp: backup.timestamp,
+          verified: backup.verified,
+        });
+      } else {
         logger.error('BackupScheduler', 'Scheduled backup failed');
-        // FIX 5.4: Failure logged for notification system to pick up
+        // FIX 5.4: Send failure notification to renderer
+        sendToRenderer('backup:status', {
+          success: false,
+          message: 'Scheduled backup failed - please check disk space',
+          timestamp: new Date().toISOString(),
+        });
       }
     }, intervalMs);
   }

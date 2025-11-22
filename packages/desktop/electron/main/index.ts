@@ -51,6 +51,16 @@ process.on('unhandledRejection', (reason: unknown) => {
 
 let mainWindow: BrowserWindow | null = null;
 
+/**
+ * FIX 5.4: Send event to renderer process
+ * Used for backup notifications and other main->renderer communication
+ */
+export function sendToRenderer(channel: string, ...args: unknown[]): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, ...args);
+  }
+}
+
 // Single instance lock - prevent multiple instances of the app
 const gotLock = app.requestSingleInstanceLock();
 

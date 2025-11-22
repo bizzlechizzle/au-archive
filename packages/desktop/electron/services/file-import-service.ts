@@ -7,6 +7,8 @@ import { PathValidator } from './path-validator';
 import { GPSValidator } from './gps-validator';
 // FIX 3.3: Import geocoding for #import_address
 import { GeocodingService } from './geocoding-service';
+// FIX 3.4: Import GPX/KML parser for map files
+import { GPXKMLParser, type MapFileData } from './gpx-kml-parser';
 import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
@@ -146,6 +148,9 @@ export class FileImportService {
     '.sid', '.ecw',                    // MrSID, ECW compressed imagery
   ];
 
+  // FIX 3.4: GPX/KML parser for map files
+  private readonly gpxKmlParser: GPXKMLParser;
+
   constructor(
     private readonly db: Kysely<Database>,
     private readonly cryptoService: CryptoService,
@@ -158,7 +163,10 @@ export class FileImportService {
     private readonly allowedImportDirs: string[] = [], // User's home dir, downloads, etc.
     // FIX 3.3: Optional geocoding service for #import_address
     private readonly geocodingService?: GeocodingService
-  ) {}
+  ) {
+    // FIX 3.4: Initialize GPX/KML parser
+    this.gpxKmlParser = new GPXKMLParser();
+  }
 
   /**
    * Import multiple files in a batch
@@ -365,8 +373,25 @@ export class FileImportService {
           gps: exifData?.gps || null,
           rawExif: exifData?.rawExif || null,
         };
-      } else if (type === 'document' || type === 'map') {
-        // FIX 3.1: Store ExifTool metadata for documents and maps
+      } else if (type === 'map') {
+        // FIX 3.4: Parse GPX/KML files for GPS data
+        const ext = path.extname(file.filePath).toLowerCase();
+        if (ext === '.gpx' || ext === '.kml' || ext === '.kmz') {
+          console.log('[FileImport] Parsing GPX/KML file...');
+          const mapData = await this.gpxKmlParser.parseFile(file.filePath);
+          console.log('[FileImport] GPX/KML parsed:', this.gpxKmlParser.getSummary(mapData));
+
+          metadata = {
+            ...exifData,
+            mapData,
+            gps: mapData.centerPoint ? { lat: mapData.centerPoint.lat, lng: mapData.centerPoint.lng } : null,
+          };
+        } else {
+          // Other map formats (GeoTIFF, etc.) - just use ExifTool
+          metadata = exifData;
+        }
+      } else if (type === 'document') {
+        // FIX 3.1: Store ExifTool metadata for documents
         metadata = exifData;
       }
 
@@ -687,6 +712,9 @@ export class FileImportService {
         })
         .execute();
     } else if (type === 'map') {
+      // FIX 3.4: Store parsed GPX/KML data in meta_map
+      const mapDataJson = metadata?.mapData ? JSON.stringify(metadata.mapData) : null;
+
       await trx
         .insertInto('maps')
         .values({
@@ -700,7 +728,11 @@ export class FileImportService {
           auth_imp: file.auth_imp,
           mapadd: timestamp,
           meta_exiftool: metadata?.rawExif || null,
-          meta_map: null,
+          // FIX 3.4: Store parsed GPX/KML data
+          meta_map: mapDataJson,
+          // Store GPS center point for map files
+          meta_gps_lat: metadata?.mapData?.centerPoint?.lat || metadata?.gps?.lat || null,
+          meta_gps_lng: metadata?.mapData?.centerPoint?.lng || metadata?.gps?.lng || null,
           reference: null,
           map_states: null,
           map_verified: 0,

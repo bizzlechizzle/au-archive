@@ -171,6 +171,11 @@ export interface ElectronAPI {
     attemptRecovery: () => Promise<unknown>;
   };
 
+  // FIX 5.4: Backup status events
+  backup: {
+    onStatus: (callback: (status: { success: boolean; message: string; timestamp: string; verified?: boolean }) => void) => () => void;
+  };
+
   browser: {
     navigate: (url: string) => Promise<{ success: boolean }>;
     show: (bounds: { x: number; y: number; width: number; height: number }) => Promise<{ success: boolean }>;

@@ -2666,9 +2666,9 @@ describe('BackupScheduler', () => {
 | 3.1 | #import_exiftool for all types | ✅ YES | Images+Videos+Maps+Docs | **100%** |
 | 3.2 | GPS from videos | ✅ YES | Schema + code done | **100%** |
 | 3.3 | #import_address during import | ✅ YES | Reverse geocoding | **100%** |
-| 3.4 | #import_maps parsing | ⚠️ PARTIAL | Files stored, no GPX parse | **25%** |
+| 3.4 | #import_maps parsing | ✅ YES | GPX/KML parser + DB storage | **100%** |
 
-**Phase 3 Total: 3.25/4 = 81.25%**
+**Phase 3 Total: 4/4 = 100%**
 
 ---
 
@@ -2694,11 +2694,11 @@ describe('BackupScheduler', () => {
 | 5.1 | Auto backup on startup | ✅ YES | createAndVerifyBackup | **100%** |
 | 5.2 | Backup after import | ✅ YES | In ipc-handlers | **100%** |
 | 5.3 | Scheduled backups | ✅ YES | Interval-based | **100%** |
-| 5.4 | Backup failure alerts | ⚠️ PARTIAL | Logged, no toast yet | **50%** |
+| 5.4 | Backup failure alerts | ✅ YES | Toast via IPC event | **100%** |
 | 5.5 | Backup verification | ✅ YES | Size check, verified flag | **100%** |
 | 5.6 | Retention: 10 → 5 | ✅ YES | In config | **100%** |
 
-**Phase 5 Total: 5.5/6 = 91.67%**
+**Phase 5 Total: 6/6 = 100%**
 
 ---
 
@@ -2706,16 +2706,16 @@ describe('BackupScheduler', () => {
 
 | # | Issue | Implemented | Tested | Score |
 |---|-------|-------------|--------|-------|
-| 6.1 | GPS status tracking | ⚠️ PARTIAL | gpsWarning generated | **50%** |
+| 6.1 | GPS status tracking | ✅ YES | Confidence badge UI | **100%** |
 | 6.2 | GPS from videos | ✅ YES | Same as 3.2 | **100%** |
 | 6.3 | #import_address | ✅ YES | Same as 3.3 | **100%** |
 | 6.4 | libpostal integration | ❌ NO | Complex C++ lib | **0%** |
 | 6.5 | US location database | ❌ NO | FUTURE | **0%** |
-| 6.6 | GPS mismatch UI | ⚠️ PARTIAL | Warning generated | **50%** |
+| 6.6 | GPS mismatch UI | ✅ YES | Warning panel + dismiss | **100%** |
 | 6.7 | Proximity search | ❌ NO | FUTURE | **0%** |
 | 6.8 | Heat maps | ❌ NO | FUTURE | **0%** |
 
-**Phase 6 Total: 3/8 = 37.5%**
+**Phase 6 Total: 4/8 = 50%**
 
 ---
 
@@ -2725,15 +2725,14 @@ describe('BackupScheduler', () => {
 |-------|--------|-------------|-------|
 | **1. Critical Bugs** | 5 | 5 | **100%** |
 | **2. Architectural** | 4 | 4 | **100%** |
-| **3. Missing Features** | 4 | 3.25 | **81.25%** |
+| **3. Missing Features** | 4 | 4 | **100%** |
 | **4. Premium UX** | 6 | 6 | **100%** |
-| **5. Backup System** | 6 | 5.5 | **91.67%** |
-| **6. GPS/Address/Map** | 8 | 3 | **37.5%** |
-| **TOTAL** | **33** | **26.75** | **81.1%** |
+| **5. Backup System** | 6 | 6 | **100%** |
+| **6. GPS/Address/Map** | 8 | 4 | **50%** |
+| **TOTAL** | **33** | **29** | **87.9%** |
 
-### Issues at 100%: 25 of 33
-### Partial implementations: 5 (3.4, 5.4, 6.1, 6.6, + one more)
-### Not implemented: 3 (6.4 libpostal, 6.7 proximity, 6.8 heatmaps - marked FUTURE)
+### Issues at 100%: 29 of 33
+### Not implemented: 4 (6.4 libpostal, 6.5 US database, 6.7 proximity, 6.8 heatmaps - marked FUTURE)
 
 ---
 
@@ -2765,22 +2764,39 @@ describe('BackupScheduler', () => {
 
 ## WHAT STILL NEEDS WORK
 
-**HIGH PRIORITY** (Next Sprint):
-- [ ] 2.2: Per-file transactions (prevent rollback of all on single error)
-- [ ] 3.3: #import_address during import
-- [ ] 5.1: Auto backup on startup
-- [ ] 6.1: GPS status tracking column
+**MARKED AS FUTURE** (Not in current scope):
+- [ ] 6.4: libpostal integration (requires complex C++ library)
+- [ ] 6.5: US location database (requires data sourcing)
+- [ ] 6.7: Proximity search (nice to have)
+- [ ] 6.8: Heat maps (nice to have)
 
-**MEDIUM PRIORITY**:
-- [ ] 4.1: Progress with filename
-- [ ] 4.3: Cancel button
-- [ ] 4.6: Toast notifications
-- [ ] 5.6: Change retention 10 → 5
+---
 
-**LOW PRIORITY** (Future):
-- [ ] 6.4: libpostal integration
-- [ ] 6.5: US location database
-- [ ] 6.8: Heat maps
+## LATEST SESSION FIXES (2025-11-22)
+
+### 3.4: GPX/KML Parsing
+- Created `gpx-kml-parser.ts` - full XML parser for GPX and KML files
+- Extracts waypoints, tracks, routes, and calculates center point
+- Stores parsed data in `meta_map` column as JSON
+- Added `meta_gps_lat`, `meta_gps_lng` columns to maps table
+
+### 5.4: Backup Failure Alerts
+- Added `sendToRenderer()` function in main/index.ts
+- Backup scheduler sends IPC events for success/failure
+- App.svelte listens for `backup:status` events
+- Shows toast notifications for backup results
+
+### 6.1: GPS Status Tracking
+- Added `getGpsConfidence()` function in LocationDetail.svelte
+- Returns confidence level (high/medium/low) based on GPS source and verification
+- Color-coded badge displayed next to GPS coordinates
+- Green (verified), Blue (from media/geocoded), Yellow (manual), Gray (unverified)
+
+### 6.6: GPS Mismatch Warning UI
+- Tracks `gpsWarnings` array from import results
+- Shows dismissible warning panel in Media section
+- Displays filename, distance, and severity (minor/major)
+- Toast notification when mismatches detected
 
 ---
 

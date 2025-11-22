@@ -315,6 +315,15 @@ const api = {
       ipcRenderer.invoke('health:attemptRecovery'),
   },
 
+  // FIX 5.4: Backup status events (success/failure notifications)
+  backup: {
+    onStatus: (callback: (status: { success: boolean; message: string; timestamp: string; verified?: boolean }) => void) => {
+      const listener = (_event: unknown, status: { success: boolean; message: string; timestamp: string; verified?: boolean }) => callback(status);
+      ipcRenderer.on('backup:status', listener);
+      return () => ipcRenderer.removeListener('backup:status', listener);
+    },
+  },
+
   browser: {
     navigate: (url: string): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('browser:navigate', url),

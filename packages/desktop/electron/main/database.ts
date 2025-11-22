@@ -195,6 +195,9 @@ CREATE TABLE IF NOT EXISTS maps (
 
   meta_exiftool TEXT,
   meta_map TEXT,
+  -- FIX 3.4: GPS from parsed GPX/KML files
+  meta_gps_lat REAL,
+  meta_gps_lng REAL,
 
   reference TEXT,
   map_states TEXT,

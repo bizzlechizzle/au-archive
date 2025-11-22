@@ -174,6 +174,9 @@ export interface MapsTable {
 
   meta_exiftool: string | null;
   meta_map: string | null;
+  // FIX 3.4: GPS from parsed GPX/KML files
+  meta_gps_lat: number | null;
+  meta_gps_lng: number | null;
 
   reference: string | null;
   map_states: string | null;
