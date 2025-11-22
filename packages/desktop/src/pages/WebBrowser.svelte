@@ -31,9 +31,9 @@
     vid_count: number;
   }
 
-  // Browser state - Default to OpenStreetMap per NGS rule (No Google Services)
-  let currentUrl = $state('https://www.openstreetmap.org');
-  let urlInput = $state('https://www.openstreetmap.org');
+  // Browser state - Default to Abandoned Upstate website
+  let currentUrl = $state('https://www.abandonedupstate.com');
+  let urlInput = $state('https://www.abandonedupstate.com');
   let pageTitle = $state('');
   let isLoading = $state(false);
   let browserContainerRef: HTMLDivElement;
@@ -596,10 +596,16 @@
         {/if}
       </div>
 
-      <!-- Quick Links - Using open-source alternatives per NGS rule -->
+      <!-- Quick Links -->
       <div class="bg-gray-50 rounded-lg border border-gray-200 p-4">
         <h3 class="text-sm font-semibold text-gray-800 mb-3">Quick Links</h3>
         <div class="space-y-1">
+          <button
+            onclick={() => { urlInput = 'https://www.abandonedupstate.com'; navigate(); }}
+            class="w-full text-left px-2 py-1.5 text-sm bg-white rounded hover:bg-gray-100 transition border border-gray-100 font-medium text-accent"
+          >
+            Abandoned Upstate
+          </button>
           <button
             onclick={() => { urlInput = 'https://www.openstreetmap.org'; navigate(); }}
             class="w-full text-left px-2 py-1.5 text-sm bg-white rounded hover:bg-gray-100 transition border border-gray-100"
