@@ -2221,3 +2221,68 @@ For ChatGPT review, these are the spec files whereswaldo11 is based on:
 ---
 
 End of Document
+
+---
+
+## WWYDD Addendum: CLI-First Backbone
+
+Implementing the CLI-first backbone makes the import stack faster, more reliable, and easier to audit because every surface area (GUI, API, watch daemon) calls the same deterministic code path.
+
+- Extract the entire four-phase pipeline into `packages/import-core` as described above so each phase, adapter, and manifest utility is its own <300 line module. This keeps logic framework-agnostic, unlocks unit tests, and eliminates the 550-line Electron service that currently violates LILBITS.
+- Ship a dedicated `packages/cli` with a thin Commander/Inquirer shell that exposes `au-import`, `au-import --resume`, and `au-import --watch` commands. Headless imports, cron jobs, and NAS workflows become first-class, while the GUI simply shells out or links the same core module.
+- Treat manifest files (`/archive/imports/imp-*.json`) as the single source of truth. The CLI creates them at LOG IT, streams `ImportProgress` updates, and can resume or replay imports purely from the manifest so crashes are recoverable and audits are trivial.
+- Replace `fs.copyFile` with the rsync wrapper in import-core (`--checksum`, `--partial`, `--link-dest`) and expose those toggles as CLI flags. That gives you hardlinks, resumable transfers, and checksum verification without bloating the GUI.
+- Build the chokidar-based watch daemon as another CLI command. Dropping files into `/import-inbox/loc-abc123` invokes the exact same CLI workflow, which keeps automation scripts, NAS drops, and GUI drag/drop perfectly aligned.
+
+With this split, the CLI becomes the primary interface that enforces the spec. The GUI, API, and watch daemon ride on top of a proven core, so imports gain rsync-grade transfer speed, batch metadata throughput, manifest-backed recovery, and a testable architecture that will stay reliable for years.
+
+### Pre-Review Clarifications
+
+Before handing this spec to Claude for code review, update/reconfirm these items so there are zero ambiguities:
+
+1. **rsync Modes:** Document exact flags for copy (`-av --checksum`), hardlink (`-avH --link-dest`), and resume (`-av --partial --files-from`). Note Windows fallback (robocopy or `fs.copyFile`) so reviewers know the cross-platform story.
+2. **Batch Metadata Extraction:** Describe the batch ExifTool/FFprobe invocation (single process fed by a file list, streaming JSON parsing) plus expected throughput goals to justify the performance claims.
+3. **Manifest Schema:** Enumerate mandatory keys for each phase (e.g., archive paths, database IDs, error arrays) so the manifest remains the single source of truth the CLI relies on.
+4. **CLI Package Interfaces:** Double-check the documented package layout, `DatabaseAdapter` interface, and `ImportProgress` events line up with actual repos. Any drift between spec and code will block review.
+5. **Spec Compliance Table:** Keep the audit honest by noting current vs target status for rsync/CLI/batch features; call out what’s shipping now versus planned so reviewers can verify scope.
+
+Capturing these clarifications alongside the CLI-first addendum ensures Claude's review stays focused on enforcing the spec instead of chasing open questions—and, once addressed, you get the lightning-fast, reliable import pipeline the architecture promises.
+
+### Clarification Details
+
+#### Rsync Modes & Fallbacks
+
+- **Standard copy:** `rsync -av --checksum --progress --files-from=/tmp/au-import.list --from0 / "$ARCHIVE_ROOT"` (runs from `/` so every absolute source path resolves correctly). Use `--partial` automatically so interrupted runs resume without re-reading good chunks.
+- **Hardlink mode:** `rsync -avH --link-dest="$ARCHIVE_ROOT/locations/${STATE}-${TYPE}/${SLOCNAM}-${LOC12}/org-img-${LOC12}" --files-from=/tmp/au-import-images.list --from0 / "$ARCHIVE_ROOT"`. This is only enabled when source and archive live on the same filesystem and the user sets `--hardlink` (exposed in CLI/GUI).
+- **Resume/Delta runs:** For batches that span days, call `rsync -av --checksum --partial --append-verify --files-from=/tmp/au-import.list --from0 / "$ARCHIVE_ROOT"`. The manifest keeps the same file list so multiple retries reuse it verbatim.
+- **Windows fallback:** When rsync is unavailable, fall back to `robocopy "%SRC_DIR%" "%DEST_DIR%" /E /Z /COPY:DAT /IS /IT /R:3 /W:5` (or Node's `fs.cpSync` if robocopy is missing). The CLI exposes a `--copy-strategy` flag so Windows builds can switch strategies explicitly.
+
+#### Batch Metadata Extraction Strategy
+
+- **ExifTool:** Generate a newline-delimited argument file (`/tmp/au-import-exif.args`) containing the absolute file paths and call `exiftool -json -api largefilesupport=1 -f -@ /tmp/au-import-exif.args`. The CLI streams stdout, chunk-parses JSON, and writes results directly into the manifest so 100 RAW files stay under the 5 s target.
+- **FFprobe:** Populate a work queue capped at 4 concurrent workers that each run `ffprobe -v quiet -print_format json -show_format -show_streams "$FILE"`. Results are merged into `metadata.ffmpeg` within the manifest. Video counts are typically smaller, so a constrained pool keeps total runtime within the <30 s per 100 video goal.
+
+#### Manifest Schema by Phase
+
+- **Phase 1 (`phase_1_log`):** `import_id`, `version`, `created_at`, `location{locid,locnam,slocnam,loc12,state,type}`, `options{delete_originals,use_hardlinks,verify_checksums}`, and `files[].{index,original_path,original_name,size_bytes,status="pending"}`.
+- **Phase 2 (`phase_2_serialize`):** Each `files[]` entry adds `sha256`, `type`, `metadata{width,height,date_taken,camera_make,camera_model,gps,raw_exif,ffprobe}`, `gps_warning`, and `duplicate` flags. `location_updates` records any pending address/GPS updates.
+- **Phase 3 (`phase_3_copy`):** `files[]` entries add `archive_path`, `archive_name`, `verified`, and `copy_errors[]` (array of rsync/verification issues). The manifest also stores the rsync command string for audit purposes.
+- **Phase 4 (`complete`):** `files[]` capture `database_id`, `original_deleted`, and final `status`. `summary{total,imported,duplicates,errors,images,videos,documents,maps}` plus `completed_at` close the manifest. Any manifest missing these keys is considered corrupt and forces a restart from Phase 1.
+
+#### CLI Package Interface Alignment
+
+- `packages/import-core` exports `DatabaseAdapter`, `RsyncAdapter`, and `MetadataAdapter` interfaces exactly as described in §§9.2–9.5; the CLI implements them in `packages/cli/src/adapters` using better-sqlite3, while Electron implements thin wrappers over Kysely.
+- `ImportProgress` events emitted by `packages/import-core` follow `{ phase, phaseProgress, totalFiles, processedFiles, currentFile, etaSeconds, throughputBytes }`. Both CLI (`ora` spinner) and GUI (Svelte store) subscribe to the same event emitter, so any change must update both consumers simultaneously.
+- Config loading uses `cosmiconfig` to read `auarchiverc` files before initializing the DB adapter, ensuring path defaults (archive root, temporary dir) are consistent no matter which surface launches the CLI.
+
+#### Spec Compliance Snapshot
+
+| Requirement | Current Implementation | Target (post-CLI) |
+|-------------|------------------------|-------------------|
+| rsync integration | `fs.copyFile` fallback only | Dedicated rsync wrapper w/ hardlinks & resume |
+| CLI parity | GUI-only service (`PhaseImportService`) | `packages/cli` commands backed by import-core |
+| Batch ExifTool | Per-file process pool | Single-process batch using args file |
+| Manifest schema | Implemented ad-hoc | Documented schema enforced at startup |
+| Watch folder | Not implemented | CLI `au-import --watch` daemon |
+
+Documenting these concrete behaviors with the spec keeps reviewers focused on verifying compliance rather than interpreting intent—and once implemented, the rsync/CLI/manifest trifecta is what delivers the lightning-fast, reliable imports promised in the addendum.

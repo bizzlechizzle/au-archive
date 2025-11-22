@@ -8,7 +8,7 @@
 - script
 	- auarchive_import.py
 -
-- steps
+- steps (in order)
 	- #import_location
 	  logseq.order-list-type:: number
 	- #import_id
