@@ -589,6 +589,355 @@ The "Create Backup" in Health Monitoring should be:
 
 ---
 
+## PHASE 5 DETAILED FIXES
+
+### Issue 5.1: Auto Backup on App Startup
+
+**Problem**: App starts without creating a safety backup first
+
+**Location**: `packages/desktop/electron/main/index.ts:159-215` (startupOrchestrator)
+
+**Current Code**:
+```typescript
+async function startupOrchestrator(): Promise<void> {
+  // Step 1: Load configuration
+  // Step 2: Initialize database
+  // Step 3: Initialize health monitoring
+  // Step 4: Check database health
+  // Step 5: Register IPC handlers
+  // NO BACKUP CREATED
+}
+```
+
+**Fix**: Add Step 3.5 - Create Startup Backup
+
+```typescript
+import { getBackupScheduler } from '../services/backup-scheduler';
+
+async function startupOrchestrator(): Promise<void> {
+  // Step 1-3 unchanged...
+
+  // Step 3.5: CREATE STARTUP BACKUP (NEW)
+  const config = getConfigService().get();
+  if (config.backup.enabled && config.backup.backupOnStartup) {
+    logger.info('Main', 'Step 3.5: Creating startup backup');
+    try {
+      const backupScheduler = getBackupScheduler();
+      const result = await backupScheduler.createBackup();
+      if (result) {
+        logger.info('Main', 'Startup backup created', { path: result.filePath });
+      }
+    } catch (error) {
+      logger.warn('Main', 'Startup backup failed (non-fatal)', error as Error);
+    }
+  }
+
+  // Step 4-5 unchanged...
+}
+```
+
+---
+
+### Issue 5.2: Backup After Import Completes
+
+**Problem**: Data changes from import are not protected by backup
+
+**Location**: `packages/desktop/electron/main/ipc-handlers.ts` (media:import handler, after line ~625)
+
+**Current Code**:
+```typescript
+const result = await fileImportService.importFiles(...);
+console.log('[media:import] Import complete:', result);
+return result;  // NO BACKUP AFTER IMPORT
+```
+
+**Fix**: Add backup after successful import
+
+```typescript
+const result = await fileImportService.importFiles(...);
+console.log('[media:import] Import complete:', result);
+
+// Create backup after successful import (if enabled)
+if (result.imported > 0) {
+  const config = getConfigService().get();
+  if (config.backup.enabled && config.backup.backupAfterImport) {
+    try {
+      console.log('[media:import] Creating post-import backup...');
+      const backupScheduler = getBackupScheduler();
+      await backupScheduler.createBackup();
+      console.log('[media:import] Post-import backup created');
+    } catch (backupError) {
+      console.warn('[media:import] Post-import backup failed:', backupError);
+    }
+  }
+}
+
+return result;
+```
+
+**Requires imports**:
+```typescript
+import { getBackupScheduler } from '../services/backup-scheduler';
+```
+
+---
+
+### Issue 5.3: Scheduled Backups (Daily/Weekly)
+
+**Problem**: No automatic scheduled backups
+
+**Location**: `packages/desktop/electron/services/backup-scheduler.ts`
+
+**Fix**: Add scheduling methods to BackupScheduler class
+
+```typescript
+// Add to BackupScheduler class properties:
+private scheduleInterval: NodeJS.Timeout | null = null;
+
+// Add new methods:
+
+/**
+ * Start scheduled backups
+ */
+startScheduledBackups(intervalHours: number = 24): void {
+  if (this.scheduleInterval) {
+    clearInterval(this.scheduleInterval);
+  }
+
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+
+  this.scheduleInterval = setInterval(async () => {
+    logger.info('BackupScheduler', 'Running scheduled backup');
+    await this.createBackup();
+  }, intervalMs);
+
+  logger.info('BackupScheduler', 'Scheduled backups started', { intervalHours });
+}
+
+/**
+ * Stop scheduled backups
+ */
+stopScheduledBackups(): void {
+  if (this.scheduleInterval) {
+    clearInterval(this.scheduleInterval);
+    this.scheduleInterval = null;
+    logger.info('BackupScheduler', 'Scheduled backups stopped');
+  }
+}
+```
+
+---
+
+### Issue 5.4: Backup Failure Alerts
+
+**Problem**: Backup failures are logged but not shown to user
+
+**Location**: `packages/desktop/electron/services/backup-scheduler.ts:131-136`
+
+**Current Code**:
+```typescript
+} catch (error) {
+  logger.error('BackupScheduler', 'Backup failed', error as Error);
+  return null;  // SILENT FAILURE
+}
+```
+
+**Fix**: Emit event for UI to handle
+
+```typescript
+import { BrowserWindow } from 'electron';
+
+// In createBackup() catch block:
+} catch (error) {
+  logger.error('BackupScheduler', 'Backup failed', error as Error);
+
+  // Notify renderer of backup failure
+  const windows = BrowserWindow.getAllWindows();
+  windows.forEach(win => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('backup:failed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  return null;
+}
+```
+
+**Preload Addition** (`preload.cjs`):
+```javascript
+backup: {
+  onFailed: (callback) => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on('backup:failed', listener);
+    return () => ipcRenderer.removeListener('backup:failed', listener);
+  },
+},
+```
+
+---
+
+### Issue 5.5: Backup Integrity Verification
+
+**Problem**: `verified` flag is never set to true
+
+**Location**: `packages/desktop/electron/services/backup-scheduler.ts:106-112`
+
+**Current Code**:
+```typescript
+const metadata: BackupMetadata = {
+  // ...
+  verified: false,  // NEVER CHANGED TO TRUE
+};
+```
+
+**Fix**: Verify backup integrity after creation
+
+```typescript
+// Add new method to BackupScheduler class:
+
+/**
+ * Verify backup is valid SQLite database
+ */
+private async verifyBackupIntegrity(backupPath: string): Promise<boolean> {
+  try {
+    const fd = await fs.open(backupPath, 'r');
+    const buffer = Buffer.alloc(16);
+    await fd.read(buffer, 0, 16, 0);
+    await fd.close();
+
+    // SQLite files start with "SQLite format 3\0"
+    const header = buffer.toString('utf-8', 0, 15);
+    return header === 'SQLite format 3';
+  } catch (error) {
+    logger.error('BackupScheduler', 'Backup verification failed', error as Error);
+    return false;
+  }
+}
+
+// In createBackup(), after fs.copyFile():
+
+// Verify integrity
+const isValid = await this.verifyBackupIntegrity(backupPath);
+
+const metadata: BackupMetadata = {
+  backupId: `backup-${Date.now()}`,
+  filePath: backupPath,
+  timestamp: now.toISOString(),
+  size: stats.size,
+  verified: isValid,  // NOW SET CORRECTLY
+};
+
+if (!isValid) {
+  logger.warn('BackupScheduler', 'Backup created but verification failed');
+}
+```
+
+---
+
+### Issue 5.6: Change Retention from 10 to 5
+
+**Problem**: 10 backups is excessive, wastes disk space
+
+**Location**: `packages/desktop/electron/services/config-service.ts:27-31`
+
+**Current Code**:
+```typescript
+const DEFAULT_CONFIG: AppConfig = {
+  backup: {
+    enabled: true,
+    maxBackups: 10,
+  },
+```
+
+**Fix**:
+```typescript
+const DEFAULT_CONFIG: AppConfig = {
+  backup: {
+    enabled: true,
+    maxBackups: 5,  // CHANGED from 10
+    backupOnStartup: true,     // NEW
+    backupAfterImport: true,   // NEW
+  },
+```
+
+**Update AppConfig Interface**:
+```typescript
+export interface AppConfig {
+  backup: {
+    enabled: boolean;
+    maxBackups: number;
+    backupOnStartup: boolean;     // NEW
+    backupAfterImport: boolean;   // NEW
+  };
+  // ... rest unchanged
+}
+```
+
+---
+
+## PHASE 5 FILE LOCATIONS
+
+| File | Path | Changes |
+|------|------|---------|
+| App Startup | `electron/main/index.ts` | Add startup backup (5.1) |
+| IPC Handlers | `electron/main/ipc-handlers.ts` | Add post-import backup (5.2) |
+| Backup Scheduler | `electron/services/backup-scheduler.ts` | Add scheduling (5.3), alerts (5.4), verification (5.5) |
+| Config Service | `electron/services/config-service.ts` | Update config schema (5.6) |
+| Preload | `electron/preload/preload.cjs` | Add backup events (5.4) |
+
+---
+
+## PHASE 5 CONFIG SCHEMA
+
+**Current**:
+```typescript
+backup: {
+  enabled: boolean;      // true
+  maxBackups: number;    // 10
+}
+```
+
+**Proposed**:
+```typescript
+backup: {
+  enabled: boolean;           // true
+  maxBackups: number;         // 5 (changed)
+  backupOnStartup: boolean;   // true (NEW)
+  backupAfterImport: boolean; // true (NEW)
+}
+```
+
+---
+
+## PHASE 5 IMPLEMENTATION ORDER
+
+```
+5.6 Change retention to 5     → 1 line change (do first)
+5.1 Startup backup            → ~15 lines in index.ts
+5.2 Post-import backup        → ~15 lines in ipc-handlers.ts
+5.5 Backup verification       → ~20 lines in backup-scheduler.ts
+5.4 Failure alerts            → ~15 lines + preload
+5.3 Scheduled backups         → ~30 lines (optional, low priority)
+```
+
+---
+
+## PHASE 5 VERIFICATION CHECKLIST
+
+After implementing Phase 5, verify:
+
+1. [ ] Start app → backup created automatically
+2. [ ] Check `{userData}/backups/` → new backup file exists
+3. [ ] Import files → backup created after import
+4. [ ] Check manifest → `verified: true` on backups
+5. [ ] Create 6+ backups → only 5 remain (oldest deleted)
+6. [ ] Simulate backup failure → UI shows notification (if 5.4 implemented)
+
+---
+
 ## METADATA DUMP STATUS
 
 | File Type | ExifTool | FFmpeg | GPS | Address | Currently |
