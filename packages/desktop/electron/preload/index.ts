@@ -167,12 +167,15 @@ const api = {
       deleteOriginals: boolean;
     }): Promise<unknown> =>
       ipcRenderer.invoke('media:import', input),
-    // FIX 4.1: Progress callback now includes filename
-    onImportProgress: (callback: (progress: { current: number; total: number; filename?: string }) => void) => {
-      const listener = (_event: any, progress: { current: number; total: number; filename?: string }) => callback(progress);
+    // FIX 4.1 & 4.3: Progress callback includes filename and importId
+    onImportProgress: (callback: (progress: { current: number; total: number; filename?: string; importId?: string }) => void) => {
+      const listener = (_event: any, progress: { current: number; total: number; filename?: string; importId?: string }) => callback(progress);
       ipcRenderer.on('media:import:progress', listener);
       return () => ipcRenderer.removeListener('media:import:progress', listener);
     },
+    // FIX 4.3: Cancel import
+    cancelImport: (importId: string): Promise<{ success: boolean; message: string }> =>
+      ipcRenderer.invoke('media:import:cancel', importId),
     findByLocation: (locid: string): Promise<{
       images: unknown[];
       videos: unknown[];

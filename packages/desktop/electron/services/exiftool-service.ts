@@ -1,5 +1,12 @@
 import { exiftool } from 'exiftool-vendored';
 
+/**
+ * FIX 2.3: ExifTool uses a global singleton process pool from exiftool-vendored.
+ * LIMITATION: All calls share one ExifTool process pool. Under heavy load (50+ concurrent
+ * file imports), the queue may back up. This is acceptable for typical use cases.
+ * FUTURE: For massive batch imports, consider spawning dedicated ExifTool processes.
+ */
+
 export interface ImageMetadata {
   width: number | null;
   height: number | null;

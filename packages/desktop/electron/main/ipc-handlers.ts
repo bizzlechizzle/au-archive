@@ -28,6 +28,9 @@ import { LocationInputSchema } from '@au-archive/core';
 import type { LocationInput, LocationFilters } from '@au-archive/core';
 import { z } from 'zod';
 import fs from 'fs/promises';
+
+// FIX 4.3: Track active imports for cancellation support
+const activeImports: Map<string, AbortController> = new Map();
 import path from 'path';
 import { validate, UuidSchema, LimitSchema, FilePathSchema, UrlSchema, SettingKeySchema } from './ipc-validation';
 
@@ -610,23 +613,36 @@ export function registerIpcHandlers() {
         auth_imp: validatedInput.auth_imp,
       }));
 
+      // FIX 4.3: Create abort controller for this import
+      const importId = `import-${Date.now()}`;
+      const abortController = new AbortController();
+      activeImports.set(importId, abortController);
+
       // Import files with progress callback
       // FIX 1.4: Validate IPC sender before sending to prevent crash if window closed
       // FIX 4.1: Include filename in progress updates
-      const result = await fileImportService.importFiles(
-        filesForImport,
-        validatedInput.deleteOriginals,
-        (current, total, filename) => {
-          try {
-            // Check if sender is still valid (window not closed during import)
-            if (_event.sender && !_event.sender.isDestroyed()) {
-              _event.sender.send('media:import:progress', { current, total, filename });
+      // FIX 4.3: Pass abort signal for cancellation
+      let result;
+      try {
+        result = await fileImportService.importFiles(
+          filesForImport,
+          validatedInput.deleteOriginals,
+          (current, total, filename) => {
+            try {
+              // Check if sender is still valid (window not closed during import)
+              if (_event.sender && !_event.sender.isDestroyed()) {
+                _event.sender.send('media:import:progress', { current, total, filename, importId });
+              }
+            } catch (e) {
+              console.warn('[media:import] Failed to send progress (window may have closed):', e);
             }
-          } catch (e) {
-            console.warn('[media:import] Failed to send progress (window may have closed):', e);
-          }
-        }
-      );
+          },
+          abortController.signal
+        );
+      } finally {
+        // FIX 4.3: Clean up abort controller
+        activeImports.delete(importId);
+      }
 
       // FIX 5.2: Auto backup after import (if enabled and successful)
       if (result.imported > 0) {
@@ -650,6 +666,26 @@ export function registerIpcHandlers() {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
+      throw error;
+    }
+  });
+
+  // FIX 4.3: Cancel import handler
+  ipcMain.handle('media:import:cancel', async (_event, importId: unknown) => {
+    try {
+      const validatedId = z.string().min(1).parse(importId);
+      const controller = activeImports.get(validatedId);
+
+      if (controller) {
+        controller.abort();
+        console.log('[media:import:cancel] Import cancelled:', validatedId);
+        return { success: true, message: 'Import cancelled' };
+      } else {
+        console.log('[media:import:cancel] No active import found:', validatedId);
+        return { success: false, message: 'No active import found with that ID' };
+      }
+    } catch (error) {
+      console.error('Error cancelling import:', error);
       throw error;
     }
   });

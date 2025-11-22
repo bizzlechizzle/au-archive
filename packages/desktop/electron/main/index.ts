@@ -202,21 +202,31 @@ async function startupOrchestrator(): Promise<void> {
 
     // FIX 5.1: Step 6 - Auto backup on startup (if enabled)
     const config = configService.get();
+    const backupScheduler = getBackupScheduler();
+    await backupScheduler.initialize();
+
     if (config.backup.enabled && config.backup.backupOnStartup) {
-      logger.info('Main', 'Step 6/6: Creating startup backup');
+      logger.info('Main', 'Step 6/7: Creating startup backup');
       try {
-        const backupScheduler = getBackupScheduler();
-        await backupScheduler.initialize();
-        const backupResult = await backupScheduler.createBackup();
+        const backupResult = await backupScheduler.createAndVerifyBackup();
         if (backupResult) {
-          logger.info('Main', 'Startup backup created successfully', { path: backupResult.filePath });
+          logger.info('Main', 'Startup backup created successfully', { path: backupResult.filePath, verified: backupResult.verified });
         }
       } catch (backupError) {
         // Non-fatal: log warning but continue startup
         logger.warn('Main', 'Failed to create startup backup', backupError as Error);
       }
     } else {
-      logger.info('Main', 'Step 6/6: Startup backup skipped (disabled in config)');
+      logger.info('Main', 'Step 6/7: Startup backup skipped (disabled in config)');
+    }
+
+    // FIX 5.3: Step 7 - Start scheduled backups (if enabled)
+    if (config.backup.enabled && config.backup.scheduledBackup) {
+      const intervalMs = config.backup.scheduledBackupIntervalHours * 60 * 60 * 1000;
+      logger.info('Main', 'Step 7/7: Starting scheduled backups', { intervalHours: config.backup.scheduledBackupIntervalHours });
+      backupScheduler.startScheduledBackups(intervalMs);
+    } else {
+      logger.info('Main', 'Step 7/7: Scheduled backups disabled');
     }
 
     const duration = Date.now() - startTime;

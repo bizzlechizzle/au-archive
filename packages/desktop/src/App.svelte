@@ -59,10 +59,10 @@
     checkFirstRun();
 
     // Subscribe to import progress events from main process
-    // FIX 4.1: Pass filename to updateProgress
+    // FIX 4.1 & 4.3: Pass filename and importId to updateProgress
     if (window.electronAPI?.media?.onImportProgress) {
       unsubscribeProgress = window.electronAPI.media.onImportProgress((progress) => {
-        importStore.updateProgress(progress.current, progress.total, progress.filename);
+        importStore.updateProgress(progress.current, progress.total, progress.filename, progress.importId);
       });
     }
   });

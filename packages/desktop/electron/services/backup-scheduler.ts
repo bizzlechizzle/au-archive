@@ -215,6 +215,103 @@ export class BackupScheduler {
 
     return manifest.backups.sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0];
   }
+
+  /**
+   * FIX 5.5: Verify backup integrity by comparing file size
+   * Returns true if backup file exists and size matches manifest
+   */
+  async verifyBackup(backupId: string): Promise<boolean> {
+    const manifest = await this.loadManifest();
+    const backup = manifest.backups.find(b => b.backupId === backupId);
+
+    if (!backup) {
+      logger.warn('BackupScheduler', 'Backup not found for verification', { backupId });
+      return false;
+    }
+
+    try {
+      if (!existsSync(backup.filePath)) {
+        logger.error('BackupScheduler', 'Backup file missing', { path: backup.filePath });
+        return false;
+      }
+
+      const stats = await fs.stat(backup.filePath);
+      const sizeMatches = stats.size === backup.size;
+
+      if (sizeMatches) {
+        backup.verified = true;
+        await this.saveManifest(manifest);
+        logger.info('BackupScheduler', 'Backup verified successfully', { backupId, size: stats.size });
+      } else {
+        logger.error('BackupScheduler', 'Backup size mismatch', {
+          expected: backup.size,
+          actual: stats.size
+        });
+      }
+
+      return sizeMatches;
+    } catch (error) {
+      logger.error('BackupScheduler', 'Backup verification failed', error as Error);
+      return false;
+    }
+  }
+
+  /**
+   * FIX 5.5: Verify and return result after backup creation
+   */
+  async createAndVerifyBackup(): Promise<BackupMetadata | null> {
+    const backup = await this.createBackup();
+    if (backup) {
+      const verified = await this.verifyBackup(backup.backupId);
+      backup.verified = verified;
+    }
+    return backup;
+  }
+
+  // FIX 5.3: Scheduled backup support
+  private scheduleInterval: NodeJS.Timeout | null = null;
+
+  /**
+   * FIX 5.3: Start scheduled backups at specified interval
+   * @param intervalMs - Backup interval in milliseconds (default: 24 hours)
+   */
+  startScheduledBackups(intervalMs: number = 24 * 60 * 60 * 1000): void {
+    if (this.scheduleInterval) {
+      logger.warn('BackupScheduler', 'Scheduled backups already running');
+      return;
+    }
+
+    logger.info('BackupScheduler', 'Starting scheduled backups', {
+      intervalHours: intervalMs / (60 * 60 * 1000)
+    });
+
+    this.scheduleInterval = setInterval(async () => {
+      logger.info('BackupScheduler', 'Running scheduled backup');
+      const backup = await this.createAndVerifyBackup();
+      if (!backup) {
+        logger.error('BackupScheduler', 'Scheduled backup failed');
+        // FIX 5.4: Failure logged for notification system to pick up
+      }
+    }, intervalMs);
+  }
+
+  /**
+   * FIX 5.3: Stop scheduled backups
+   */
+  stopScheduledBackups(): void {
+    if (this.scheduleInterval) {
+      clearInterval(this.scheduleInterval);
+      this.scheduleInterval = null;
+      logger.info('BackupScheduler', 'Scheduled backups stopped');
+    }
+  }
+
+  /**
+   * Check if scheduled backups are running
+   */
+  isScheduleRunning(): boolean {
+    return this.scheduleInterval !== null;
+  }
 }
 
 // Singleton instance

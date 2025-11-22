@@ -10,6 +10,9 @@ export interface AppConfig {
     // FIX 5.1 & 5.2: New backup triggers
     backupOnStartup: boolean;
     backupAfterImport: boolean;
+    // FIX 5.3: Scheduled backup settings
+    scheduledBackup: boolean;
+    scheduledBackupIntervalHours: number;
   };
   monitoring: {
     diskSpace: {
@@ -36,6 +39,9 @@ const DEFAULT_CONFIG: AppConfig = {
     backupOnStartup: true,
     // FIX 5.2: Auto backup after import
     backupAfterImport: true,
+    // FIX 5.3: Scheduled backup (daily by default)
+    scheduledBackup: true,
+    scheduledBackupIntervalHours: 24,
   },
   monitoring: {
     diskSpace: {

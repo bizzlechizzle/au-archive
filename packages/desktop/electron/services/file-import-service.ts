@@ -160,12 +160,15 @@ export class FileImportService {
    * Import multiple files in a batch
    * FIX 2.2: Per-file transactions - each file is committed independently
    * This allows partial success: if file 5 fails, files 1-4 are already saved
+   * FIX 4.3: Supports abort signal for cancellation
    */
   async importFiles(
     files: ImportFileInput[],
     deleteOriginals: boolean = false,
     // FIX 4.1: Progress callback now includes filename
-    onProgress?: (current: number, total: number, filename?: string) => void
+    onProgress?: (current: number, total: number, filename?: string) => void,
+    // FIX 4.3: Abort signal for cancellation
+    abortSignal?: AbortSignal
   ): Promise<ImportSessionResult> {
     // Validate all file paths before starting
     for (const file of files) {
@@ -190,6 +193,12 @@ export class FileImportService {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+
+      // FIX 4.3: Check for cancellation before each file
+      if (abortSignal?.aborted) {
+        console.log('[FileImport] Import cancelled by user after', i, 'files');
+        break;
+      }
 
       console.log('[FileImport] Processing file', i + 1, 'of', files.length, ':', file.originalName);
 

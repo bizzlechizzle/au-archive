@@ -72,8 +72,10 @@ export interface ElectronAPI {
       auth_imp: string | null;
       deleteOriginals: boolean;
     }) => Promise<unknown>;
-    // FIX 4.1: Progress includes filename
-    onImportProgress: (callback: (progress: { current: number; total: number; filename?: string }) => void) => () => void;
+    // FIX 4.1 & 4.3: Progress includes filename and importId
+    onImportProgress: (callback: (progress: { current: number; total: number; filename?: string; importId?: string }) => void) => () => void;
+    // FIX 4.3: Cancel import
+    cancelImport: (importId: string) => Promise<{ success: boolean; message: string }>;
     findByLocation: (locid: string) => Promise<{
       images: unknown[];
       videos: unknown[];

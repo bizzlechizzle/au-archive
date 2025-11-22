@@ -12,7 +12,9 @@ export interface ImportJob {
   processedFiles: number;
   // FIX 4.1: Track current filename being processed
   currentFilename?: string;
-  status: 'pending' | 'running' | 'completed' | 'error';
+  // FIX 4.3: Track import ID for cancellation
+  importId?: string;
+  status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
   startedAt: Date;
   completedAt?: Date;
   error?: string;
@@ -55,8 +57,9 @@ function createImportStore() {
     /**
      * Update progress of active job
      * FIX 4.1: Now includes filename being processed
+     * FIX 4.3: Now includes importId for cancellation
      */
-    updateProgress(current: number, total: number, filename?: string) {
+    updateProgress(current: number, total: number, filename?: string, importId?: string) {
       update(state => {
         if (state.activeJob) {
           return {
@@ -66,11 +69,40 @@ function createImportStore() {
               processedFiles: current,
               totalFiles: total,
               currentFilename: filename,
+              importId: importId || state.activeJob.importId,
             },
           };
         }
         return state;
       });
+    },
+
+    /**
+     * FIX 4.3: Cancel active import
+     */
+    async cancelImport() {
+      let importId: string | undefined;
+      update(state => {
+        importId = state.activeJob?.importId;
+        if (state.activeJob) {
+          return {
+            ...state,
+            activeJob: {
+              ...state.activeJob,
+              status: 'cancelled' as const,
+            },
+          };
+        }
+        return state;
+      });
+
+      if (importId && window.electronAPI?.media?.cancelImport) {
+        try {
+          await window.electronAPI.media.cancelImport(importId);
+        } catch (e) {
+          console.error('Failed to cancel import:', e);
+        }
+      }
     },
 
     /**

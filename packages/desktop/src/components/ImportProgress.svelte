@@ -45,8 +45,24 @@
       </span>
     </div>
 
-    <p class="text-xs text-gray-400 mt-2">
-      You can continue using the app while files import
-    </p>
+    <!-- FIX 4.1: Show current filename being processed -->
+    {#if $importProgress.currentFilename}
+      <p class="text-xs text-gray-500 mt-1 truncate" title={$importProgress.currentFilename}>
+        Processing: {$importProgress.currentFilename}
+      </p>
+    {/if}
+
+    <!-- FIX 4.3: Cancel button -->
+    <div class="flex items-center justify-between mt-2">
+      <p class="text-xs text-gray-400">
+        You can continue using the app
+      </p>
+      <button
+        onclick={() => importStore.cancelImport()}
+        class="text-xs text-red-600 hover:text-red-800 hover:underline"
+      >
+        Cancel
+      </button>
+    </div>
   </div>
 {/if}
