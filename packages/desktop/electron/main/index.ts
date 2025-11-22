@@ -7,6 +7,7 @@ import { getHealthMonitor } from '../services/health-monitor';
 import { getRecoverySystem } from '../services/recovery-system';
 import { getConfigService } from '../services/config-service';
 import { getLogger } from '../services/logger-service';
+import { getBackupScheduler } from '../services/backup-scheduler';
 import { initBrowserViewManager, destroyBrowserViewManager } from '../services/browser-view-manager';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -49,6 +50,16 @@ process.on('unhandledRejection', (reason: unknown) => {
 });
 
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * FIX 5.4: Send event to renderer process
+ * Used for backup notifications and other main->renderer communication
+ */
+export function sendToRenderer(channel: string, ...args: unknown[]): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, ...args);
+  }
+}
 
 // Single instance lock - prevent multiple instances of the app
 const gotLock = app.requestSingleInstanceLock();
@@ -195,9 +206,38 @@ async function startupOrchestrator(): Promise<void> {
     }
 
     // Step 5: Register IPC handlers
-    logger.info('Main', 'Step 5/5: Registering IPC handlers');
+    logger.info('Main', 'Step 5/6: Registering IPC handlers');
     registerIpcHandlers();
     logger.info('Main', 'IPC handlers registered successfully');
+
+    // FIX 5.1: Step 6 - Auto backup on startup (if enabled)
+    const config = configService.get();
+    const backupScheduler = getBackupScheduler();
+    await backupScheduler.initialize();
+
+    if (config.backup.enabled && config.backup.backupOnStartup) {
+      logger.info('Main', 'Step 6/7: Creating startup backup');
+      try {
+        const backupResult = await backupScheduler.createAndVerifyBackup();
+        if (backupResult) {
+          logger.info('Main', 'Startup backup created successfully', { path: backupResult.filePath, verified: backupResult.verified });
+        }
+      } catch (backupError) {
+        // Non-fatal: log warning but continue startup
+        logger.warn('Main', 'Failed to create startup backup', backupError as Error);
+      }
+    } else {
+      logger.info('Main', 'Step 6/7: Startup backup skipped (disabled in config)');
+    }
+
+    // FIX 5.3: Step 7 - Start scheduled backups (if enabled)
+    if (config.backup.enabled && config.backup.scheduledBackup) {
+      const intervalMs = config.backup.scheduledBackupIntervalHours * 60 * 60 * 1000;
+      logger.info('Main', 'Step 7/7: Starting scheduled backups', { intervalHours: config.backup.scheduledBackupIntervalHours });
+      backupScheduler.startScheduledBackups(intervalMs);
+    } else {
+      logger.info('Main', 'Step 7/7: Scheduled backups disabled');
+    }
 
     const duration = Date.now() - startTime;
     logger.info('Main', 'Application initialization complete', { duration });

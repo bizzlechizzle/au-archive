@@ -37,6 +37,9 @@ const api = {
       ipcRenderer.invoke('location:favorites'),
     toggleFavorite: (id: string): Promise<boolean> =>
       ipcRenderer.invoke('location:toggleFavorite', id),
+    // FIX 6.7: Proximity search - find locations within radius
+    findNearby: (lat: number, lng: number, radiusKm: number): Promise<Array<Location & { distance: number }>> =>
+      ipcRenderer.invoke('location:findNearby', lat, lng, radiusKm),
   },
 
   stats: {
@@ -167,11 +170,15 @@ const api = {
       deleteOriginals: boolean;
     }): Promise<unknown> =>
       ipcRenderer.invoke('media:import', input),
-    onImportProgress: (callback: (progress: { current: number; total: number }) => void) => {
-      const listener = (_event: any, progress: { current: number; total: number }) => callback(progress);
+    // FIX 4.1 & 4.3: Progress callback includes filename and importId
+    onImportProgress: (callback: (progress: { current: number; total: number; filename?: string; importId?: string }) => void) => {
+      const listener = (_event: any, progress: { current: number; total: number; filename?: string; importId?: string }) => callback(progress);
       ipcRenderer.on('media:import:progress', listener);
       return () => ipcRenderer.removeListener('media:import:progress', listener);
     },
+    // FIX 4.3: Cancel import
+    cancelImport: (importId: string): Promise<{ success: boolean; message: string }> =>
+      ipcRenderer.invoke('media:import:cancel', importId),
     findByLocation: (locid: string): Promise<{
       images: unknown[];
       videos: unknown[];
@@ -309,6 +316,15 @@ const api = {
       ipcRenderer.invoke('health:getRecoveryState'),
     attemptRecovery: (): Promise<unknown> =>
       ipcRenderer.invoke('health:attemptRecovery'),
+  },
+
+  // FIX 5.4: Backup status events (success/failure notifications)
+  backup: {
+    onStatus: (callback: (status: { success: boolean; message: string; timestamp: string; verified?: boolean }) => void) => {
+      const listener = (_event: unknown, status: { success: boolean; message: string; timestamp: string; verified?: boolean }) => callback(status);
+      ipcRenderer.on('backup:status', listener);
+      return () => ipcRenderer.removeListener('backup:status', listener);
+    },
   },
 
   browser: {

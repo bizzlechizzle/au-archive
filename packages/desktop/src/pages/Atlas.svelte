@@ -9,6 +9,8 @@
   let showFilters = $state(false);
   let filterState = $state('');
   let filterType = $state('');
+  // FIX 6.8: Heat map toggle
+  let showHeatMap = $state(false);
 
   // Quick create modal state
   let showCreateModal = $state(false);
@@ -186,12 +188,22 @@
         {/if}
       </p>
     </div>
-    <button
-      onclick={() => showFilters = !showFilters}
-      class="px-4 py-2 bg-gray-100 text-foreground rounded hover:bg-gray-200 transition text-sm"
-    >
-      {showFilters ? 'Hide' : 'Show'} Filters
-    </button>
+    <div class="flex items-center gap-2">
+      <!-- FIX 6.8: Heat map toggle button -->
+      <button
+        onclick={() => showHeatMap = !showHeatMap}
+        class="px-4 py-2 rounded transition text-sm {showHeatMap ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-foreground hover:bg-gray-200'}"
+        title="Toggle heat map visualization"
+      >
+        {showHeatMap ? '🔥 Heat On' : '🔥 Heat Off'}
+      </button>
+      <button
+        onclick={() => showFilters = !showFilters}
+        class="px-4 py-2 bg-gray-100 text-foreground rounded hover:bg-gray-200 transition text-sm"
+      >
+        {showFilters ? 'Hide' : 'Show'} Filters
+      </button>
+    </div>
   </div>
 
   {#if showFilters}
@@ -235,6 +247,7 @@
       onLocationClick={handleLocationClick}
       onMapClick={handleMapClick}
       onMapRightClick={handleMapRightClick}
+      showHeatMap={showHeatMap}
     />
     {#if loading}
       <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded shadow-lg z-10">

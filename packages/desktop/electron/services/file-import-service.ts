@@ -5,6 +5,10 @@ import { ExifToolService } from './exiftool-service';
 import { FFmpegService } from './ffmpeg-service';
 import { PathValidator } from './path-validator';
 import { GPSValidator } from './gps-validator';
+// FIX 3.3: Import geocoding for #import_address
+import { GeocodingService } from './geocoding-service';
+// FIX 3.4: Import GPX/KML parser for map files
+import { GPXKMLParser, type MapFileData } from './gpx-kml-parser';
 import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
@@ -144,6 +148,9 @@ export class FileImportService {
     '.sid', '.ecw',                    // MrSID, ECW compressed imagery
   ];
 
+  // FIX 3.4: GPX/KML parser for map files
+  private readonly gpxKmlParser: GPXKMLParser;
+
   constructor(
     private readonly db: Kysely<Database>,
     private readonly cryptoService: CryptoService,
@@ -153,17 +160,27 @@ export class FileImportService {
     private readonly importRepo: SQLiteImportRepository,
     private readonly locationRepo: SQLiteLocationRepository,
     private readonly archivePath: string,
-    private readonly allowedImportDirs: string[] = [] // User's home dir, downloads, etc.
-  ) {}
+    private readonly allowedImportDirs: string[] = [], // User's home dir, downloads, etc.
+    // FIX 3.3: Optional geocoding service for #import_address
+    private readonly geocodingService?: GeocodingService
+  ) {
+    // FIX 3.4: Initialize GPX/KML parser
+    this.gpxKmlParser = new GPXKMLParser();
+  }
 
   /**
    * Import multiple files in a batch
-   * CRITICAL: Wraps entire import in transaction for data integrity
+   * FIX 2.2: Per-file transactions - each file is committed independently
+   * This allows partial success: if file 5 fails, files 1-4 are already saved
+   * FIX 4.3: Supports abort signal for cancellation
    */
   async importFiles(
     files: ImportFileInput[],
     deleteOriginals: boolean = false,
-    onProgress?: (current: number, total: number) => void
+    // FIX 4.1: Progress callback now includes filename
+    onProgress?: (current: number, total: number, filename?: string) => void,
+    // FIX 4.3: Abort signal for cancellation
+    abortSignal?: AbortSignal
   ): Promise<ImportSessionResult> {
     // Validate all file paths before starting
     for (const file of files) {
@@ -180,64 +197,81 @@ export class FileImportService {
 
     console.log('[FileImport] Starting batch import of', files.length, 'files');
 
-    // Use transaction to ensure atomicity
-    return await this.db.transaction().execute(async (trx) => {
-      console.log('[FileImport] Transaction started');
-      const results: ImportResult[] = [];
-      let imported = 0;
-      let duplicates = 0;
-      let errors = 0;
+    // FIX 2.2: Per-file transactions instead of wrapping all files in one transaction
+    const results: ImportResult[] = [];
+    let imported = 0;
+    let duplicates = 0;
+    let errors = 0;
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
 
-        console.log('[FileImport] Processing file', i + 1, 'of', files.length, ':', file.originalName);
+      // FIX 4.3: Check for cancellation before each file
+      if (abortSignal?.aborted) {
+        console.log('[FileImport] Import cancelled by user after', i, 'files');
+        break;
+      }
 
-        // Report progress
-        if (onProgress) {
-          onProgress(i + 1, files.length);
+      console.log('[FileImport] Processing file', i + 1, 'of', files.length, ':', file.originalName);
+
+      try {
+        // FIX 2.2: Each file gets its own transaction - committed on success, rolled back on failure
+        const result = await this.db.transaction().execute(async (trx) => {
+          return await this.importSingleFile(file, deleteOriginals, trx);
+        });
+        results.push(result);
+
+        if (result.success) {
+          if (result.duplicate) {
+            duplicates++;
+            console.log('[FileImport] File', i + 1, 'was duplicate');
+          } else {
+            imported++;
+            console.log('[FileImport] File', i + 1, 'imported successfully');
+          }
+        } else {
+          errors++;
+          console.log('[FileImport] File', i + 1, 'failed');
         }
 
-        try {
-          const result = await this.importSingleFile(file, deleteOriginals, trx);
-          results.push(result);
+        // FIX 1.2 & 4.1: Report progress AFTER work completes with filename
+        if (onProgress) {
+          onProgress(i + 1, files.length, file.originalName);
+        }
+      } catch (error) {
+        console.error('[FileImport] Error importing file', file.originalName, ':', error);
+        // FIX 1.1: Use 'document' instead of 'unknown' (valid type union value)
+        results.push({
+          success: false,
+          hash: '',
+          type: 'document',
+          duplicate: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        errors++;
 
-          if (result.success) {
-            if (result.duplicate) {
-              duplicates++;
-              console.log('[FileImport] File', i + 1, 'was duplicate');
-            } else {
-              imported++;
-              console.log('[FileImport] File', i + 1, 'imported successfully');
-            }
-          } else {
-            errors++;
-            console.log('[FileImport] File', i + 1, 'failed');
-          }
-        } catch (error) {
-          console.error('[FileImport] Error importing file', file.originalName, ':', error);
-          results.push({
-            success: false,
-            hash: '',
-            type: 'unknown',
-            duplicate: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
-          errors++;
+        // FIX 1.2 & 4.1: Report progress on error too with filename
+        if (onProgress) {
+          onProgress(i + 1, files.length, file.originalName);
         }
       }
-      console.log('[FileImport] Batch processing complete:', imported, 'imported,', duplicates, 'duplicates,', errors, 'errors');
 
-      // Create import record within same transaction
-      const locid = files[0]?.locid || null;
-      const auth_imp = files[0]?.auth_imp || null;
-      const imgCount = results.filter((r) => r.type === 'image' && !r.duplicate).length;
-      const vidCount = results.filter((r) => r.type === 'video' && !r.duplicate).length;
-      const mapCount = results.filter((r) => r.type === 'map' && !r.duplicate).length;
-      const docCount = results.filter((r) => r.type === 'document' && !r.duplicate).length;
+      // FIX 2.1: Yield to event loop between files to prevent UI freeze
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    console.log('[FileImport] Batch processing complete:', imported, 'imported,', duplicates, 'duplicates,', errors, 'errors');
 
-      // Use transaction context for import record creation
-      const importId = await this.createImportRecordInTransaction(trx, {
+    // Create import record in separate transaction (after all files processed)
+    const locid = files[0]?.locid || null;
+    const auth_imp = files[0]?.auth_imp || null;
+    const imgCount = results.filter((r) => r.type === 'image' && !r.duplicate).length;
+    const vidCount = results.filter((r) => r.type === 'video' && !r.duplicate).length;
+    const mapCount = results.filter((r) => r.type === 'map' && !r.duplicate).length;
+    const docCount = results.filter((r) => r.type === 'document' && !r.duplicate).length;
+
+    // Create import record in its own transaction
+    const importId = await this.db.transaction().execute(async (trx) => {
+      return await this.createImportRecordInTransaction(trx, {
         locid,
         auth_imp,
         img_count: imgCount,
@@ -246,16 +280,16 @@ export class FileImportService {
         doc_count: docCount,
         notes: `Imported ${imported} files, ${duplicates} duplicates, ${errors} errors`,
       });
-
-      return {
-        total: files.length,
-        imported,
-        duplicates,
-        errors,
-        results,
-        importId,
-      };
     });
+
+    return {
+      total: files.length,
+      imported,
+      duplicates,
+      errors,
+      results,
+      importId,
+    };
   }
 
   /**
@@ -318,20 +352,59 @@ export class FileImportService {
     console.log('[FileImport] Step 5: Extracting metadata for', file.originalName, 'type:', type);
 
     try {
-      if (type === 'image') {
-        console.log('[FileImport] Calling ExifTool for image...');
-        const exifStart = Date.now();
-        metadata = await this.exifToolService.extractMetadata(file.filePath);
-        console.log('[FileImport] ExifTool completed in', Date.now() - exifStart, 'ms');
+      // FIX 3.1 & 3.2: Extract metadata from ALL file types using ExifTool
+      // ExifTool works on images, videos (GPS from dashcams), documents (PDF metadata), and maps
+      console.log('[FileImport] Calling ExifTool for', type, '...');
+      const exifStart = Date.now();
+      const exifData = await this.exifToolService.extractMetadata(file.filePath);
+      console.log('[FileImport] ExifTool completed in', Date.now() - exifStart, 'ms');
 
-        // CRITICAL: Check GPS mismatch (use pre-fetched location, don't fetch again)
-        if (metadata.gps && GPSValidator.isValidGPS(metadata.gps.lat, metadata.gps.lng)) {
+      if (type === 'image') {
+        metadata = exifData;
+      } else if (type === 'video') {
+        // For videos, also get FFmpeg data for duration, codec, etc.
+        console.log('[FileImport] Calling FFmpeg for video details...');
+        const ffmpegData = await this.ffmpegService.extractMetadata(file.filePath);
+        console.log('[FileImport] FFmpeg completed');
+
+        // Merge: FFmpeg data + GPS from ExifTool
+        metadata = {
+          ...ffmpegData,
+          gps: exifData?.gps || null,
+          rawExif: exifData?.rawExif || null,
+        };
+      } else if (type === 'map') {
+        // FIX 3.4: Parse GPX/KML files for GPS data
+        const ext = path.extname(file.filePath).toLowerCase();
+        if (ext === '.gpx' || ext === '.kml' || ext === '.kmz') {
+          console.log('[FileImport] Parsing GPX/KML file...');
+          const mapData = await this.gpxKmlParser.parseFile(file.filePath);
+          console.log('[FileImport] GPX/KML parsed:', this.gpxKmlParser.getSummary(mapData));
+
+          metadata = {
+            ...exifData,
+            mapData,
+            gps: mapData.centerPoint ? { lat: mapData.centerPoint.lat, lng: mapData.centerPoint.lng } : null,
+          };
+        } else {
+          // Other map formats (GeoTIFF, etc.) - just use ExifTool
+          metadata = exifData;
+        }
+      } else if (type === 'document') {
+        // FIX 3.1: Store ExifTool metadata for documents
+        metadata = exifData;
+      }
+
+      // Check GPS mismatch for types with GPS data (images, videos, and maps can have GPS)
+      if (type === 'image' || type === 'video' || type === 'map') {
+        const gps = metadata?.gps || exifData?.gps;
+        if (gps && GPSValidator.isValidGPS(gps.lat, gps.lng)) {
           console.log('[FileImport] Step 5b: Checking GPS mismatch...');
           // Use pre-fetched location (from Step 0) - don't call locationRepo again!
           if (location.gps?.lat && location.gps?.lng) {
             const mismatch = GPSValidator.checkGPSMismatch(
               { lat: location.gps.lat, lng: location.gps.lng },
-              { lat: metadata.gps.lat, lng: metadata.gps.lng },
+              { lat: gps.lat, lng: gps.lng },
               10000 // 10km threshold
             );
 
@@ -341,16 +414,41 @@ export class FileImportService {
                 distance: mismatch.distance,
                 severity: mismatch.severity as 'minor' | 'major',
                 locationGPS: { lat: location.gps.lat, lng: location.gps.lng },
-                mediaGPS: { lat: metadata.gps.lat, lng: metadata.gps.lng },
+                mediaGPS: { lat: gps.lat, lng: gps.lng },
               };
             }
           }
           console.log('[FileImport] GPS check complete');
+
+          // FIX 3.3: #import_address - Reverse geocode to update location address
+          // Only trigger if: geocodingService exists, location has no address, file has GPS
+          if (this.geocodingService && !location.address?.street && !location.address?.city) {
+            try {
+              console.log('[FileImport] Step 5c: Reverse geocoding for #import_address...');
+              const geocodeResult = await this.geocodingService.reverseGeocode(gps.lat, gps.lng);
+              if (geocodeResult && geocodeResult.address) {
+                // Update location address (outside transaction - separate update)
+                await this.db
+                  .updateTable('locs')
+                  .set({
+                    address_street: geocodeResult.address.street || null,
+                    address_city: geocodeResult.address.city || null,
+                    address_county: geocodeResult.address.county || null,
+                    address_state: geocodeResult.address.stateCode || geocodeResult.address.state || null,
+                    address_zip: geocodeResult.address.zipcode || null,
+                    address_country: geocodeResult.address.countryCode || geocodeResult.address.country || null,
+                    address_geocoded_at: new Date().toISOString(),
+                  })
+                  .where('locid', '=', file.locid)
+                  .execute();
+                console.log('[FileImport] Location address updated from media GPS');
+              }
+            } catch (geocodeError) {
+              console.warn('[FileImport] Reverse geocoding failed:', geocodeError);
+              // Non-fatal - continue import
+            }
+          }
         }
-      } else if (type === 'video') {
-        console.log('[FileImport] Calling FFmpeg for video...');
-        metadata = await this.ffmpegService.extractMetadata(file.filePath);
-        console.log('[FileImport] FFmpeg completed');
       }
     } catch (error) {
       console.warn('[FileImport] Failed to extract metadata:', error);
@@ -600,16 +698,23 @@ export class FileImportService {
           auth_imp: file.auth_imp,
           vidadd: timestamp,
           meta_ffmpeg: metadata?.rawMetadata || null,
-          meta_exiftool: null,
+          // FIX 3.2: Store ExifTool data and GPS from videos
+          meta_exiftool: metadata?.rawExif || null,
           meta_duration: metadata?.duration || null,
           meta_width: metadata?.width || null,
           meta_height: metadata?.height || null,
           meta_codec: metadata?.codec || null,
           meta_fps: metadata?.fps || null,
           meta_date_taken: metadata?.dateTaken || null,
+          // FIX 3.2: Store GPS extracted from video metadata
+          meta_gps_lat: metadata?.gps?.lat || null,
+          meta_gps_lng: metadata?.gps?.lng || null,
         })
         .execute();
     } else if (type === 'map') {
+      // FIX 3.4: Store parsed GPX/KML data in meta_map
+      const mapDataJson = metadata?.mapData ? JSON.stringify(metadata.mapData) : null;
+
       await trx
         .insertInto('maps')
         .values({
@@ -623,13 +728,18 @@ export class FileImportService {
           auth_imp: file.auth_imp,
           mapadd: timestamp,
           meta_exiftool: metadata?.rawExif || null,
-          meta_map: null,
+          // FIX 3.4: Store parsed GPX/KML data
+          meta_map: mapDataJson,
+          // Store GPS center point for map files
+          meta_gps_lat: metadata?.mapData?.centerPoint?.lat || metadata?.gps?.lat || null,
+          meta_gps_lng: metadata?.mapData?.centerPoint?.lng || metadata?.gps?.lng || null,
           reference: null,
           map_states: null,
           map_verified: 0,
         })
         .execute();
     } else if (type === 'document') {
+      // FIX 3.1: Store ExifTool metadata for documents
       await trx
         .insertInto('docs')
         .values({
@@ -642,10 +752,10 @@ export class FileImportService {
           subid: file.subid || null,
           auth_imp: file.auth_imp,
           docadd: timestamp,
-          meta_exiftool: null,
-          meta_page_count: null,
-          meta_author: null,
-          meta_title: null,
+          meta_exiftool: metadata?.rawExif || null,
+          meta_page_count: null, // ExifTool doesn't provide this consistently
+          meta_author: null,     // Could extract from exif if available
+          meta_title: null,      // Could extract from exif if available
         })
         .execute();
     }

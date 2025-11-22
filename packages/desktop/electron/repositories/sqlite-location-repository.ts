@@ -9,6 +9,8 @@ import {
   LocationEntity
 } from '@au-archive/core';
 import { AddressNormalizer } from '../services/address-normalizer';
+// FIX 6.7: Import GPS validator for proximity search
+import { GPSValidator } from '../services/gps-validator';
 
 export class SQLiteLocationRepository implements LocationRepository {
   constructor(private readonly db: Kysely<Database>) {}
@@ -271,5 +273,43 @@ export class SQLiteLocationRepository implements LocationRepository {
       regions: row.regions ? JSON.parse(row.regions) : [],
       state: row.state
     };
+  }
+
+  /**
+   * FIX 6.7: Find locations within a radius of given coordinates
+   * Uses Haversine formula for great-circle distance calculation
+   * @param lat Center latitude
+   * @param lng Center longitude
+   * @param radiusKm Radius in kilometers
+   * @returns Locations sorted by distance from center
+   */
+  async findNearby(lat: number, lng: number, radiusKm: number): Promise<Array<Location & { distance: number }>> {
+    // Get all locations with GPS coordinates
+    const rows = await this.db
+      .selectFrom('locs')
+      .selectAll()
+      .where('gps_lat', 'is not', null)
+      .where('gps_lng', 'is not', null)
+      .execute();
+
+    // Calculate distance for each and filter by radius
+    const radiusMeters = radiusKm * 1000;
+    const locationsWithDistance: Array<Location & { distance: number }> = [];
+
+    for (const row of rows) {
+      const distance = GPSValidator.haversineDistance(lat, lng, row.gps_lat!, row.gps_lng!);
+      if (distance <= radiusMeters) {
+        const location = this.mapRowToLocation(row);
+        locationsWithDistance.push({
+          ...location,
+          distance: Math.round(distance), // Distance in meters
+        });
+      }
+    }
+
+    // Sort by distance (closest first)
+    locationsWithDistance.sort((a, b) => a.distance - b.distance);
+
+    return locationsWithDistance;
   }
 }

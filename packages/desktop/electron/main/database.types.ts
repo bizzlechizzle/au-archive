@@ -131,6 +131,9 @@ export interface VidsTable {
   meta_codec: string | null;
   meta_fps: number | null;
   meta_date_taken: string | null;
+  // FIX 3.2: GPS from video metadata (dashcams, phones)
+  meta_gps_lat: number | null;
+  meta_gps_lng: number | null;
 }
 
 // Documents table
@@ -171,6 +174,9 @@ export interface MapsTable {
 
   meta_exiftool: string | null;
   meta_map: string | null;
+  // FIX 3.4: GPS from parsed GPX/KML files
+  meta_gps_lat: number | null;
+  meta_gps_lng: number | null;
 
   reference: string | null;
   map_states: string | null;

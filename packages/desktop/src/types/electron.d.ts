@@ -20,6 +20,8 @@ export interface ElectronAPI {
     historical: () => Promise<Location[]>;
     favorites: () => Promise<Location[]>;
     toggleFavorite: (id: string) => Promise<boolean>;
+    // FIX 6.7: Proximity search
+    findNearby: (lat: number, lng: number, radiusKm: number) => Promise<Array<Location & { distance: number }>>;
   };
 
   stats: {
@@ -72,7 +74,10 @@ export interface ElectronAPI {
       auth_imp: string | null;
       deleteOriginals: boolean;
     }) => Promise<unknown>;
-    onImportProgress: (callback: (progress: { current: number; total: number }) => void) => () => void;
+    // FIX 4.1 & 4.3: Progress includes filename and importId
+    onImportProgress: (callback: (progress: { current: number; total: number; filename?: string; importId?: string }) => void) => () => void;
+    // FIX 4.3: Cancel import
+    cancelImport: (importId: string) => Promise<{ success: boolean; message: string }>;
     findByLocation: (locid: string) => Promise<{
       images: unknown[];
       videos: unknown[];
@@ -166,6 +171,11 @@ export interface ElectronAPI {
     getMaintenanceSchedule: () => Promise<unknown>;
     getRecoveryState: () => Promise<unknown>;
     attemptRecovery: () => Promise<unknown>;
+  };
+
+  // FIX 5.4: Backup status events
+  backup: {
+    onStatus: (callback: (status: { success: boolean; message: string; timestamp: string; verified?: boolean }) => void) => () => void;
   };
 
   browser: {

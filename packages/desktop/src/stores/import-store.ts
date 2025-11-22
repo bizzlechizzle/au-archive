@@ -10,7 +10,11 @@ export interface ImportJob {
   locationName: string;
   totalFiles: number;
   processedFiles: number;
-  status: 'pending' | 'running' | 'completed' | 'error';
+  // FIX 4.1: Track current filename being processed
+  currentFilename?: string;
+  // FIX 4.3: Track import ID for cancellation
+  importId?: string;
+  status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
   startedAt: Date;
   completedAt?: Date;
   error?: string;
@@ -52,8 +56,10 @@ function createImportStore() {
 
     /**
      * Update progress of active job
+     * FIX 4.1: Now includes filename being processed
+     * FIX 4.3: Now includes importId for cancellation
      */
-    updateProgress(current: number, total: number) {
+    updateProgress(current: number, total: number, filename?: string, importId?: string) {
       update(state => {
         if (state.activeJob) {
           return {
@@ -62,11 +68,41 @@ function createImportStore() {
               ...state.activeJob,
               processedFiles: current,
               totalFiles: total,
+              currentFilename: filename,
+              importId: importId || state.activeJob.importId,
             },
           };
         }
         return state;
       });
+    },
+
+    /**
+     * FIX 4.3: Cancel active import
+     */
+    async cancelImport() {
+      let importId: string | undefined;
+      update(state => {
+        importId = state.activeJob?.importId;
+        if (state.activeJob) {
+          return {
+            ...state,
+            activeJob: {
+              ...state.activeJob,
+              status: 'cancelled' as const,
+            },
+          };
+        }
+        return state;
+      });
+
+      if (importId && window.electronAPI?.media?.cancelImport) {
+        try {
+          await window.electronAPI.media.cancelImport(importId);
+        } catch (e) {
+          console.error('Failed to cancel import:', e);
+        }
+      }
     },
 
     /**
@@ -127,6 +163,8 @@ export const importProgress = derived(importStore, $store => {
     percent,
     locationName: job.locationName,
     locid: job.locid,
+    // FIX 4.1: Include current filename
+    currentFilename: job.currentFilename,
   };
 });
 

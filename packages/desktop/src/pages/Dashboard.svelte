@@ -105,9 +105,14 @@
               {$importProgress.current} of {$importProgress.total} files
             </span>
           </div>
-          <p class="text-sm text-gray-600 mb-3">
+          <p class="text-sm text-gray-600 mb-2">
             Importing to <button onclick={() => router.navigate(`/location/${$importProgress.locid}`)} class="text-accent hover:underline font-medium">{$importProgress.locationName}</button>
           </p>
+          {#if $importProgress.currentFilename}
+            <p class="text-xs text-gray-500 mb-2 truncate" title={$importProgress.currentFilename}>
+              Processing: {$importProgress.currentFilename}
+            </p>
+          {/if}
           <div class="w-full bg-gray-200 rounded-full h-3">
             <div
               class="bg-accent h-3 rounded-full transition-all duration-300 ease-out"

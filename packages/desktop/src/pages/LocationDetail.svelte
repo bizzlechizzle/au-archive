@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
   import { importStore, isImporting } from '../stores/import-store';
+  // FIX 4.6: Toast notifications
+  import { toasts } from '../stores/toast-store';
   import Map from '../components/Map.svelte';
   import LocationEditForm from '../components/LocationEditForm.svelte';
   import NotesSection from '../components/NotesSection.svelte';
@@ -51,6 +53,16 @@
   let images = $state<MediaImage[]>([]);
   let videos = $state<MediaVideo[]>([]);
   let documents = $state<MediaDocument[]>([]);
+  // FIX 4.4: Track failed files for retry
+  let failedFiles = $state<Array<{ filePath: string; originalName: string; error: string }>>([]);
+  // FIX 6.6: Track GPS mismatch warnings from import
+  let gpsWarnings = $state<Array<{
+    filename: string;
+    message: string;
+    distance: number;
+    severity: 'minor' | 'major';
+    mediaGPS: { lat: number; lng: number };
+  }>>([]);
   let bookmarks = $state<Bookmark[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -226,6 +238,37 @@
     router.navigate('/locations', undefined, { [filterType]: value });
   }
 
+  // FIX 6.1: GPS confidence indicator
+  function getGpsConfidence(gps: Location['gps']): { level: 'high' | 'medium' | 'low'; color: string; label: string } {
+    if (!gps) return { level: 'low', color: 'gray', label: 'No GPS' };
+
+    // High confidence: verified on map or from EXIF with verification
+    if (gps.verifiedOnMap) {
+      return { level: 'high', color: 'green', label: 'Verified' };
+    }
+
+    // Medium confidence: from EXIF or geocoding
+    if (gps.source === 'exif' || gps.source === 'media_gps') {
+      return { level: 'medium', color: 'blue', label: 'From Media' };
+    }
+
+    if (gps.source === 'geocoding' || gps.source === 'reverse_geocode') {
+      return { level: 'medium', color: 'blue', label: 'Geocoded' };
+    }
+
+    // Lower confidence: manual entry or unknown source
+    if (gps.source === 'manual' || gps.source === 'user_input') {
+      return { level: 'low', color: 'yellow', label: 'Manual Entry' };
+    }
+
+    return { level: 'low', color: 'gray', label: 'Unverified' };
+  }
+
+  // FIX 6.6: Dismiss GPS warning
+  function dismissGpsWarning(index: number) {
+    gpsWarnings = gpsWarnings.filter((_, i) => i !== index);
+  }
+
   // Mark GPS as verified on map
   async function markGpsVerified() {
     if (!location || !window.electronAPI?.locations) return;
@@ -362,22 +405,95 @@
       auth_imp: currentUser,
       deleteOriginals: false,
     }).then((result) => {
-      // Import completed successfully
-      importStore.completeJob({
-        imported: result.imported,
-        duplicates: result.duplicates,
-        errors: result.errors,
-      });
+      // FIX 4.4: Track failed files for retry
+      if (result.results) {
+        const newFailedFiles = result.results
+          .map((r: any, idx: number) => ({
+            filePath: filesForImport[idx]?.filePath || '',
+            originalName: filesForImport[idx]?.originalName || '',
+            error: r.error || 'Unknown error',
+            success: r.success,
+          }))
+          .filter((f: any) => !f.success && f.filePath);
+        if (newFailedFiles.length > 0) {
+          failedFiles = newFailedFiles;
+        }
+
+        // FIX 6.6: Extract GPS mismatch warnings from results
+        const newGpsWarnings = result.results
+          .filter((r: any) => r.gpsWarning)
+          .map((r: any, idx: number) => ({
+            filename: filesForImport[idx]?.originalName || 'Unknown file',
+            message: r.gpsWarning.message,
+            distance: r.gpsWarning.distance,
+            severity: r.gpsWarning.severity,
+            mediaGPS: r.gpsWarning.mediaGPS,
+          }));
+        if (newGpsWarnings.length > 0) {
+          gpsWarnings = [...gpsWarnings, ...newGpsWarnings];
+          toasts.warning(`${newGpsWarnings.length} file(s) have GPS mismatch with location`);
+        }
+      }
+
+      // FIX 1.3 & 1.5: Check for total failure and show error details
+      if (result.imported === 0 && result.errors > 0) {
+        // All files failed - this is an error condition, not success
+        const failedMsgs = result.results
+          ?.filter((r: any) => !r.success && r.error)
+          .map((r: any) => r.error)
+          .slice(0, 3);  // Show first 3 errors
+        const errorMsg = failedMsgs?.length
+          ? `Import failed: ${failedMsgs.join('; ')}${result.errors > 3 ? ` (+${result.errors - 3} more)` : ''}`
+          : `Import failed: ${result.errors} files could not be imported`;
+
+        importStore.completeJob(undefined, errorMsg);
+        importProgress = errorMsg;
+        // FIX 4.6: Toast notification for total failure
+        toasts.error(errorMsg);
+      } else {
+        // Import completed with at least some successes
+        importStore.completeJob({
+          imported: result.imported,
+          duplicates: result.duplicates,
+          errors: result.errors,
+        });
+
+        // FIX 1.5 & 4.6: Show visible message with error count if any
+        if (result.errors > 0) {
+          importProgress = `Imported ${result.imported} files (${result.errors} failed)`;
+          toasts.warning(`Imported ${result.imported} files. ${result.errors} failed.`);
+        } else if (result.imported > 0) {
+          importProgress = `Imported ${result.imported} files successfully`;
+          toasts.success(`Successfully imported ${result.imported} files`);
+          // FIX 4.4: Clear failed files on success
+          failedFiles = [];
+        } else if (result.duplicates > 0) {
+          importProgress = `${result.duplicates} files were already in archive`;
+          toasts.info(`${result.duplicates} files were already in archive`);
+        }
+      }
       // Reload location data to show new files
       loadLocation();
     }).catch((error) => {
-      // Import failed
+      // Import failed completely
       console.error('Error importing files:', error);
-      importStore.completeJob(undefined, error instanceof Error ? error.message : 'Unknown error');
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      importStore.completeJob(undefined, errorMsg);
+      importProgress = `Import error: ${errorMsg}`;
+      // FIX 4.6: Toast notification for errors
+      toasts.error(`Import error: ${errorMsg}`);
     });
 
-    // Clear the local progress message - global progress indicator will show status
-    setTimeout(() => { importProgress = ''; }, 3000);
+    // Clear the local progress message after longer delay so user can read it
+    setTimeout(() => { importProgress = ''; }, 8000);
+  }
+
+  // FIX 4.4: Retry failed imports
+  async function retryFailedImports() {
+    if (failedFiles.length === 0) return;
+    const pathsToRetry = failedFiles.map(f => f.filePath);
+    failedFiles = []; // Clear before retry
+    await importFilePaths(pathsToRetry);
   }
 
   onMount(async () => {
@@ -650,7 +766,31 @@
 
           {#if location.gps}
             <div class="mb-4">
-              <h3 class="text-sm font-medium text-gray-500 mb-2">GPS Coordinates</h3>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-sm font-medium text-gray-500">GPS Coordinates</h3>
+                <!-- FIX 6.1: GPS Confidence Badge -->
+                {@const confidence = getGpsConfidence(location.gps)}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium
+                  {confidence.color === 'green' ? 'bg-green-100 text-green-800' :
+                   confidence.color === 'blue' ? 'bg-blue-100 text-blue-800' :
+                   confidence.color === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
+                   'bg-gray-100 text-gray-600'}">
+                  {#if confidence.level === 'high'}
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
+                  {:else if confidence.level === 'medium'}
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                    </svg>
+                  {:else}
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                    </svg>
+                  {/if}
+                  {confidence.label}
+                </span>
+              </div>
               <p class="text-base text-gray-900 font-mono text-sm">
                 {location.gps.lat.toFixed(6)}, {location.gps.lng.toFixed(6)}
               </p>
@@ -737,7 +877,64 @@
           {#if importProgress}
             <span class="text-sm text-accent">{importProgress}</span>
           {/if}
+          <!-- FIX 4.4: Retry failed imports button -->
+          {#if failedFiles.length > 0}
+            <button
+              onclick={retryFailedImports}
+              class="ml-2 text-sm text-red-600 hover:text-red-800 hover:underline"
+            >
+              Retry {failedFiles.length} failed
+            </button>
+          {/if}
         </div>
+
+        <!-- FIX 6.6: GPS Mismatch Warnings -->
+        {#if gpsWarnings.length > 0}
+          <div class="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div class="flex-1">
+                <h4 class="text-sm font-semibold text-yellow-800 mb-2">GPS Mismatch Detected</h4>
+                <p class="text-xs text-yellow-700 mb-3">
+                  Some imported files have GPS coordinates that differ from this location.
+                </p>
+                <div class="space-y-2">
+                  {#each gpsWarnings as warning, index}
+                    <div class="flex items-center justify-between bg-white/50 rounded p-2 text-xs">
+                      <div>
+                        <span class="font-medium text-yellow-900">{warning.filename}</span>
+                        <span class="text-yellow-700 ml-2">
+                          {warning.message}
+                          <span class="inline-block ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium
+                            {warning.severity === 'major' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}">
+                            {warning.severity}
+                          </span>
+                        </span>
+                      </div>
+                      <button
+                        onclick={() => dismissGpsWarning(index)}
+                        class="p-1 text-yellow-600 hover:text-yellow-800"
+                        title="Dismiss warning"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+                <button
+                  onclick={() => gpsWarnings = []}
+                  class="mt-2 text-xs text-yellow-700 hover:text-yellow-900 underline"
+                >
+                  Dismiss all warnings
+                </button>
+              </div>
+            </div>
+          </div>
+        {/if}
 
         <!-- Drag-drop zone -->
         <div

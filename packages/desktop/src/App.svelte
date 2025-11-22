@@ -13,8 +13,12 @@
   import { onMount, onDestroy } from 'svelte';
   import { router } from './stores/router';
   import { importStore } from './stores/import-store';
+  // FIX 5.4: Import toast store for backup notifications
+  import { toasts } from './stores/toast-store';
   import Layout from './components/Layout.svelte';
   import ImportProgress from './components/ImportProgress.svelte';
+  // FIX 4.6: Toast notification system
+  import ToastContainer from './components/ToastContainer.svelte';
   import Dashboard from './pages/Dashboard.svelte';
   import Locations from './pages/Locations.svelte';
   import Atlas from './pages/Atlas.svelte';
@@ -31,6 +35,8 @@
 
   // Import progress listener
   let unsubscribeProgress: (() => void) | null = null;
+  // FIX 5.4: Backup status listener
+  let unsubscribeBackup: (() => void) | null = null;
 
   async function checkFirstRun() {
     try {
@@ -57,9 +63,21 @@
     checkFirstRun();
 
     // Subscribe to import progress events from main process
+    // FIX 4.1 & 4.3: Pass filename and importId to updateProgress
     if (window.electronAPI?.media?.onImportProgress) {
       unsubscribeProgress = window.electronAPI.media.onImportProgress((progress) => {
-        importStore.updateProgress(progress.current, progress.total);
+        importStore.updateProgress(progress.current, progress.total, progress.filename, progress.importId);
+      });
+    }
+
+    // FIX 5.4: Subscribe to backup status events from main process
+    if (window.electronAPI?.backup?.onStatus) {
+      unsubscribeBackup = window.electronAPI.backup.onStatus((status) => {
+        if (status.success) {
+          toasts.success(status.message, 5000);
+        } else {
+          toasts.error(status.message, 10000); // Longer duration for errors
+        }
       });
     }
   });
@@ -67,6 +85,10 @@
   onDestroy(() => {
     if (unsubscribeProgress) {
       unsubscribeProgress();
+    }
+    // FIX 5.4: Cleanup backup listener
+    if (unsubscribeBackup) {
+      unsubscribeBackup();
     }
   });
 
@@ -113,4 +135,6 @@
   </Layout>
   <!-- Global floating import progress indicator -->
   <ImportProgress />
+  <!-- FIX 4.6: Global toast notifications -->
+  <ToastContainer />
 {/if}
