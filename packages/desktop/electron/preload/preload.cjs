@@ -2,7 +2,13 @@
 // AU Archive Preload Script - Pure CommonJS
 // This file is NOT processed by Vite - it's used directly by Electron
 
-const { contextBridge, ipcRenderer, webUtils } = require("electron");
+// DEBUG: Check what electron exports
+const electronModule = require("electron");
+console.log("[Preload] Electron module keys:", Object.keys(electronModule));
+console.log("[Preload] webUtils available:", !!electronModule.webUtils);
+
+const { contextBridge, ipcRenderer, webUtils } = electronModule;
+console.log("[Preload] Destructured webUtils:", webUtils);
 
 const api = {
   versions: {
@@ -185,8 +191,19 @@ const setupDropListener = () => {
 
     for (const file of Array.from(event.dataTransfer.files)) {
       try {
-        const filePath = webUtils.getPathForFile(file);
-        console.log("[Preload] Extracted path:", filePath, "for file:", file.name);
+        // Try webUtils first (Electron 28+), fallback to deprecated file.path
+        let filePath = null;
+        if (webUtils && typeof webUtils.getPathForFile === 'function') {
+          filePath = webUtils.getPathForFile(file);
+          console.log("[Preload] Got path via webUtils:", filePath);
+        } else if (file.path) {
+          // Fallback: deprecated file.path still works in Electron 28
+          filePath = file.path;
+          console.log("[Preload] Got path via file.path (fallback):", filePath);
+        } else {
+          console.warn("[Preload] Neither webUtils nor file.path available for:", file.name);
+        }
+
         if (filePath) {
           lastDroppedPaths.push(filePath);
         }
