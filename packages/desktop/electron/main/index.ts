@@ -79,7 +79,9 @@ function createWindow() {
       preload: path.join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true,
+      // Sandbox disabled to allow preload's webUtils.getPathForFile() to work with drag-drop files.
+      // This is acceptable for a trusted desktop app that doesn't load external content.
+      sandbox: false,
       webviewTag: false,
     },
   });

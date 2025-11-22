@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { router } from '../stores/router';
   import type { Location } from '@au-archive/core';
   import ImportForm from '../components/ImportForm.svelte';
   import RecentImports from '../components/RecentImports.svelte';
@@ -47,6 +48,8 @@
   let loading = $state(true);
   let progressCurrent = $state(0);
   let progressTotal = $state(0);
+  let archiveFolderConfigured = $state(false);
+  let archiveFolder = $state('');
 
   onMount(async () => {
     try {
@@ -64,6 +67,10 @@
       recentImports = imports;
       currentUser = settings.current_user || 'default';
       deleteOriginals = settings.delete_on_import === 'true';
+
+      // Check if archive folder is configured
+      archiveFolder = settings.archive_folder || '';
+      archiveFolderConfigured = !!archiveFolder;
 
       // Set up progress listener
       const unsubscribe = window.electronAPI.media.onImportProgress((progress) => {
@@ -96,98 +103,37 @@
     event.preventDefault();
     isDragging = false;
 
-    if (!event.dataTransfer) {
+    if (!event.dataTransfer?.files || event.dataTransfer.files.length === 0) {
       return;
     }
 
-    // Use items API to support folders - recursively get all files
-    const items = event.dataTransfer.items;
-    if (items && items.length > 0) {
-      const filePaths: string[] = [];
+    // Small delay to ensure preload's drop handler has processed the files
+    await new Promise(resolve => setTimeout(resolve, 10));
 
-      // Collect all file paths from dropped items (including folder contents)
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind === 'file') {
-          const entry = item.webkitGetAsEntry?.();
-          if (entry) {
-            const paths = await getFilesFromEntry(entry);
-            filePaths.push(...paths);
-          } else {
-            // Fallback for non-webkit browsers or simple files
-            const file = item.getAsFile();
-            if (file && (file as any).path) {
-              filePaths.push((file as any).path);
-            }
-          }
-        }
-      }
+    // Get paths extracted by preload's drop event handler
+    // The preload captures drop events and extracts paths using webUtils.getPathForFile()
+    const droppedPaths = window.getDroppedFilePaths?.() || [];
+    console.log('[Imports] Got dropped paths from preload:', droppedPaths);
 
-      if (filePaths.length > 0) {
-        await importFilePaths(filePaths);
-      } else {
-        importProgress = 'No valid files found in dropped items';
-      }
+    if (droppedPaths.length === 0) {
+      importProgress = 'No valid files found in dropped items';
       return;
     }
 
-    // Fallback to files API (for simple file drops)
-    if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
-      const files = Array.from(event.dataTransfer.files);
-      await importFiles(files);
-    }
-  }
-
-  // Recursively get all file paths from a FileSystemEntry (supports folders)
-  async function getFilesFromEntry(entry: FileSystemEntry): Promise<string[]> {
-    const paths: string[] = [];
-
-    if (entry.isFile) {
-      // Get the File object to access Electron's path property
-      const fileEntry = entry as FileSystemFileEntry;
-      return new Promise((resolve) => {
-        fileEntry.file((file) => {
-          const filePath = (file as any).path;
-          if (filePath) {
-            // Filter for supported media types
-            const ext = file.name.toLowerCase().split('.').pop() || '';
-            const supportedExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp',
-                                   'mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm',
-                                   'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'];
-            if (supportedExts.includes(ext)) {
-              paths.push(filePath);
-            }
-          }
-          resolve(paths);
-        }, () => resolve(paths));
-      });
-    } else if (entry.isDirectory) {
-      // Recursively read directory contents
-      const dirEntry = entry as FileSystemDirectoryEntry;
-      const dirReader = dirEntry.createReader();
-
-      return new Promise((resolve) => {
-        const readEntries = () => {
-          dirReader.readEntries(async (entries) => {
-            if (entries.length === 0) {
-              resolve(paths);
-              return;
-            }
-
-            for (const childEntry of entries) {
-              const childPaths = await getFilesFromEntry(childEntry);
-              paths.push(...childPaths);
-            }
-
-            // Continue reading (readEntries may not return all entries at once)
-            readEntries();
-          }, () => resolve(paths));
-        };
-        readEntries();
-      });
+    // Use main process to expand paths (handles directories recursively)
+    if (!window.electronAPI?.media?.expandPaths) {
+      importProgress = 'API not available';
+      return;
     }
 
-    return paths;
+    importProgress = 'Scanning files...';
+    const expandedPaths = await window.electronAPI.media.expandPaths(droppedPaths);
+
+    if (expandedPaths.length > 0) {
+      await importFilePaths(expandedPaths);
+    } else {
+      importProgress = 'No supported media files found';
+    }
   }
 
   async function handleBrowse() {
@@ -217,8 +163,11 @@
       isImporting = true;
       importProgress = `Preparing to import ${files.length} file(s)...`;
 
+      // Note: This function is called with File objects from file input, not drag-drop
+      // For file input, we need paths. Since File objects lose native backing through contextBridge,
+      // this path should only be used from file dialog (which returns paths directly from main process)
       const filesForImport = files.map((file) => ({
-        filePath: (file as any).path, // Electron adds path property
+        filePath: '', // File objects from input don't have paths in sandbox mode - use selectFiles dialog instead
         originalName: file.name,
       }));
 
@@ -315,6 +264,31 @@
 
   {#if loading}
     <p class="text-gray-500">Loading...</p>
+  {:else if !archiveFolderConfigured}
+    <!-- Archive folder not configured - block imports -->
+    <div class="max-w-3xl bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6">
+      <div class="flex items-start gap-4">
+        <div class="flex-shrink-0">
+          <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <div class="flex-1">
+          <h3 class="text-lg font-semibold text-yellow-800">Archive Folder Not Configured</h3>
+          <p class="text-yellow-700 mt-1">
+            Before you can import media files, you need to set up an archive folder where your files will be organized and stored.
+          </p>
+          <div class="mt-4 flex gap-3">
+            <button
+              onclick={() => router.navigate('/settings')}
+              class="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition font-medium"
+            >
+              Go to Settings
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   {:else}
     <ImportForm
       {locations}

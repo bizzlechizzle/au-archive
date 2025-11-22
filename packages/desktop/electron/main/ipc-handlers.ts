@@ -18,10 +18,12 @@ import { getDiskSpaceMonitor } from '../services/disk-space-monitor';
 import { getMaintenanceScheduler } from '../services/maintenance-scheduler';
 import { getRecoverySystem } from '../services/recovery-system';
 import { getConfigService } from '../services/config-service';
+import { GeocodingService } from '../services/geocoding-service';
 import { LocationInputSchema } from '@au-archive/core';
 import type { LocationInput, LocationFilters } from '@au-archive/core';
 import { z } from 'zod';
 import fs from 'fs/promises';
+import path from 'path';
 import { validate, UuidSchema, LimitSchema, FilePathSchema, UrlSchema, SettingKeySchema } from './ipc-validation';
 
 export function registerIpcHandlers() {
@@ -401,8 +403,52 @@ export function registerIpcHandlers() {
     }
   });
 
+  // Expand paths - handles both files and directories, returns all valid media file paths
+  ipcMain.handle('media:expandPaths', async (_event, paths: unknown) => {
+    const PathsSchema = z.array(z.string());
+    const validatedPaths = PathsSchema.parse(paths);
+
+    const supportedExts = new Set([
+      'jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp',
+      'mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm',
+      'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'
+    ]);
+
+    const expandedPaths: string[] = [];
+
+    async function processPath(filePath: string): Promise<void> {
+      try {
+        const stat = await fs.stat(filePath);
+
+        if (stat.isFile()) {
+          const ext = path.extname(filePath).toLowerCase().slice(1);
+          if (supportedExts.has(ext)) {
+            expandedPaths.push(filePath);
+          }
+        } else if (stat.isDirectory()) {
+          const entries = await fs.readdir(filePath, { withFileTypes: true });
+          for (const entry of entries) {
+            // Skip hidden files/folders
+            if (entry.name.startsWith('.')) continue;
+            await processPath(path.join(filePath, entry.name));
+          }
+        }
+      } catch (error) {
+        console.error(`Error processing path ${filePath}:`, error);
+      }
+    }
+
+    for (const p of validatedPaths) {
+      await processPath(p);
+    }
+
+    return expandedPaths;
+  });
+
   ipcMain.handle('media:import', async (_event, input: unknown) => {
     try {
+      console.log('[media:import] Starting import with input:', JSON.stringify(input, null, 2));
+
       const ImportInputSchema = z.object({
         files: z.array(
           z.object({
@@ -417,6 +463,7 @@ export function registerIpcHandlers() {
       });
 
       const validatedInput = ImportInputSchema.parse(input);
+      console.log('[media:import] Validated input, files count:', validatedInput.files.length);
 
       // Get archive path from settings
       const archivePath = await db
@@ -424,6 +471,8 @@ export function registerIpcHandlers() {
         .select('value')
         .where('key', '=', 'archive_folder')
         .executeTakeFirst();
+
+      console.log('[media:import] Archive path:', archivePath?.value);
 
       if (!archivePath?.value) {
         throw new Error('Archive folder not configured. Please set it in Settings.');
@@ -1171,6 +1220,89 @@ export function registerIpcHandlers() {
       return await recoverySystem.attemptRecovery();
     } catch (error) {
       console.error('Error attempting recovery:', error);
+      throw error;
+    }
+  });
+
+  // ============================================
+  // Geocoding Operations (Nominatim + SQLite cache)
+  // ============================================
+
+  // Initialize geocoding service
+  const geocodingService = new GeocodingService(db);
+
+  // Initialize geocoding cache table
+  geocodingService.initCache().catch((error) => {
+    console.warn('Failed to initialize geocoding cache:', error);
+  });
+
+  // Reverse geocode: GPS coordinates -> address
+  ipcMain.handle('geocode:reverse', async (_event, lat: unknown, lng: unknown) => {
+    try {
+      const GeoInputSchema = z.object({
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180),
+      });
+
+      const { lat: validLat, lng: validLng } = GeoInputSchema.parse({ lat, lng });
+      const result = await geocodingService.reverseGeocode(validLat, validLng);
+
+      if (!result) {
+        return null;
+      }
+
+      return {
+        lat: result.lat,
+        lng: result.lng,
+        displayName: result.displayName,
+        address: result.address,
+        confidence: result.confidence,
+        source: result.source,
+      };
+    } catch (error) {
+      console.error('Error reverse geocoding:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  // Forward geocode: address string -> GPS coordinates
+  ipcMain.handle('geocode:forward', async (_event, address: unknown) => {
+    try {
+      const validAddress = z.string().min(3).max(500).parse(address);
+      const result = await geocodingService.forwardGeocode(validAddress);
+
+      if (!result) {
+        return null;
+      }
+
+      return {
+        lat: result.lat,
+        lng: result.lng,
+        displayName: result.displayName,
+        address: result.address,
+        confidence: result.confidence,
+        source: result.source,
+      };
+    } catch (error) {
+      console.error('Error forward geocoding:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  // Clear old geocoding cache entries
+  ipcMain.handle('geocode:clearCache', async (_event, daysOld: unknown = 90) => {
+    try {
+      const validDays = z.number().int().positive().max(365).parse(daysOld);
+      const deleted = await geocodingService.clearOldCache(validDays);
+      return { deleted };
+    } catch (error) {
+      console.error('Error clearing geocode cache:', error);
       throw error;
     }
   });

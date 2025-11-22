@@ -1,7 +1,7 @@
 - Map Viewer
-	- default: show all locations with gps data
+	- default: show all locations with gps data on leaflet map
 	- click on location pin opens location page
-	- right click to add new location open #import_form
+	-
 		- autofill
 			- #condition
 			  id:: 691e854b-97de-4c06-93fc-cc3311568269

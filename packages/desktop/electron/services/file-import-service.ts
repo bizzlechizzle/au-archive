@@ -313,7 +313,7 @@ export class FileImportService {
 
   /**
    * Organize file to archive folder with path validation
-   * Archive structure: [archivePath]/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-[type]-[LOC12]/[SHA256].[ext]
+   * Archive structure per spec: [archivePath]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-[type]-[LOC12]/[SHA256].[ext]
    */
   private async organizeFile(
     file: ImportFileInput,
@@ -321,10 +321,36 @@ export class FileImportService {
     ext: string,
     type: 'image' | 'video' | 'document'
   ): Promise<string> {
-    // For now, use a simplified structure until we have location data
-    // TODO: Implement full path structure with STATE, TYPE, SLOCNAM, LOC12
-    const typeFolder = type === 'image' ? 'images' : type === 'video' ? 'videos' : 'documents';
-    const targetDir = path.join(this.archivePath, typeFolder, file.locid);
+    // Fetch location data for folder structure
+    const location = await this.locationRepo.findById(file.locid);
+
+    if (!location) {
+      throw new Error(`Location not found: ${file.locid}`);
+    }
+
+    // Build spec-compliant folder structure
+    // [STATE]-[TYPE] folder (use "XX" for unknown state, "Unknown" for unknown type)
+    const state = location.address?.state?.toUpperCase() || 'XX';
+    const locType = location.type || 'Unknown';
+    const stateTypeFolder = `${state}-${this.sanitizeFolderName(locType)}`;
+
+    // [SLOCNAM]-[LOC12] folder
+    const slocnam = location.slocnam || this.generateSlocnam(location.locnam);
+    const loc12 = location.loc12;
+    const locationFolder = `${this.sanitizeFolderName(slocnam)}-${loc12}`;
+
+    // org-[type]-[LOC12] folder
+    const typePrefix = type === 'image' ? 'img' : type === 'video' ? 'vid' : 'doc';
+    const mediaFolder = `org-${typePrefix}-${loc12}`;
+
+    // Build full path
+    const targetDir = path.join(
+      this.archivePath,
+      'locations',
+      stateTypeFolder,
+      locationFolder,
+      mediaFolder
+    );
     const targetPath = path.join(targetDir, `${hash}${ext}`);
 
     // CRITICAL: Validate target path doesn't escape archive
@@ -338,7 +364,34 @@ export class FileImportService {
     // Copy file
     await fs.copyFile(file.filePath, targetPath);
 
+    // Verify integrity after copy
+    const verifyHash = await this.cryptoService.calculateSHA256(targetPath);
+    if (verifyHash !== hash) {
+      // Delete corrupted file
+      await fs.unlink(targetPath).catch(() => {});
+      throw new Error(`Integrity check failed: file corrupted during copy`);
+    }
+
     return targetPath;
+  }
+
+  /**
+   * Sanitize folder name - remove unsafe characters
+   */
+  private sanitizeFolderName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .substring(0, 50); // Limit length
+  }
+
+  /**
+   * Generate short location name from full name
+   */
+  private generateSlocnam(locnam: string): string {
+    return this.sanitizeFolderName(locnam).substring(0, 20);
   }
 
   /**

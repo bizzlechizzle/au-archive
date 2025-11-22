@@ -59,6 +59,9 @@ export const SettingKeySchema = z.enum([
   'current_user',
   'delete_on_import',
   'setup_complete',
+  'login_required',
+  'import_map',
+  'map_import',
 ]);
 
 export const SettingValueSchema = z.union([

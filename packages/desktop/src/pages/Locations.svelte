@@ -7,16 +7,42 @@
   let searchQuery = $state('');
   let filterState = $state('');
   let filterType = $state('');
+  let filterStype = $state('');
+  let filterCondition = $state('');
+  let filterStatus = $state('');
+  let filterCity = $state('');
+  let filterCounty = $state('');
+  let filterDocumentation = $state('');
+  let filterAccess = $state('');
+  let filterAuthor = $state('');
   let specialFilter = $state(''); // 'undocumented', 'historical', 'favorites', or ''
   let loading = $state(true);
+  let activeFilterCount = $state(0);
 
   // Subscribe to router for query params
   let routeQuery = $state<Record<string, string>>({});
   const unsubscribe = router.subscribe((route) => {
-    if (route.query?.filter) {
-      specialFilter = route.query.filter;
-    }
-    routeQuery = route.query || {};
+    const q = route.query || {};
+    routeQuery = q;
+
+    // Apply URL query params to filters
+    if (q.filter) specialFilter = q.filter;
+    if (q.state) filterState = q.state;
+    if (q.type) filterType = q.type;
+    if (q.stype) filterStype = q.stype;
+    if (q.condition) filterCondition = q.condition;
+    if (q.status) filterStatus = q.status;
+    if (q.city) filterCity = q.city;
+    if (q.county) filterCounty = q.county;
+    if (q.documentation) filterDocumentation = q.documentation;
+    if (q.access) filterAccess = q.access;
+    if (q.author) filterAuthor = q.author;
+
+    // Count active filters
+    activeFilterCount = [
+      filterState, filterType, filterStype, filterCondition, filterStatus,
+      filterCity, filterCounty, filterDocumentation, filterAccess, filterAuthor, specialFilter
+    ].filter(Boolean).length;
   });
 
   let filteredLocations = $derived(() => {
@@ -26,11 +52,18 @@
         loc.akanam?.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesState = !filterState || loc.address?.state === filterState;
       const matchesType = !filterType || loc.type === filterType;
+      const matchesStype = !filterStype || loc.stype === filterStype;
+      const matchesCondition = !filterCondition || loc.condition === filterCondition;
+      const matchesStatus = !filterStatus || loc.status === filterStatus;
+      const matchesCity = !filterCity || loc.address?.city === filterCity;
+      const matchesCounty = !filterCounty || loc.address?.county === filterCounty;
+      const matchesDocumentation = !filterDocumentation || loc.documentation === filterDocumentation;
+      const matchesAccess = !filterAccess || loc.access === filterAccess;
+      const matchesAuthor = !filterAuthor || loc.auth_imp === filterAuthor;
 
       // Apply special filters
       let matchesSpecial = true;
       if (specialFilter === 'undocumented') {
-        // Locations without documentation status or marked as undocumented
         matchesSpecial = !loc.documentation || loc.documentation === 'No Visit / Keyboard Scout';
       } else if (specialFilter === 'historical') {
         matchesSpecial = loc.historic === true;
@@ -38,7 +71,9 @@
         matchesSpecial = loc.favorite === true;
       }
 
-      return matchesSearch && matchesState && matchesType && matchesSpecial;
+      return matchesSearch && matchesState && matchesType && matchesStype &&
+        matchesCondition && matchesStatus && matchesCity && matchesCounty &&
+        matchesDocumentation && matchesAccess && matchesAuthor && matchesSpecial;
     });
   });
 
@@ -52,10 +87,67 @@
     return Array.from(types).sort();
   });
 
-  function clearSpecialFilter() {
+  function clearAllFilters() {
     specialFilter = '';
+    filterState = '';
+    filterType = '';
+    filterStype = '';
+    filterCondition = '';
+    filterStatus = '';
+    filterCity = '';
+    filterCounty = '';
+    filterDocumentation = '';
+    filterAccess = '';
+    filterAuthor = '';
     router.navigate('/locations');
   }
+
+  function clearFilter(filterName: string) {
+    switch (filterName) {
+      case 'filter': specialFilter = ''; break;
+      case 'state': filterState = ''; break;
+      case 'type': filterType = ''; break;
+      case 'stype': filterStype = ''; break;
+      case 'condition': filterCondition = ''; break;
+      case 'status': filterStatus = ''; break;
+      case 'city': filterCity = ''; break;
+      case 'county': filterCounty = ''; break;
+      case 'documentation': filterDocumentation = ''; break;
+      case 'access': filterAccess = ''; break;
+      case 'author': filterAuthor = ''; break;
+    }
+    // Rebuild URL with remaining filters
+    const newQuery: Record<string, string> = {};
+    if (specialFilter) newQuery.filter = specialFilter;
+    if (filterState) newQuery.state = filterState;
+    if (filterType) newQuery.type = filterType;
+    if (filterStype) newQuery.stype = filterStype;
+    if (filterCondition) newQuery.condition = filterCondition;
+    if (filterStatus) newQuery.status = filterStatus;
+    if (filterCity) newQuery.city = filterCity;
+    if (filterCounty) newQuery.county = filterCounty;
+    if (filterDocumentation) newQuery.documentation = filterDocumentation;
+    if (filterAccess) newQuery.access = filterAccess;
+    if (filterAuthor) newQuery.author = filterAuthor;
+    router.navigate('/locations', undefined, Object.keys(newQuery).length > 0 ? newQuery : undefined);
+  }
+
+  // Get active filters for display
+  let activeFilters = $derived(() => {
+    const filters: Array<{ key: string; label: string; value: string }> = [];
+    if (specialFilter) filters.push({ key: 'filter', label: 'Filter', value: specialFilter });
+    if (filterState) filters.push({ key: 'state', label: 'State', value: filterState });
+    if (filterType) filters.push({ key: 'type', label: 'Type', value: filterType });
+    if (filterStype) filters.push({ key: 'stype', label: 'Sub-Type', value: filterStype });
+    if (filterCondition) filters.push({ key: 'condition', label: 'Condition', value: filterCondition });
+    if (filterStatus) filters.push({ key: 'status', label: 'Status', value: filterStatus });
+    if (filterCity) filters.push({ key: 'city', label: 'City', value: filterCity });
+    if (filterCounty) filters.push({ key: 'county', label: 'County', value: filterCounty });
+    if (filterDocumentation) filters.push({ key: 'documentation', label: 'Documentation', value: filterDocumentation });
+    if (filterAccess) filters.push({ key: 'access', label: 'Access', value: filterAccess });
+    if (filterAuthor) filters.push({ key: 'author', label: 'Author', value: filterAuthor });
+    return filters;
+  });
 
   async function loadLocations() {
     try {
@@ -84,17 +176,36 @@
     <p class="text-gray-600">Browse and manage abandoned locations</p>
   </div>
 
-  {#if specialFilter}
-    <div class="mb-4 p-3 bg-accent/10 border border-accent/20 rounded-lg flex items-center justify-between">
-      <span class="text-sm text-foreground">
-        Filtering by: <strong class="capitalize">{specialFilter}</strong>
-      </span>
-      <button
-        onclick={clearSpecialFilter}
-        class="text-sm text-accent hover:underline"
-      >
-        Clear filter
-      </button>
+  {#if activeFilters().length > 0}
+    <div class="mb-4 p-3 bg-accent/10 border border-accent/20 rounded-lg">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm text-foreground font-medium">
+          Active Filters ({activeFilters().length})
+        </span>
+        <button
+          onclick={clearAllFilters}
+          class="text-sm text-accent hover:underline"
+        >
+          Clear all
+        </button>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        {#each activeFilters() as filter}
+          <span class="inline-flex items-center gap-1 px-2 py-1 bg-accent/20 text-foreground text-sm rounded">
+            <span class="text-gray-500 text-xs">{filter.label}:</span>
+            <span class="font-medium">{filter.value}</span>
+            <button
+              onclick={() => clearFilter(filter.key)}
+              class="ml-1 text-gray-500 hover:text-red-500"
+              title="Remove filter"
+            >
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </span>
+        {/each}
+      </div>
     </div>
   {/if}
 

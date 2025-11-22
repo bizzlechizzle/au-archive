@@ -64,6 +64,7 @@ export interface ElectronAPI {
 
   media: {
     selectFiles: () => Promise<string[] | null>;
+    expandPaths: (paths: string[]) => Promise<string[]>;
     import: (input: {
       files: Array<{ filePath: string; originalName: string }>;
       locid: string;
@@ -181,10 +182,15 @@ export interface ElectronAPI {
     onTitleChanged: (callback: (title: string) => void) => () => void;
     onLoadingChanged: (callback: (loading: boolean) => void) => () => void;
   };
+
 }
 
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
+    // Get file paths from the last drop event (captured in preload)
+    getDroppedFilePaths: () => string[];
+    // Legacy: Extract file paths from FileList (may not work due to contextBridge serialization)
+    extractFilePaths: (files: FileList) => string[];
   }
 }

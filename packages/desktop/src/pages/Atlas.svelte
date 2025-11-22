@@ -18,7 +18,12 @@
   let createType = $state('');
   let createState = $state('');
   let createCity = $state('');
+  let createCounty = $state('');
+  let createStreet = $state('');
+  let createZipcode = $state('');
   let creating = $state(false);
+  let geocoding = $state(false);
+  let geocodeError = $state('');
 
   // Show locations that are mappable: has GPS OR has address (city+state, zipcode)
   function isMappable(loc: Location): boolean {
@@ -75,7 +80,7 @@
     // Left-click just logs for now
   }
 
-  function handleMapRightClick(lat: number, lng: number) {
+  async function handleMapRightClick(lat: number, lng: number) {
     // Right-click opens quick create modal
     createLat = lat;
     createLng = lng;
@@ -83,7 +88,32 @@
     createType = '';
     createState = '';
     createCity = '';
+    createCounty = '';
+    createStreet = '';
+    createZipcode = '';
+    geocodeError = '';
     showCreateModal = true;
+
+    // Auto-geocode to get address
+    if (window.electronAPI?.geocode) {
+      try {
+        geocoding = true;
+        const result = await window.electronAPI.geocode.reverse(lat, lng);
+
+        if (result?.address) {
+          createCity = result.address.city || '';
+          createState = result.address.stateCode || result.address.state || '';
+          createCounty = result.address.county || '';
+          createStreet = result.address.street || '';
+          createZipcode = result.address.zipcode || '';
+        }
+      } catch (error) {
+        console.error('Geocoding failed:', error);
+        geocodeError = 'Could not look up address. Enter manually.';
+      } finally {
+        geocoding = false;
+      }
+    }
   }
 
   function closeCreateModal() {
@@ -92,6 +122,10 @@
     createType = '';
     createState = '';
     createCity = '';
+    createCounty = '';
+    createStreet = '';
+    createZipcode = '';
+    geocodeError = '';
   }
 
   async function quickCreateLocation() {
@@ -109,10 +143,15 @@
           lat: createLat,
           lng: createLng,
           source: 'user_map_click',
+          verifiedOnMap: true, // User clicked on map, so GPS is verified
         },
         address: {
+          street: createStreet || undefined,
           city: createCity || undefined,
+          county: createCounty || undefined,
           state: createState || undefined,
+          zipcode: createZipcode || undefined,
+          confidence: geocoding ? undefined : 'high', // High confidence if geocoded
         },
         auth_imp: currentUser,
       });
@@ -208,15 +247,28 @@
 <!-- Quick Create Modal -->
 {#if showCreateModal}
   <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
       <div class="px-6 py-4 border-b border-gray-200">
         <h2 class="text-lg font-semibold text-foreground">Quick Create Location</h2>
-        <p class="text-sm text-gray-500">
-          GPS: {createLat.toFixed(6)}, {createLng.toFixed(6)}
-        </p>
+        <div class="flex items-center gap-2 text-sm text-gray-500">
+          <span>GPS: {createLat.toFixed(6)}, {createLng.toFixed(6)}</span>
+          {#if geocoding}
+            <span class="inline-flex items-center gap-1 text-accent">
+              <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Looking up address...
+            </span>
+          {:else if createCity || createState}
+            <span class="text-green-600">Address found</span>
+          {/if}
+        </div>
+        {#if geocodeError}
+          <p class="text-sm text-yellow-600 mt-1">{geocodeError}</p>
+        {/if}
       </div>
 
-      <div class="px-6 py-4 space-y-4">
+      <div class="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
         <div>
           <label for="create-name" class="block text-sm font-medium text-gray-700 mb-1">
             Location Name *
@@ -230,52 +282,83 @@
           />
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label for="create-type" class="block text-sm font-medium text-gray-700 mb-1">
-              Type
-            </label>
-            <select
-              id="create-type"
-              bind:value={createType}
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-            >
-              <option value="">Select type...</option>
-              {#each uniqueTypes() as type}
-                <option value={type}>{type}</option>
-              {/each}
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label for="create-state" class="block text-sm font-medium text-gray-700 mb-1">
-              State
-            </label>
-            <select
-              id="create-state"
-              bind:value={createState}
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-            >
-              <option value="">Select state...</option>
-              {#each uniqueStates() as state}
-                <option value={state}>{state}</option>
-              {/each}
-            </select>
-          </div>
+        <div>
+          <label for="create-type" class="block text-sm font-medium text-gray-700 mb-1">
+            Type
+          </label>
+          <select
+            id="create-type"
+            bind:value={createType}
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            <option value="">Select type...</option>
+            {#each uniqueTypes() as type}
+              <option value={type}>{type}</option>
+            {/each}
+            <option value="other">Other</option>
+          </select>
         </div>
 
-        <div>
-          <label for="create-city" class="block text-sm font-medium text-gray-700 mb-1">
-            City
-          </label>
-          <input
-            id="create-city"
-            type="text"
-            bind:value={createCity}
-            placeholder="Enter city"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-          />
+        <div class="border-t border-gray-200 pt-4">
+          <p class="text-sm font-medium text-gray-700 mb-3">Address {geocoding ? '(loading...)' : '(auto-filled from GPS)'}</p>
+
+          <div>
+            <label for="create-street" class="block text-xs text-gray-500 mb-1">Street</label>
+            <input
+              id="create-street"
+              type="text"
+              bind:value={createStreet}
+              placeholder="123 Main St"
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-sm"
+            />
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 mt-3">
+            <div>
+              <label for="create-city" class="block text-xs text-gray-500 mb-1">City</label>
+              <input
+                id="create-city"
+                type="text"
+                bind:value={createCity}
+                placeholder="City"
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-sm"
+              />
+            </div>
+            <div>
+              <label for="create-county" class="block text-xs text-gray-500 mb-1">County</label>
+              <input
+                id="create-county"
+                type="text"
+                bind:value={createCounty}
+                placeholder="County"
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-sm"
+              />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 mt-3">
+            <div>
+              <label for="create-state" class="block text-xs text-gray-500 mb-1">State</label>
+              <input
+                id="create-state"
+                type="text"
+                bind:value={createState}
+                placeholder="NY"
+                maxlength="2"
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-sm uppercase"
+              />
+            </div>
+            <div>
+              <label for="create-zipcode" class="block text-xs text-gray-500 mb-1">ZIP Code</label>
+              <input
+                id="create-zipcode"
+                type="text"
+                bind:value={createZipcode}
+                placeholder="12345"
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-sm"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -288,7 +371,7 @@
         </button>
         <button
           onclick={quickCreateLocation}
-          disabled={creating || !createName.trim()}
+          disabled={creating || !createName.trim() || geocoding}
           class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
         >
           {creating ? 'Creating...' : 'Create Location'}

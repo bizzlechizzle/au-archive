@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { Location, LocationInput, LocationFilters } from '@au-archive/core';
 
 const api = {
@@ -55,6 +55,46 @@ const api = {
       ipcRenderer.invoke('shell:openExternal', url),
   },
 
+  geocode: {
+    reverse: (lat: number, lng: number): Promise<{
+      lat: number;
+      lng: number;
+      displayName: string;
+      address: {
+        street?: string;
+        houseNumber?: string;
+        city?: string;
+        county?: string;
+        state?: string;
+        stateCode?: string;
+        zipcode?: string;
+        country?: string;
+        countryCode?: string;
+      };
+      confidence: 'high' | 'medium' | 'low';
+      source: 'nominatim' | 'cache';
+    } | null> =>
+      ipcRenderer.invoke('geocode:reverse', lat, lng),
+    forward: (address: string): Promise<{
+      lat: number;
+      lng: number;
+      displayName: string;
+      address: {
+        street?: string;
+        city?: string;
+        county?: string;
+        state?: string;
+        stateCode?: string;
+        zipcode?: string;
+      };
+      confidence: 'high' | 'medium' | 'low';
+      source: 'nominatim' | 'cache';
+    } | null> =>
+      ipcRenderer.invoke('geocode:forward', address),
+    clearCache: (daysOld?: number): Promise<{ deleted: number }> =>
+      ipcRenderer.invoke('geocode:clearCache', daysOld),
+  },
+
   dialog: {
     selectFolder: (): Promise<string | null> =>
       ipcRenderer.invoke('dialog:selectFolder'),
@@ -91,6 +131,8 @@ const api = {
   media: {
     selectFiles: (): Promise<string[] | null> =>
       ipcRenderer.invoke('media:selectFiles'),
+    expandPaths: (paths: string[]): Promise<string[]> =>
+      ipcRenderer.invoke('media:expandPaths', paths),
     import: (input: {
       files: Array<{ filePath: string; originalName: string }>;
       locid: string;
@@ -278,9 +320,67 @@ const api = {
       return () => ipcRenderer.removeListener('browser:loadingChanged', listener);
     },
   },
+
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);
+
+// ============================================
+// Drag-Drop File Path Extraction
+// ============================================
+// File objects lose their native path backing when passed through contextBridge.
+// Solution: Capture drop events in preload and extract paths using webUtils.
+
+let lastDroppedPaths: string[] = [];
+
+// Set up drop event listener after DOM is ready
+const setupDropListener = () => {
+  document.addEventListener('drop', (event: DragEvent) => {
+    console.log('[Preload] Drop event captured');
+    lastDroppedPaths = [];
+
+    if (!event.dataTransfer?.files || event.dataTransfer.files.length === 0) {
+      console.log('[Preload] No files in drop event');
+      return;
+    }
+
+    console.log('[Preload] Processing', event.dataTransfer.files.length, 'dropped files');
+
+    for (const file of Array.from(event.dataTransfer.files)) {
+      try {
+        const filePath = webUtils.getPathForFile(file);
+        console.log('[Preload] Extracted path:', filePath, 'for file:', file.name);
+        if (filePath) {
+          lastDroppedPaths.push(filePath);
+        }
+      } catch (e) {
+        console.error('[Preload] Failed to get path for file:', file.name, e);
+      }
+    }
+
+    console.log('[Preload] Total paths extracted:', lastDroppedPaths.length);
+  }, { capture: true });
+};
+
+// Wait for DOM to be ready before adding event listener
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupDropListener);
+} else {
+  setupDropListener();
+}
+
+// Expose function to retrieve the paths extracted from the last drop event
+contextBridge.exposeInMainWorld('getDroppedFilePaths', (): string[] => {
+  const paths = [...lastDroppedPaths];
+  console.log('[Preload] getDroppedFilePaths called, returning', paths.length, 'paths');
+  return paths;
+});
+
+// Also keep extractFilePaths for backwards compatibility
+contextBridge.exposeInMainWorld('extractFilePaths', (files: FileList): string[] => {
+  console.log('[Preload] extractFilePaths called');
+  return [...lastDroppedPaths];
+});
 
 // Type is exported from a separate .d.ts file to avoid CJS compilation issues
 // See: electron/preload/types.d.ts

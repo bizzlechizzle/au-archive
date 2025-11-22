@@ -73,6 +73,9 @@
   let isImporting = $state(false);
   let importProgress = $state('');
 
+  // GPS verification state
+  let verifyingGps = $state(false);
+
   const IMAGE_LIMIT = 6;
   const VIDEO_LIMIT = 3;
   const DOCUMENT_LIMIT = 3;
@@ -151,9 +154,9 @@
   }
 
   async function loadBookmarks() {
-    if (!window.electronAPI?.urls) return;
+    if (!window.electronAPI?.bookmarks) return;
     try {
-      const urls = await window.electronAPI.urls.findByLocation(locationId);
+      const urls = await window.electronAPI.bookmarks.findByLocation(locationId);
       bookmarks = urls || [];
     } catch (err) {
       console.error('Error loading bookmarks:', err);
@@ -161,11 +164,11 @@
   }
 
   async function addBookmark() {
-    if (!newBookmarkUrl.trim() || !window.electronAPI?.urls) return;
+    if (!newBookmarkUrl.trim() || !window.electronAPI?.bookmarks) return;
 
     try {
       addingBookmark = true;
-      await window.electronAPI.urls.create({
+      await window.electronAPI.bookmarks.create({
         locid: locationId,
         url: newBookmarkUrl.trim(),
         url_title: newBookmarkTitle.trim() || null,
@@ -189,10 +192,10 @@
   }
 
   async function deleteBookmark(urlid: string) {
-    if (!window.electronAPI?.urls) return;
+    if (!window.electronAPI?.bookmarks) return;
 
     try {
-      await window.electronAPI.urls.delete(urlid);
+      await window.electronAPI.bookmarks.delete(urlid);
       await loadBookmarks();
     } catch (err) {
       console.error('Error deleting bookmark:', err);
@@ -201,6 +204,33 @@
 
   function openBookmark(url: string) {
     window.electronAPI?.shell?.openExternal(url);
+  }
+
+  // Cross-link navigation helpers
+  function navigateToFilter(filterType: string, value: string) {
+    router.navigate('/locations', undefined, { [filterType]: value });
+  }
+
+  // Mark GPS as verified on map
+  async function markGpsVerified() {
+    if (!location || !window.electronAPI?.locations) return;
+
+    try {
+      verifyingGps = true;
+      await window.electronAPI.locations.update(locationId, {
+        gps: {
+          ...location.gps,
+          verifiedOnMap: true,
+        },
+      });
+
+      // Reload location to reflect changes
+      await loadLocation();
+    } catch (err) {
+      console.error('Error marking GPS as verified:', err);
+    } finally {
+      verifyingGps = false;
+    }
   }
 
   // Drag-drop handlers for media import
@@ -217,86 +247,40 @@
     event.preventDefault();
     isDragging = false;
 
-    if (!event.dataTransfer || !location) {
+    if (!event.dataTransfer?.files || event.dataTransfer.files.length === 0 || !location) {
       return;
     }
 
-    // Use items API to support folders
-    const items = event.dataTransfer.items;
-    if (items && items.length > 0) {
-      const filePaths: string[] = [];
+    // Small delay to ensure preload's drop handler has processed the files
+    await new Promise(resolve => setTimeout(resolve, 10));
 
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind === 'file') {
-          const entry = item.webkitGetAsEntry?.();
-          if (entry) {
-            const paths = await getFilesFromEntry(entry);
-            filePaths.push(...paths);
-          } else {
-            const file = item.getAsFile();
-            if (file && (file as any).path) {
-              filePaths.push((file as any).path);
-            }
-          }
-        }
-      }
+    // Get paths extracted by preload's drop event handler
+    // The preload captures drop events and extracts paths using webUtils.getPathForFile()
+    const droppedPaths = window.getDroppedFilePaths?.() || [];
+    console.log('[LocationDetail] Got dropped paths from preload:', droppedPaths);
 
-      if (filePaths.length > 0) {
-        await importFilePaths(filePaths);
-      } else {
-        importProgress = 'No valid files found';
-        setTimeout(() => { importProgress = ''; }, 3000);
-      }
-    }
-  }
-
-  // Recursively get all file paths from a FileSystemEntry (supports folders)
-  async function getFilesFromEntry(entry: FileSystemEntry): Promise<string[]> {
-    const paths: string[] = [];
-
-    if (entry.isFile) {
-      const fileEntry = entry as FileSystemFileEntry;
-      return new Promise((resolve) => {
-        fileEntry.file((file) => {
-          const filePath = (file as any).path;
-          if (filePath) {
-            const ext = file.name.toLowerCase().split('.').pop() || '';
-            const supportedExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp',
-                                   'mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm',
-                                   'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'];
-            if (supportedExts.includes(ext)) {
-              paths.push(filePath);
-            }
-          }
-          resolve(paths);
-        }, () => resolve(paths));
-      });
-    } else if (entry.isDirectory) {
-      const dirEntry = entry as FileSystemDirectoryEntry;
-      const dirReader = dirEntry.createReader();
-
-      return new Promise((resolve) => {
-        const readEntries = () => {
-          dirReader.readEntries(async (entries) => {
-            if (entries.length === 0) {
-              resolve(paths);
-              return;
-            }
-
-            for (const childEntry of entries) {
-              const childPaths = await getFilesFromEntry(childEntry);
-              paths.push(...childPaths);
-            }
-
-            readEntries();
-          }, () => resolve(paths));
-        };
-        readEntries();
-      });
+    if (droppedPaths.length === 0) {
+      importProgress = 'No valid files found';
+      setTimeout(() => { importProgress = ''; }, 3000);
+      return;
     }
 
-    return paths;
+    // Use main process to expand paths (handles directories recursively)
+    if (!window.electronAPI?.media?.expandPaths) {
+      importProgress = 'API not available';
+      setTimeout(() => { importProgress = ''; }, 3000);
+      return;
+    }
+
+    importProgress = 'Scanning files...';
+    const expandedPaths = await window.electronAPI.media.expandPaths(droppedPaths);
+
+    if (expandedPaths.length > 0) {
+      await importFilePaths(expandedPaths);
+    } else {
+      importProgress = 'No supported media files found';
+      setTimeout(() => { importProgress = ''; }, 3000);
+    }
   }
 
   async function importFilePaths(filePaths: string[]) {
@@ -444,49 +428,105 @@
             {#if location.type}
               <div>
                 <dt class="text-sm font-medium text-gray-500">Type</dt>
-                <dd class="text-base text-gray-900">{location.type}</dd>
+                <dd class="text-base">
+                  <button
+                    onclick={() => navigateToFilter('type', location.type!)}
+                    class="text-accent hover:underline"
+                    title="View all {location.type} locations"
+                  >
+                    {location.type}
+                  </button>
+                </dd>
               </div>
             {/if}
 
             {#if location.stype}
               <div>
                 <dt class="text-sm font-medium text-gray-500">Sub-Type</dt>
-                <dd class="text-base text-gray-900">{location.stype}</dd>
+                <dd class="text-base">
+                  <button
+                    onclick={() => navigateToFilter('stype', location.stype!)}
+                    class="text-accent hover:underline"
+                    title="View all {location.stype} locations"
+                  >
+                    {location.stype}
+                  </button>
+                </dd>
               </div>
             {/if}
 
             {#if location.condition}
               <div>
                 <dt class="text-sm font-medium text-gray-500">Condition</dt>
-                <dd class="text-base text-gray-900">{location.condition}</dd>
+                <dd class="text-base">
+                  <button
+                    onclick={() => navigateToFilter('condition', location.condition!)}
+                    class="text-accent hover:underline"
+                    title="View all locations with this condition"
+                  >
+                    {location.condition}
+                  </button>
+                </dd>
               </div>
             {/if}
 
             {#if location.status}
               <div>
                 <dt class="text-sm font-medium text-gray-500">Status</dt>
-                <dd class="text-base text-gray-900">{location.status}</dd>
+                <dd class="text-base">
+                  <button
+                    onclick={() => navigateToFilter('status', location.status!)}
+                    class="text-accent hover:underline"
+                    title="View all locations with this status"
+                  >
+                    {location.status}
+                  </button>
+                </dd>
               </div>
             {/if}
 
             {#if location.documentation}
               <div>
                 <dt class="text-sm font-medium text-gray-500">Documentation</dt>
-                <dd class="text-base text-gray-900">{location.documentation}</dd>
+                <dd class="text-base">
+                  <button
+                    onclick={() => navigateToFilter('documentation', location.documentation!)}
+                    class="text-accent hover:underline"
+                    title="View all locations with this documentation level"
+                  >
+                    {location.documentation}
+                  </button>
+                </dd>
               </div>
             {/if}
 
             {#if location.access}
               <div>
                 <dt class="text-sm font-medium text-gray-500">Access</dt>
-                <dd class="text-base text-gray-900">{location.access}</dd>
+                <dd class="text-base">
+                  <button
+                    onclick={() => navigateToFilter('access', location.access!)}
+                    class="text-accent hover:underline"
+                    title="View all locations with this access level"
+                  >
+                    {location.access}
+                  </button>
+                </dd>
               </div>
             {/if}
 
             {#if location.historic}
               <div>
                 <dt class="text-sm font-medium text-gray-500">Historic Landmark</dt>
-                <dd class="text-base text-gray-900">Yes</dd>
+                <dd class="text-base">
+                  <button
+                    onclick={() => router.navigate('/locations', undefined, { filter: 'historical' })}
+                    class="text-accent hover:underline"
+                    title="View all historic landmarks"
+                  >
+                    Yes
+                  </button>
+                </dd>
               </div>
             {/if}
           </dl>
@@ -500,10 +540,31 @@
               <h3 class="text-sm font-medium text-gray-500 mb-2">Address</h3>
               <p class="text-base text-gray-900">
                 {#if location.address.street}{location.address.street}<br/>{/if}
-                {#if location.address.city}{location.address.city}, {/if}
-                {#if location.address.state}{location.address.state} {/if}
+                {#if location.address.city}
+                  <button
+                    onclick={() => navigateToFilter('city', location.address!.city!)}
+                    class="text-accent hover:underline"
+                    title="View all locations in {location.address.city}"
+                  >{location.address.city}</button>,{' '}
+                {/if}
+                {#if location.address.state}
+                  <button
+                    onclick={() => navigateToFilter('state', location.address!.state!)}
+                    class="text-accent hover:underline"
+                    title="View all locations in {location.address.state}"
+                  >{location.address.state}</button>{' '}
+                {/if}
                 {#if location.address.zipcode}{location.address.zipcode}{/if}
               </p>
+              {#if location.address.county}
+                <p class="text-sm text-gray-500 mt-1">
+                  <button
+                    onclick={() => navigateToFilter('county', location.address!.county!)}
+                    class="text-accent hover:underline"
+                    title="View all locations in {location.address.county} County"
+                  >{location.address.county} County</button>
+                </p>
+              {/if}
             </div>
           {/if}
 
@@ -517,7 +578,20 @@
                 <p class="text-xs text-gray-500 mt-1">Source: {location.gps.source}</p>
               {/if}
               {#if location.gps.verifiedOnMap}
-                <p class="text-xs text-green-600 mt-1">Verified on map</p>
+                <div class="flex items-center gap-1 mt-1">
+                  <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span class="text-xs text-green-600">Verified on map</span>
+                </div>
+              {:else}
+                <button
+                  onclick={markGpsVerified}
+                  disabled={verifyingGps}
+                  class="mt-2 px-3 py-1 text-xs bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  {verifyingGps ? 'Saving...' : 'Mark as Verified'}
+                </button>
               {/if}
             </div>
 
@@ -525,7 +599,15 @@
               <Map locations={[location]} />
             </div>
           {:else}
-            <p class="text-gray-500">No GPS coordinates available</p>
+            <div class="text-center py-4">
+              <p class="text-gray-500 mb-3">No GPS coordinates available</p>
+              <button
+                onclick={() => router.navigate('/atlas')}
+                class="px-4 py-2 text-sm bg-accent text-white rounded hover:opacity-90 transition"
+              >
+                Add GPS on Atlas
+              </button>
+            </div>
           {/if}
         </div>
       </div>

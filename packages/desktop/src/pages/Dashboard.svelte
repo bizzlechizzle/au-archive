@@ -87,40 +87,81 @@
       <p class="text-gray-500">Loading...</p>
     </div>
   {:else}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-      <!-- Per spec: "projects" means pinned/favorite items - show top 5 [column], show all -->
+    <!-- Row 1: Quick Actions -->
+    <div class="mb-6">
+      <div class="flex gap-4 flex-wrap">
+        <button
+          onclick={() => router.navigate('/imports')}
+          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+        >
+          + New Location
+        </button>
+        <button
+          onclick={() => router.navigate('/atlas')}
+          class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
+        >
+          Open Atlas
+        </button>
+        <button
+          onclick={() => router.navigate('/locations')}
+          class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
+        >
+          View All Locations
+        </button>
+        <button
+          onclick={() => router.navigate('/imports')}
+          class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
+        >
+          Import Media
+        </button>
+        <button
+          onclick={async () => {
+            if (!window.electronAPI?.locations) return;
+            const loc = await window.electronAPI.locations.random();
+            if (loc) router.navigate(`/location/${loc.locid}`);
+          }}
+          class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
+        >
+          Random Location
+        </button>
+      </div>
+    </div>
+
+    <!-- Row 2: Pinned (full width) -->
+    <div class="mb-6">
       <div class="bg-white rounded-lg shadow p-6">
         <div class="flex justify-between items-start mb-4">
           <div>
-            <h3 class="text-lg font-semibold text-foreground">Pinned</h3>
-            <p class="text-gray-500 text-sm">Favorite locations</p>
+            <h3 class="text-lg font-semibold text-foreground">Pinned Locations</h3>
+            <p class="text-gray-500 text-sm">Your favorite locations</p>
           </div>
-          <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
+          <button onclick={() => router.navigate('/locations', undefined, { filter: 'favorites' })} class="text-xs text-accent hover:underline">
             show all
           </button>
         </div>
         {#if pinnedLocations.length > 0}
-          <ul class="space-y-2">
+          <div class="flex flex-wrap gap-3">
             {#each pinnedLocations as location}
-              <li class="text-sm">
-                <button
-                  onclick={() => router.navigate(`/location/${location.locid}`)}
-                  class="text-accent hover:underline"
-                >
-                  {location.locnam}
-                </button>
+              <button
+                onclick={() => router.navigate(`/location/${location.locid}`)}
+                class="px-3 py-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition text-left"
+              >
+                <span class="text-sm text-accent font-medium">{location.locnam}</span>
                 {#if location.address?.state}
                   <span class="text-xs text-gray-400 ml-2">{location.address.state}</span>
                 {/if}
-              </li>
+              </button>
             {/each}
-          </ul>
+          </div>
         {:else}
-          <p class="text-sm text-gray-400">No pinned locations yet</p>
+          <p class="text-sm text-gray-400">No pinned locations yet. Star locations to see them here.</p>
         {/if}
       </div>
+    </div>
 
-      <!-- Per spec: imports - show top 5 recent imports[column], show all -->
+    <!-- Row 3: Recent Imports + Recent Locations -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <!-- Recent Imports -->
       <div class="bg-white rounded-lg shadow p-6">
         <div class="flex justify-between items-start mb-4">
           <div>
@@ -173,7 +214,7 @@
         {/if}
       </div>
 
-      <!-- Per spec: recents - show top 5 recently interacted with[rows], show all -->
+      <!-- Recent Locations -->
       <div class="bg-white rounded-lg shadow p-6">
         <div class="flex justify-between items-start mb-4">
           <div>
@@ -206,35 +247,11 @@
           </div>
         {/if}
       </div>
+    </div>
 
-      <!-- Per spec: states - show top 5 states by locations [column], show all -->
-      <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-start mb-4">
-          <div>
-            <h3 class="text-lg font-semibold text-foreground">Top States</h3>
-            <p class="text-gray-500 text-sm">By location count</p>
-          </div>
-          <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
-            show all
-          </button>
-        </div>
-        {#if topStates.length > 0}
-          <ul class="space-y-2">
-            {#each topStates as stat}
-              <li class="flex justify-between text-sm">
-                <span>{stat.state}</span>
-                <span class="text-gray-500">{stat.count}</span>
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <div class="mt-4 text-center text-gray-400">
-            No data yet
-          </div>
-        {/if}
-      </div>
-
-      <!-- Per spec: types - show top 5 types [column], show all -->
+    <!-- Row 4: Top Types + Top States -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <!-- Top Types -->
       <div class="bg-white rounded-lg shadow p-6">
         <div class="flex justify-between items-start mb-4">
           <div>
@@ -249,7 +266,46 @@
           <ul class="space-y-2">
             {#each topTypes as stat}
               <li class="flex justify-between text-sm">
-                <span>{stat.type}</span>
+                <button
+                  onclick={() => router.navigate('/locations', undefined, { type: stat.type })}
+                  class="text-accent hover:underline"
+                  title="View all {stat.type} locations"
+                >
+                  {stat.type}
+                </button>
+                <span class="text-gray-500">{stat.count}</span>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <div class="mt-4 text-center text-gray-400">
+            No data yet
+          </div>
+        {/if}
+      </div>
+
+      <!-- Top States -->
+      <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex justify-between items-start mb-4">
+          <div>
+            <h3 class="text-lg font-semibold text-foreground">Top States</h3>
+            <p class="text-gray-500 text-sm">By location count</p>
+          </div>
+          <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
+            show all
+          </button>
+        </div>
+        {#if topStates.length > 0}
+          <ul class="space-y-2">
+            {#each topStates as stat}
+              <li class="flex justify-between text-sm">
+                <button
+                  onclick={() => router.navigate('/locations', undefined, { state: stat.state })}
+                  class="text-accent hover:underline"
+                  title="View all locations in {stat.state}"
+                >
+                  {stat.state}
+                </button>
                 <span class="text-gray-500">{stat.count}</span>
               </li>
             {/each}
@@ -261,77 +317,43 @@
         {/if}
       </div>
     </div>
+
+    <!-- Row 5: Special Filters -->
+    <div>
+      <h2 class="text-xl font-semibold mb-4 text-foreground">Special Filters</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <button
+          onclick={() => router.navigate('/locations', undefined, { filter: 'undocumented' })}
+          class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
+        >
+          <div class="text-sm text-gray-500">Undocumented</div>
+          <div class="text-lg font-semibold text-foreground">Need Visits</div>
+        </button>
+
+        <button
+          onclick={() => router.navigate('/locations', undefined, { filter: 'historical' })}
+          class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
+        >
+          <div class="text-sm text-gray-500">Historical</div>
+          <div class="text-lg font-semibold text-foreground">Landmarks</div>
+        </button>
+
+        <button
+          onclick={() => router.navigate('/locations', undefined, { filter: 'favorites' })}
+          class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
+        >
+          <div class="text-sm text-gray-500">Favorites</div>
+          <div class="text-lg font-semibold text-foreground">Starred</div>
+        </button>
+
+        <button
+          onclick={() => router.navigate('/atlas')}
+          class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
+        >
+          <div class="text-sm text-gray-500">Map View</div>
+          <div class="text-lg font-semibold text-foreground">Atlas</div>
+        </button>
+      </div>
+    </div>
   {/if}
-
-  <div class="mt-8">
-    <h2 class="text-xl font-semibold mb-4 text-foreground">Special Filters</h2>
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <button
-        onclick={async () => {
-          if (!window.electronAPI?.locations) return;
-          const loc = await window.electronAPI.locations.random();
-          if (loc) router.navigate(`/location/${loc.locid}`);
-        }}
-        class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
-      >
-        <div class="text-sm text-gray-500">Random</div>
-        <div class="text-lg font-semibold text-foreground">Surprise Me</div>
-      </button>
-
-      <button
-        onclick={() => router.navigate('/locations', undefined, { filter: 'undocumented' })}
-        class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
-      >
-        <div class="text-sm text-gray-500">Undocumented</div>
-        <div class="text-lg font-semibold text-foreground">Need Visits</div>
-      </button>
-
-      <button
-        onclick={() => router.navigate('/locations', undefined, { filter: 'historical' })}
-        class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
-      >
-        <div class="text-sm text-gray-500">Historical</div>
-        <div class="text-lg font-semibold text-foreground">Landmarks</div>
-      </button>
-
-      <button
-        onclick={() => router.navigate('/locations', undefined, { filter: 'favorites' })}
-        class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
-      >
-        <div class="text-sm text-gray-500">Favorites</div>
-        <div class="text-lg font-semibold text-foreground">Starred</div>
-      </button>
-    </div>
-  </div>
-
-  <div class="mt-8">
-    <h2 class="text-xl font-semibold mb-4 text-foreground">Quick Actions</h2>
-
-    <div class="flex gap-4 flex-wrap">
-      <button
-        onclick={() => router.navigate('/imports')}
-        class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
-      >
-        + New Location
-      </button>
-      <button
-        onclick={() => router.navigate('/atlas')}
-        class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
-      >
-        Open Atlas
-      </button>
-      <button
-        onclick={() => router.navigate('/locations')}
-        class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
-      >
-        View All Locations
-      </button>
-      <button
-        onclick={() => router.navigate('/imports')}
-        class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
-      >
-        Import Media
-      </button>
-    </div>
-  </div>
 </div>
