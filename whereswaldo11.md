@@ -1071,4 +1071,906 @@ packages/cli/
 
 ---
 
+## Part 9: Technical Execution Plan (ULTRATHINK)
+
+### The Core Problem
+
+**The architecture is inside-out.** We built the GUI layer first and embedded business logic in it.
+
+```
+CURRENT (wrong - tightly coupled):
+┌─────────────────────────────────────────────────────────────┐
+│ ELECTRON APP                                                │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ PhaseImportService (550 lines)                      │   │
+│  │  - Kysely DB calls                                  │   │
+│  │  - ExifTool calls                                   │   │
+│  │  - FFmpeg calls                                     │   │
+│  │  - fs.copyFile                                      │   │
+│  │  - Manifest logic                                   │   │
+│  │  - Phase state machine                              │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                           ↑                                 │
+│                    IPC Handlers                             │
+│                           ↑                                 │
+│                    Preload API                              │
+│                           ↑                                 │
+│                    Svelte GUI                               │
+└─────────────────────────────────────────────────────────────┘
+
+❌ CLI cannot use this
+❌ API cannot use this
+❌ Watch daemon cannot use this
+❌ Testing requires Electron
+```
+
+```
+CORRECT (spec-compliant - decoupled):
+┌─────────────────────────────────────────────────────────────┐
+│ packages/import-core (pure Node.js, zero framework deps)    │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │ Pipeline     │ │ Manifest     │ │ Phases       │        │
+│  │ Orchestrator │ │ Manager      │ │ (Log/Serial/ │        │
+│  │              │ │              │ │  Copy/Dump)  │        │
+│  └──────────────┘ └──────────────┘ └──────────────┘        │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │ Rsync        │ │ ExifTool     │ │ Database     │        │
+│  │ Wrapper      │ │ Batch        │ │ Adapter      │        │
+│  └──────────────┘ └──────────────┘ └──────────────┘        │
+└─────────────────────────────────────────────────────────────┘
+         ↑                ↑                ↑                ↑
+    ┌────┴────┐     ┌────┴────┐     ┌────┴────┐     ┌────┴────┐
+    │   CLI   │     │   GUI   │     │   API   │     │  WATCH  │
+    │ (Node)  │     │(Electron│     │ (REST/  │     │ (Daemon)│
+    │         │     │  IPC)   │     │ GraphQL)│     │         │
+    └─────────┘     └─────────┘     └─────────┘     └─────────┘
+
+✅ All 4 input sources share same core
+✅ Core is testable without frameworks
+✅ Each wrapper is thin (<100 lines)
+✅ LILBITS compliant
+```
+
+---
+
+### 9.1 Package Structure
+
+```
+au-archive/
+├── packages/
+│   ├── core/                    # EXISTS - types, schemas
+│   │
+│   ├── import-core/             # NEW - framework-agnostic import logic
+│   │   ├── src/
+│   │   │   ├── pipeline/
+│   │   │   │   ├── orchestrator.ts    # Phase state machine (~80 lines)
+│   │   │   │   ├── phase-log.ts       # Phase 1: LOG IT (~60 lines)
+│   │   │   │   ├── phase-serialize.ts # Phase 2: SERIALIZE IT (~100 lines)
+│   │   │   │   ├── phase-copy.ts      # Phase 3: COPY & NAME IT (~100 lines)
+│   │   │   │   └── phase-dump.ts      # Phase 4: DUMP (~80 lines)
+│   │   │   │
+│   │   │   ├── adapters/
+│   │   │   │   ├── database.ts        # DB adapter interface (~50 lines)
+│   │   │   │   ├── rsync.ts           # rsync subprocess wrapper (~150 lines)
+│   │   │   │   ├── exiftool.ts        # Batch ExifTool wrapper (~100 lines)
+│   │   │   │   └── ffmpeg.ts          # FFmpeg wrapper (~80 lines)
+│   │   │   │
+│   │   │   ├── manifest/
+│   │   │   │   ├── manifest.ts        # Read/write manifest (~150 lines)
+│   │   │   │   └── types.ts           # Manifest type definitions (~50 lines)
+│   │   │   │
+│   │   │   ├── utils/
+│   │   │   │   ├── file-type.ts       # Extension → type mapping (~50 lines)
+│   │   │   │   ├── folder-naming.ts   # Folder structure logic (~80 lines)
+│   │   │   │   └── hash.ts            # SHA256 wrapper (~30 lines)
+│   │   │   │
+│   │   │   └── index.ts               # Public API exports
+│   │   │
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   │
+│   ├── cli/                     # NEW - command line interface
+│   │   ├── src/
+│   │   │   ├── commands/
+│   │   │   │   ├── import.ts          # au-import command (~100 lines)
+│   │   │   │   ├── resume.ts          # au-import --resume (~50 lines)
+│   │   │   │   ├── watch.ts           # au-import --watch (~80 lines)
+│   │   │   │   ├── verify.ts          # au-verify command (~60 lines)
+│   │   │   │   └── status.ts          # au-status command (~40 lines)
+│   │   │   │
+│   │   │   ├── adapters/
+│   │   │   │   └── sqlite-adapter.ts  # CLI-specific DB adapter (~100 lines)
+│   │   │   │
+│   │   │   ├── config/
+│   │   │   │   └── loader.ts          # Config file loading (~80 lines)
+│   │   │   │
+│   │   │   └── index.ts               # CLI entry point
+│   │   │
+│   │   ├── bin/
+│   │   │   └── au-import              # Executable symlink
+│   │   │
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   │
+│   └── desktop/                 # EXISTS - refactored to use import-core
+│       └── electron/
+│           └── services/
+│               └── electron-import-adapter.ts  # Thin wrapper (~100 lines)
+```
+
+**Line Count Compliance (LILBITS ≤300):**
+
+| File | Lines | Status |
+|------|-------|--------|
+| orchestrator.ts | ~80 | ✅ |
+| phase-log.ts | ~60 | ✅ |
+| phase-serialize.ts | ~100 | ✅ |
+| phase-copy.ts | ~100 | ✅ |
+| phase-dump.ts | ~80 | ✅ |
+| rsync.ts | ~150 | ✅ |
+| exiftool.ts | ~100 | ✅ |
+| manifest.ts | ~150 | ✅ |
+| **TOTAL import-core** | ~900 | Split into 10+ files |
+
+---
+
+### 9.2 Database Adapter Pattern
+
+**Problem:** CLI needs its own DB connection. Electron has existing connection. Cannot share.
+
+**Solution:** Abstract database interface.
+
+```typescript
+// packages/import-core/src/adapters/database.ts
+
+export interface Location {
+  locid: string;
+  locnam: string;
+  slocnam: string | null;
+  loc12: string;
+  address_state: string | null;
+  type: string | null;
+  gps_lat: number | null;
+  gps_lng: number | null;
+}
+
+export interface DatabaseAdapter {
+  // Connection lifecycle
+  connect(config: DatabaseConfig): Promise<void>;
+  disconnect(): Promise<void>;
+
+  // Transaction support
+  transaction<T>(fn: (trx: TransactionContext) => Promise<T>): Promise<T>;
+
+  // Location operations (read-only during import)
+  findLocation(id: string): Promise<Location | null>;
+
+  // Duplicate checking
+  checkDuplicate(hash: string, type: FileType): Promise<boolean>;
+
+  // Media insertions (called in Phase 4)
+  insertImage(trx: TransactionContext, data: ImageRecord): Promise<void>;
+  insertVideo(trx: TransactionContext, data: VideoRecord): Promise<void>;
+  insertDocument(trx: TransactionContext, data: DocRecord): Promise<void>;
+  insertMap(trx: TransactionContext, data: MapRecord): Promise<void>;
+
+  // Import record
+  createImportRecord(trx: TransactionContext, data: ImportRecord): Promise<string>;
+}
+```
+
+**CLI Adapter:**
+```typescript
+// packages/cli/src/adapters/sqlite-adapter.ts
+
+import Database from 'better-sqlite3';
+import { DatabaseAdapter } from '@au-archive/import-core';
+
+export class SQLiteCliAdapter implements DatabaseAdapter {
+  private db: Database.Database | null = null;
+
+  async connect(config: DatabaseConfig): Promise<void> {
+    this.db = new Database(config.path);
+  }
+
+  async disconnect(): Promise<void> {
+    this.db?.close();
+    this.db = null;
+  }
+
+  // ... implement interface methods using better-sqlite3 directly
+}
+```
+
+**Electron Adapter:**
+```typescript
+// packages/desktop/electron/services/electron-import-adapter.ts
+
+import { Kysely } from 'kysely';
+import { DatabaseAdapter } from '@au-archive/import-core';
+
+export class ElectronDatabaseAdapter implements DatabaseAdapter {
+  constructor(private readonly db: Kysely<Database>) {}
+
+  async connect(): Promise<void> {
+    // Already connected via Electron's database.ts
+  }
+
+  async disconnect(): Promise<void> {
+    // Don't disconnect - Electron manages lifecycle
+  }
+
+  // ... implement interface methods using existing Kysely instance
+}
+```
+
+---
+
+### 9.3 rsync Integration Specification
+
+**Why rsync is required (per spec):**
+
+| Use Case | fs.copyFile | rsync |
+|----------|-------------|-------|
+| 10GB video file, network drops at 8GB | Start over | Resume from 8GB |
+| Import 1000 photos to same archive | 1000 copies (2TB) | 1000 hardlinks (0 bytes) |
+| Verify file integrity | Manual SHA256 | Built-in `--checksum` |
+| Progress for large files | None | `--progress` |
+| Batch operation | Sequential | `--files-from` |
+
+**rsync Wrapper Design:**
+
+```typescript
+// packages/import-core/src/adapters/rsync.ts
+
+export interface RsyncOptions {
+  source: string;
+  destination: string;
+  hardlink?: boolean;          // --link-dest for dedup
+  checksum?: boolean;          // --checksum for integrity
+  partial?: boolean;           // --partial for resume
+  progress?: boolean;          // --progress for reporting
+  filesFrom?: string;          // --files-from for batch
+  dryRun?: boolean;            // -n for testing
+}
+
+export interface RsyncProgress {
+  bytesTransferred: number;
+  bytesTotal: number;
+  percentComplete: number;
+  currentFile: string;
+  speed: string;
+}
+
+export interface RsyncResult {
+  success: boolean;
+  filesTransferred: number;
+  bytesTransferred: number;
+  errors: string[];
+}
+
+export class RsyncWrapper {
+  private rsyncPath: string | null = null;
+
+  async detect(): Promise<boolean> {
+    // Check if rsync is available
+    // macOS: /usr/bin/rsync (built-in)
+    // Linux: /usr/bin/rsync (install via apt/yum)
+    // Windows: Check for WSL rsync or cwRsync
+  }
+
+  async copy(
+    options: RsyncOptions,
+    onProgress?: (progress: RsyncProgress) => void
+  ): Promise<RsyncResult> {
+    if (!this.rsyncPath) {
+      return this.fallbackCopy(options);
+    }
+
+    const args = this.buildArgs(options);
+    // Spawn rsync subprocess
+    // Parse --progress output
+    // Report progress via callback
+  }
+
+  private buildArgs(options: RsyncOptions): string[] {
+    const args = ['-av'];
+
+    if (options.hardlink) {
+      // Hardlink to existing files (massive space savings)
+      args.push('--link-dest=' + options.destination);
+    }
+
+    if (options.checksum) {
+      args.push('--checksum');
+    }
+
+    if (options.partial) {
+      // Resume interrupted transfers
+      args.push('--partial');
+    }
+
+    if (options.progress) {
+      // Enable progress output parsing
+      args.push('--progress');
+    }
+
+    if (options.filesFrom) {
+      // Batch mode - read file list from file
+      args.push('--files-from=' + options.filesFrom);
+    }
+
+    return args;
+  }
+
+  private async fallbackCopy(options: RsyncOptions): Promise<RsyncResult> {
+    // Windows without rsync: use robocopy
+    // Last resort: use fs.copyFile
+    console.warn('[Rsync] Not available, falling back to fs.copyFile');
+  }
+}
+```
+
+**Platform Detection Matrix:**
+
+| Platform | rsync Source | Fallback |
+|----------|--------------|----------|
+| macOS | Built-in `/usr/bin/rsync` | None needed |
+| Linux | Package manager | None needed |
+| Windows + WSL | `wsl rsync` | robocopy |
+| Windows (no WSL) | cwRsync (optional) | robocopy → fs.copyFile |
+
+---
+
+### 9.4 Batch ExifTool Specification
+
+**Current Problem:**
+```
+# Current: 100 files = 100 ExifTool invocations
+exiftool -json file1.nef  → parse JSON → close process
+exiftool -json file2.nef  → parse JSON → close process
+... 98 more times
+```
+
+**Solution: Stay-Open Mode**
+```
+# Correct: 100 files = 1 ExifTool process
+exiftool -stay_open True -@ -
+< -json
+< file1.nef
+< -execute
+> {...json for file1...}
+< -json
+< file2.nef
+< -execute
+> {...json for file2...}
+... all in same process
+```
+
+**Batch ExifTool Wrapper:**
+
+```typescript
+// packages/import-core/src/adapters/exiftool.ts
+
+export class BatchExifTool {
+  private process: ChildProcess | null = null;
+  private pending: Map<string, { resolve: Function, reject: Function }> = new Map();
+
+  async start(): Promise<void> {
+    this.process = spawn('exiftool', [
+      '-stay_open', 'True',
+      '-@', '-',           // Read args from stdin
+      '-json',             // JSON output
+      '-n',                // Numeric values
+      '-charset', 'utf8',
+    ]);
+
+    // Parse output, match to pending requests
+    this.process.stdout.on('data', this.parseOutput.bind(this));
+  }
+
+  async extractMetadata(filePath: string): Promise<ExifMetadata> {
+    return new Promise((resolve, reject) => {
+      this.pending.set(filePath, { resolve, reject });
+
+      // Send command to ExifTool process
+      this.process.stdin.write(filePath + '\n');
+      this.process.stdin.write('-execute\n');
+    });
+  }
+
+  async extractBatch(filePaths: string[]): Promise<Map<string, ExifMetadata>> {
+    // Process all files in parallel via same ExifTool process
+    const results = await Promise.all(
+      filePaths.map(fp => this.extractMetadata(fp))
+    );
+
+    return new Map(filePaths.map((fp, i) => [fp, results[i]]));
+  }
+
+  async stop(): Promise<void> {
+    this.process?.stdin.write('-stay_open\nFalse\n');
+    this.process = null;
+  }
+}
+```
+
+**Performance Comparison:**
+
+| Method | 100 files | 1000 files |
+|--------|-----------|------------|
+| Per-file spawn | ~30s | ~300s |
+| Stay-open batch | ~3s | ~25s |
+| **Improvement** | **10x** | **12x** |
+
+---
+
+### 9.5 Event-Based Progress System
+
+**Problem:** Different consumers need different progress info:
+- CLI: Console output
+- GUI: IPC events
+- API: WebSocket/SSE
+
+**Solution:** Event emitter pattern in core, adapters translate.
+
+```typescript
+// packages/import-core/src/pipeline/events.ts
+
+export interface ImportEvents {
+  // Phase transitions
+  'phase:start': (phase: ImportPhase, context: PhaseContext) => void;
+  'phase:progress': (phase: ImportPhase, progress: PhaseProgress) => void;
+  'phase:end': (phase: ImportPhase, result: PhaseResult) => void;
+
+  // File-level events
+  'file:start': (file: FileEntry, index: number, total: number) => void;
+  'file:hash': (file: FileEntry, hash: string) => void;
+  'file:metadata': (file: FileEntry, metadata: Metadata) => void;
+  'file:copy': (file: FileEntry, destination: string) => void;
+  'file:end': (file: FileEntry, result: FileResult) => void;
+
+  // Errors (non-fatal)
+  'warning': (message: string, file?: string) => void;
+
+  // Completion
+  'complete': (summary: ImportSummary) => void;
+  'failed': (error: ImportError) => void;
+}
+
+export class ImportPipeline extends EventEmitter<ImportEvents> {
+  // ... pipeline implementation emits events
+}
+```
+
+**CLI Adapter:**
+```typescript
+// packages/cli/src/commands/import.ts
+
+const pipeline = new ImportPipeline(config);
+
+pipeline.on('phase:start', (phase) => {
+  console.log(`\n━━━ ${phase.toUpperCase()} ━━━`);
+});
+
+pipeline.on('file:end', (file, result) => {
+  const icon = result.success ? '✓' : '✗';
+  console.log(`  ${icon} ${file.name}`);
+});
+
+pipeline.on('complete', (summary) => {
+  console.log(`\n✓ Imported ${summary.imported} files`);
+});
+```
+
+**GUI Adapter:**
+```typescript
+// packages/desktop/electron/services/electron-import-adapter.ts
+
+pipeline.on('phase:progress', (phase, progress) => {
+  mainWindow.webContents.send('import:progress', {
+    phase,
+    percent: progress.percent,
+    currentFile: progress.currentFile,
+  });
+});
+```
+
+---
+
+### 9.6 Configuration System
+
+**Problem:** CLI needs config before DB connection exists.
+
+**Solution:** Layered configuration with precedence.
+
+```
+Priority (highest to lowest):
+1. Command-line flags    (--archive-path /data)
+2. Environment variables (AU_ARCHIVE_PATH=/data)
+3. Project config        (./.au-archive.json)
+4. User config           (~/.config/au-archive/config.json)
+5. System config         (/etc/au-archive/config.json)  [Linux/macOS]
+6. Defaults              (hardcoded)
+```
+
+**Config Schema:**
+
+```typescript
+// packages/import-core/src/config/schema.ts
+
+export interface ImportConfig {
+  // Paths
+  archivePath: string;          // Where files are stored
+  databasePath: string;         // SQLite database location
+  manifestPath: string;         // Where manifests are saved
+
+  // rsync options
+  rsync: {
+    enabled: boolean;           // Use rsync if available
+    hardlinks: boolean;         // Use hardlinks when possible
+    checksum: boolean;          // Verify after copy
+    partial: boolean;           // Enable resume
+  };
+
+  // ExifTool options
+  exiftool: {
+    batchMode: boolean;         // Use stay-open mode
+    timeout: number;            // Per-file timeout (ms)
+  };
+
+  // Watch folder
+  watch: {
+    enabled: boolean;
+    folders: WatchFolderConfig[];
+    maxConcurrent: number;      // Max parallel imports
+    retryAttempts: number;
+    retryDelayMs: number;
+  };
+
+  // Behavior
+  deleteOriginals: boolean;     // Default for delete on import
+  verifyChecksums: boolean;     // Default for verify
+}
+```
+
+**Config File Example:**
+
+```json
+// ~/.config/au-archive/config.json
+{
+  "archivePath": "/Volumes/Archive/au-archive",
+  "databasePath": "/Volumes/Archive/au-archive/au-archive.db",
+
+  "rsync": {
+    "enabled": true,
+    "hardlinks": true,
+    "checksum": true,
+    "partial": true
+  },
+
+  "watch": {
+    "enabled": true,
+    "folders": [
+      {
+        "path": "/Users/me/Import-Inbox",
+        "locid": "default",
+        "autoDelete": false
+      }
+    ],
+    "maxConcurrent": 2
+  }
+}
+```
+
+---
+
+### 9.7 Watch Folder Daemon Specification
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ au-watch daemon (long-running process)                      │
+│                                                             │
+│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐   │
+│  │  Watcher    │     │   Queue     │     │   Worker    │   │
+│  │  (chokidar) │────▶│  (pending   │────▶│  (import    │   │
+│  │             │     │   imports)  │     │   pipeline) │   │
+│  └─────────────┘     └─────────────┘     └─────────────┘   │
+│        │                    │                    │          │
+│        ▼                    ▼                    ▼          │
+│   File detected       Debounce &           Run import       │
+│                       deduplicate          pipeline         │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Notification System                                  │   │
+│  │  - Desktop notifications (success/failure)           │   │
+│  │  - Log file (/var/log/au-watch.log)                  │   │
+│  │  - Optional webhook/email                            │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Folder Structure Convention:**
+
+```
+/import-inbox/
+├── loc-{locid}/              # Auto-import to specific location
+│   └── *.nef, *.jpg, ...
+│
+├── project-{projectid}/      # Auto-import to project locations
+│   └── *.nef, *.jpg, ...
+│
+├── unsorted/                 # Requires manual location assignment
+│   └── *.nef, *.jpg, ...
+│
+└── .au-watch/                # Watch folder metadata
+    ├── pending.json          # Files waiting to import
+    ├── failed.json           # Failed imports (for retry)
+    └── completed.json        # Recent successful imports
+```
+
+**Daemon Control:**
+
+```bash
+# Start daemon
+au-watch start
+
+# Stop daemon
+au-watch stop
+
+# Check status
+au-watch status
+
+# View logs
+au-watch logs
+
+# Run in foreground (for debugging)
+au-watch --foreground
+```
+
+**Platform Service Integration:**
+
+| Platform | Service Manager | Config Location |
+|----------|-----------------|-----------------|
+| macOS | launchd | ~/Library/LaunchAgents/com.au-archive.watch.plist |
+| Linux | systemd | ~/.config/systemd/user/au-watch.service |
+| Windows | Task Scheduler | Scheduled task at login |
+
+---
+
+### 9.8 CLI Command Reference
+
+```
+COMMANDS
+
+  au-import [options] <files...>
+    Import files to archive
+
+    Options:
+      --location, -l <locid>     Target location ID (required)
+      --delete                   Delete originals after import
+      --no-verify                Skip checksum verification
+      --dry-run                  Show what would be imported
+      --resume <manifestId>      Resume interrupted import
+
+    Examples:
+      au-import -l abc123 ~/Photos/*.NEF
+      au-import -l abc123 --delete ~/SD-Card/
+      au-import --resume imp-20241122-abc123
+
+  au-watch [options]
+    Start watch folder daemon
+
+    Options:
+      --foreground               Run in foreground (don't daemonize)
+      --config <path>            Config file path
+
+    Examples:
+      au-watch start
+      au-watch stop
+      au-watch status
+
+  au-verify [options] <files...>
+    Verify archive integrity
+
+    Options:
+      --location, -l <locid>     Verify specific location
+      --all                      Verify entire archive
+      --fix                      Attempt to fix issues
+
+    Examples:
+      au-verify --all
+      au-verify -l abc123
+
+  au-status
+    Show archive status and statistics
+
+  au-config [key] [value]
+    View or set configuration
+
+    Examples:
+      au-config                          # Show all
+      au-config archivePath              # Show specific
+      au-config archivePath /new/path    # Set value
+```
+
+---
+
+### 9.9 Migration Path
+
+**Cannot break existing users. Staged rollout:**
+
+| Version | Changes | Risk |
+|---------|---------|------|
+| v0.1.x | Current (GUI-only, fs.copyFile) | - |
+| v0.2.0 | Add `packages/import-core` and `packages/cli` | Low - additive only |
+| v0.2.x | Refactor GUI to use import-core | Medium - internal refactor |
+| v0.3.0 | rsync enabled by default | Low - fallback exists |
+| v0.3.x | Add watch folder (experimental flag) | Low - opt-in |
+| v0.4.0 | Watch folder stable | Low - tested in 0.3.x |
+
+**Backwards Compatibility:**
+- `media:import` IPC handler continues to work
+- `media:phaseImport` IPC handler continues to work
+- Both internally use new import-core
+- No database schema changes
+- No manifest format changes
+
+---
+
+### 9.10 Testing Strategy
+
+**Current:** No tests for import pipeline
+**Required:** Comprehensive test coverage
+
+```
+packages/import-core/
+├── src/
+│   └── ...
+├── tests/
+│   ├── unit/
+│   │   ├── manifest.test.ts          # Manifest read/write
+│   │   ├── folder-naming.test.ts     # Folder structure generation
+│   │   ├── file-type.test.ts         # Extension classification
+│   │   └── hash.test.ts              # SHA256 calculation
+│   │
+│   ├── integration/
+│   │   ├── phase-log.test.ts         # Phase 1 integration
+│   │   ├── phase-serialize.test.ts   # Phase 2 integration
+│   │   ├── phase-copy.test.ts        # Phase 3 integration
+│   │   ├── phase-dump.test.ts        # Phase 4 integration
+│   │   └── pipeline.test.ts          # Full pipeline
+│   │
+│   └── fixtures/
+│       ├── images/                   # Test images (various formats)
+│       ├── videos/                   # Test videos
+│       └── manifests/                # Sample manifest files
+│
+packages/cli/
+├── tests/
+│   ├── e2e/
+│   │   ├── import.test.ts            # au-import command
+│   │   ├── watch.test.ts             # au-watch daemon
+│   │   └── verify.test.ts            # au-verify command
+│   │
+│   └── mocks/
+│       └── rsync-mock.ts             # Mock rsync for Windows CI
+```
+
+**CI Pipeline:**
+
+```yaml
+# .github/workflows/test.yml
+jobs:
+  test-core:
+    runs-on: ubuntu-latest
+    steps:
+      - run: pnpm test --filter @au-archive/import-core
+
+  test-cli:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: pnpm test --filter @au-archive/cli
+
+  test-desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: xvfb-run pnpm test --filter @au-archive/desktop
+```
+
+---
+
+### 9.11 Execution Checklist
+
+**Phase A: Foundation (import-core package)**
+
+- [ ] Create `packages/import-core` directory structure
+- [ ] Move manifest types from current import-manifest.ts
+- [ ] Implement DatabaseAdapter interface
+- [ ] Implement orchestrator (phase state machine)
+- [ ] Implement phase-log.ts
+- [ ] Implement phase-serialize.ts
+- [ ] Implement phase-copy.ts (fs.copyFile initially)
+- [ ] Implement phase-dump.ts
+- [ ] Implement event emitter system
+- [ ] Write unit tests for each module
+- [ ] Write integration test for full pipeline
+
+**Phase B: rsync Integration**
+
+- [ ] Implement RsyncWrapper class
+- [ ] Add platform detection (macOS/Linux/Windows)
+- [ ] Add progress parsing
+- [ ] Add fallback chain (rsync → robocopy → fs.copyFile)
+- [ ] Update phase-copy.ts to use RsyncWrapper
+- [ ] Test on all platforms
+
+**Phase C: CLI Package**
+
+- [ ] Create `packages/cli` directory structure
+- [ ] Implement config loader
+- [ ] Implement SQLiteCliAdapter
+- [ ] Implement `au-import` command
+- [ ] Implement `au-verify` command
+- [ ] Implement `au-status` command
+- [ ] Add bin entry to package.json
+- [ ] Write E2E tests
+- [ ] Add to CI
+
+**Phase D: GUI Refactor**
+
+- [ ] Create ElectronDatabaseAdapter
+- [ ] Create thin wrapper that calls import-core
+- [ ] Update IPC handler to use wrapper
+- [ ] Remove old PhaseImportService
+- [ ] Remove old FileImportService
+- [ ] Test GUI import still works
+
+**Phase E: Watch Folder**
+
+- [ ] Implement `au-watch` daemon command
+- [ ] Implement chokidar watcher
+- [ ] Implement import queue with concurrency control
+- [ ] Implement notification system
+- [ ] Add launchd/systemd templates
+- [ ] Test daemon stability
+
+**Phase F: Batch ExifTool**
+
+- [ ] Implement stay-open mode wrapper
+- [ ] Update phase-serialize.ts to use batch mode
+- [ ] Benchmark performance improvement
+- [ ] Test with large batches (1000+ files)
+
+---
+
+### 9.12 Open Questions
+
+1. **Database Locking:** CLI and GUI running simultaneously could conflict. Options:
+   - File lock on database
+   - Single daemon architecture (CLI → IPC → daemon)
+   - SQLite WAL mode (allows concurrent reads)
+
+2. **Watch Folder Ownership:** Who handles watch folder conflicts?
+   - Same file detected twice during write
+   - Network drive disconnects mid-import
+   - Folder deleted while watching
+
+3. **API Priority:** REST API or GraphQL? Or both?
+   - REST simpler for automation
+   - GraphQL better for complex queries
+   - Could implement REST first, GraphQL later
+
+4. **Windows Support Priority:** How important is Windows?
+   - rsync not native (cwRsync or WSL required)
+   - robocopy lacks some features
+   - macOS/Linux could be primary targets
+
+---
+
 End of Document
