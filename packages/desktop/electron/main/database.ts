@@ -513,6 +513,23 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 10 completed: hero_imgsha column added');
     }
+
+    // Migration 11: Add address normalization columns to locs table
+    // Per Kanye9: Store both raw and normalized addresses for premium archive
+    const hasAddressRaw = locsColumnsCheck.some(col => col.name === 'address_raw');
+
+    if (!hasAddressRaw) {
+      console.log('Running migration 11: Adding address normalization columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN address_raw TEXT;
+        ALTER TABLE locs ADD COLUMN address_normalized TEXT;
+        ALTER TABLE locs ADD COLUMN address_parsed_json TEXT;
+        ALTER TABLE locs ADD COLUMN address_source TEXT;
+      `);
+
+      console.log('Migration 11 completed: address normalization columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

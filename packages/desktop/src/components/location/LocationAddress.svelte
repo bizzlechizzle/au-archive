@@ -61,16 +61,31 @@
 
     <div class="text-base text-gray-900 space-y-1">
       {#if address?.street}
-        <p class="font-medium">{address.street}</p>
+        <div class="flex items-center gap-2">
+          <p class="font-medium">{address.street}</p>
+          {#if onOpenOnMap}
+            <button
+              onclick={onOpenOnMap}
+              class="text-xs text-accent hover:underline flex items-center gap-1"
+              title="View this address on map"
+            >
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Map
+            </button>
+          {/if}
+        </div>
       {/if}
 
       <p>
-        {#if address?.city}
+        {#if displayCity}
           <button
-            onclick={() => onNavigateFilter('city', address!.city!)}
+            onclick={() => onNavigateFilter('city', displayCity)}
             class="text-accent hover:underline"
-            title="View all locations in {address.city}"
-          >{address.city}</button>{address?.state || address?.zipcode ? ', ' : ''}
+            title="View all locations in {displayCity}"
+          >{displayCity}</button>{address?.state || address?.zipcode ? ', ' : ''}
         {/if}
         {#if address?.state}
           <button
@@ -80,7 +95,11 @@
           >{address.state}</button>{' '}
         {/if}
         {#if address?.zipcode}
-          <span>{address.zipcode}</span>
+          <button
+            onclick={() => onNavigateFilter('zipcode', address!.zipcode!)}
+            class="text-accent hover:underline"
+            title="View all locations with zipcode {address.zipcode}"
+          >{address.zipcode}</button>
         {/if}
       </p>
 

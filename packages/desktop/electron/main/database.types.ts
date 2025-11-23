@@ -49,6 +49,12 @@ export interface LocsTable {
   address_confidence: string | null;
   address_geocoded_at: string | null;
 
+  // Address Normalization (Kanye9: Raw + Normalized storage)
+  address_raw: string | null;           // Original input exactly as entered
+  address_normalized: string | null;    // Formatted normalized string
+  address_parsed_json: string | null;   // JSON of parsed components
+  address_source: string | null;        // 'libpostal' | 'fallback' | 'nominatim' | 'manual'
+
   // Status
   condition: string | null;
   status: string | null;

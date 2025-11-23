@@ -9,6 +9,8 @@ import {
   LocationEntity
 } from '@au-archive/core';
 import { AddressNormalizer } from '../services/address-normalizer';
+// Kanye9: AddressService for libpostal-powered normalization
+import { AddressService } from '../services/address-service';
 // FIX 6.7: Import GPS validator for proximity search
 import { GPSValidator } from '../services/gps-validator';
 
@@ -21,13 +23,31 @@ export class SQLiteLocationRepository implements LocationRepository {
     const slocnam = input.slocnam || LocationEntity.generateShortName(input.locnam);
     const locadd = new Date().toISOString();
 
-    // Normalize address fields before storage
-    // This ensures consistent formatting: 2-letter state codes, proper zipcode format, etc.
-    const normalizedStreet = AddressNormalizer.normalizeStreet(input.address?.street);
-    const normalizedCity = AddressNormalizer.normalizeCity(input.address?.city);
-    const normalizedCounty = AddressNormalizer.normalizeCounty(input.address?.county);
-    const normalizedState = AddressNormalizer.normalizeStateCode(input.address?.state);
-    const normalizedZipcode = AddressNormalizer.normalizeZipcode(input.address?.zipcode);
+    // Kanye9: Process address through AddressService for raw + normalized storage
+    let addressRecord = null;
+    let normalizedStreet: string | null = null;
+    let normalizedCity: string | null = null;
+    let normalizedCounty: string | null = null;
+    let normalizedState: string | null = null;
+    let normalizedZipcode: string | null = null;
+
+    if (input.address) {
+      // Process structured address input
+      addressRecord = AddressService.processStructured({
+        street: input.address.street,
+        houseNumber: null, // Not typically provided separately
+        city: input.address.city,
+        county: input.address.county,
+        state: input.address.state,
+        zipcode: input.address.zipcode,
+      });
+
+      normalizedStreet = addressRecord.normalized.street;
+      normalizedCity = addressRecord.normalized.city;
+      normalizedCounty = addressRecord.normalized.county || AddressNormalizer.normalizeCounty(input.address.county);
+      normalizedState = addressRecord.normalized.state;
+      normalizedZipcode = addressRecord.normalized.zipcode;
+    }
 
     await this.db
       .insertInto('locs')
@@ -53,6 +73,11 @@ export class SQLiteLocationRepository implements LocationRepository {
         address_zipcode: normalizedZipcode,
         address_confidence: input.address?.confidence || null,
         address_geocoded_at: input.address?.geocodedAt || null,
+        // Kanye9: Store raw + normalized + parsed for premium archive
+        address_raw: addressRecord?.raw || null,
+        address_normalized: addressRecord ? AddressService.format(addressRecord.normalized) : null,
+        address_parsed_json: addressRecord ? JSON.stringify(addressRecord.parsed) : null,
+        address_source: addressRecord?.source || null,
         condition: input.condition || null,
         status: input.status || null,
         documentation: input.documentation || null,
@@ -154,14 +179,28 @@ export class SQLiteLocationRepository implements LocationRepository {
     }
 
     if (input.address !== undefined) {
-      // Normalize address fields before storage
-      updates.address_street = AddressNormalizer.normalizeStreet(input.address.street);
-      updates.address_city = AddressNormalizer.normalizeCity(input.address.city);
-      updates.address_county = AddressNormalizer.normalizeCounty(input.address.county);
-      updates.address_state = AddressNormalizer.normalizeStateCode(input.address.state);
-      updates.address_zipcode = AddressNormalizer.normalizeZipcode(input.address.zipcode);
+      // Kanye9: Process address through AddressService for raw + normalized storage
+      const addressRecord = AddressService.processStructured({
+        street: input.address.street,
+        houseNumber: null,
+        city: input.address.city,
+        county: input.address.county,
+        state: input.address.state,
+        zipcode: input.address.zipcode,
+      });
+
+      updates.address_street = addressRecord.normalized.street;
+      updates.address_city = addressRecord.normalized.city;
+      updates.address_county = addressRecord.normalized.county || AddressNormalizer.normalizeCounty(input.address.county);
+      updates.address_state = addressRecord.normalized.state;
+      updates.address_zipcode = addressRecord.normalized.zipcode;
       updates.address_confidence = input.address.confidence || null;
       updates.address_geocoded_at = input.address.geocodedAt || null;
+      // Kanye9: Store raw + normalized + parsed for premium archive
+      updates.address_raw = addressRecord.raw;
+      updates.address_normalized = AddressService.format(addressRecord.normalized);
+      updates.address_parsed_json = JSON.stringify(addressRecord.parsed);
+      updates.address_source = addressRecord.source;
     }
 
     if (input.condition !== undefined) updates.condition = input.condition;

@@ -258,8 +258,13 @@
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <LocationInfo {location} onNavigateFilter={navigateToFilter} />
           <div>
-            <LocationAddress address={location.address} onNavigateFilter={navigateToFilter} />
-            <LocationMapSection {location} onMarkVerified={markGpsVerified} verifying={verifyingGps} />
+            <LocationAddress address={location.address} onNavigateFilter={navigateToFilter} onOpenOnMap={() => {
+              // Scroll to map section
+              document.querySelector('.location-map-section')?.scrollIntoView({ behavior: 'smooth' });
+            }} />
+            <div class="location-map-section">
+              <LocationMapSection {location} onMarkVerified={markGpsVerified} verifying={verifyingGps} />
+            </div>
           </div>
         </div>
 
