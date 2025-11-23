@@ -82,22 +82,41 @@
     } catch (err) { console.error('Error loading bookmarks:', err); }
   }
 
-  /** Kanye6: Auto forward geocode address to GPS */
+  /**
+   * Kanye9: Auto forward geocode using cascade strategy
+   * Tries: full address → city+state → zipcode → county+state → state only
+   */
   async function ensureGpsFromAddress(): Promise<void> {
     if (!location) return;
     if (location.gps?.lat && location.gps?.lng) return;
-    const hasAddress = location.address?.street || location.address?.city;
-    if (!hasAddress) return;
-    const addressParts = [location.address?.street, location.address?.city, location.address?.state, location.address?.zipcode].filter(Boolean);
-    if (addressParts.length === 0) return;
-    const addressString = addressParts.join(', ');
+
+    const addr = location.address;
+    // Need at least one geocodable field
+    const hasGeocodeData = addr?.street || addr?.city || addr?.zipcode || addr?.county || addr?.state;
+    if (!hasGeocodeData) return;
+
     try {
-      const result = await window.electronAPI.geocode.forward(addressString);
+      // Use cascade geocoding - tries multiple strategies until one succeeds
+      const result = await window.electronAPI.geocode.forwardCascade({
+        street: addr?.street || null,
+        city: addr?.city || null,
+        county: addr?.county || null,
+        state: addr?.state || null,
+        zipcode: addr?.zipcode || null,
+      });
+
       if (result?.lat && result?.lng) {
-        await window.electronAPI.locations.update(location.locid, { gps_lat: result.lat, gps_lng: result.lng, gps_source: 'geocoded_address' });
+        console.log(`[LocationDetail] Cascade geocode success: tier ${result.cascadeTier} (${result.cascadeDescription})`);
+        await window.electronAPI.locations.update(location.locid, {
+          gps_lat: result.lat,
+          gps_lng: result.lng,
+          gps_source: 'geocoded_address',
+        });
         await loadLocation();
       }
-    } catch (err) { console.error('[LocationDetail] Forward geocoding failed:', err); }
+    } catch (err) {
+      console.error('[LocationDetail] Cascade geocoding failed:', err);
+    }
   }
 
   // Action handlers

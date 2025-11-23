@@ -337,6 +337,248 @@ export class AddressService {
   }
 
   // ─────────────────────────────────────────────────────────────────
+  // Address Comparison & Deduplication (Kanye9)
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Compare two addresses for potential duplicates
+   *
+   * @returns Comparison result with match status and confidence score
+   */
+  static compare(addr1: NormalizedAddress | null, addr2: NormalizedAddress | null): {
+    isMatch: boolean;
+    confidence: number; // 0-1 score
+    matchedFields: string[];
+    mismatchedFields: string[];
+  } {
+    if (!addr1 || !addr2) {
+      return { isMatch: false, confidence: 0, matchedFields: [], mismatchedFields: [] };
+    }
+
+    const matchedFields: string[] = [];
+    const mismatchedFields: string[] = [];
+
+    // Compare each field with fuzzy matching
+    const fields: (keyof NormalizedAddress)[] = ['street', 'city', 'state', 'zipcode', 'county'];
+    const weights: Record<string, number> = {
+      street: 0.35,   // Highest weight - most specific
+      city: 0.25,
+      zipcode: 0.20,  // ZIP is very reliable
+      state: 0.15,
+      county: 0.05,
+    };
+
+    let totalWeight = 0;
+    let matchedWeight = 0;
+
+    for (const field of fields) {
+      const val1 = addr1[field];
+      const val2 = addr2[field];
+
+      // Skip if both are null/empty
+      if (!val1 && !val2) continue;
+
+      totalWeight += weights[field];
+
+      if (this.fieldsMatch(val1, val2, field)) {
+        matchedFields.push(field);
+        matchedWeight += weights[field];
+      } else if (val1 && val2) {
+        // Only count as mismatch if both have values
+        mismatchedFields.push(field);
+      }
+    }
+
+    // Calculate confidence score
+    const confidence = totalWeight > 0 ? matchedWeight / totalWeight : 0;
+
+    // Determine if it's a match based on confidence and key fields
+    // Must match at least 2 significant fields with high confidence
+    const isMatch = confidence >= 0.7 && matchedFields.length >= 2;
+
+    return { isMatch, confidence, matchedFields, mismatchedFields };
+  }
+
+  /**
+   * Check if two field values match (with fuzzy matching for streets)
+   */
+  private static fieldsMatch(
+    val1: string | null,
+    val2: string | null,
+    field: string
+  ): boolean {
+    if (!val1 || !val2) return false;
+
+    // Normalize for comparison
+    const norm1 = val1.toLowerCase().trim();
+    const norm2 = val2.toLowerCase().trim();
+
+    // Exact match
+    if (norm1 === norm2) return true;
+
+    // For streets, do fuzzy matching (handle abbreviations)
+    if (field === 'street') {
+      const expanded1 = this.expandStreetAbbreviations(norm1);
+      const expanded2 = this.expandStreetAbbreviations(norm2);
+      if (expanded1 === expanded2) return true;
+
+      // Also check if one contains the other (partial match)
+      if (expanded1.includes(expanded2) || expanded2.includes(expanded1)) {
+        return true;
+      }
+    }
+
+    // For cities, clean and compare
+    if (field === 'city') {
+      const clean1 = this.cleanCityName(norm1).toLowerCase();
+      const clean2 = this.cleanCityName(norm2).toLowerCase();
+      return clean1 === clean2;
+    }
+
+    // For zipcodes, compare first 5 digits
+    if (field === 'zipcode') {
+      const zip1 = norm1.replace(/\D/g, '').slice(0, 5);
+      const zip2 = norm2.replace(/\D/g, '').slice(0, 5);
+      return zip1 === zip2 && zip1.length === 5;
+    }
+
+    return false;
+  }
+
+  /**
+   * Expand common street abbreviations for comparison
+   */
+  private static expandStreetAbbreviations(street: string): string {
+    const abbreviations: Record<string, string> = {
+      'st': 'street',
+      'ave': 'avenue',
+      'rd': 'road',
+      'dr': 'drive',
+      'ln': 'lane',
+      'ct': 'court',
+      'pl': 'place',
+      'blvd': 'boulevard',
+      'cir': 'circle',
+      'hwy': 'highway',
+      'pkwy': 'parkway',
+      'trl': 'trail',
+      'ter': 'terrace',
+      'n': 'north',
+      's': 'south',
+      'e': 'east',
+      'w': 'west',
+    };
+
+    let expanded = street;
+    for (const [abbr, full] of Object.entries(abbreviations)) {
+      // Replace abbreviation with full word (word boundary aware)
+      const regex = new RegExp(`\\b${abbr}\\b`, 'gi');
+      expanded = expanded.replace(regex, full);
+    }
+    return expanded;
+  }
+
+  /**
+   * Find potential duplicate locations by address
+   *
+   * @param newAddress - Address to check
+   * @param existingAddresses - Array of existing addresses with IDs
+   * @returns Array of potential matches sorted by confidence
+   */
+  static findDuplicates(
+    newAddress: NormalizedAddress,
+    existingAddresses: Array<{ id: string; address: NormalizedAddress }>
+  ): Array<{ id: string; confidence: number; matchedFields: string[] }> {
+    const matches: Array<{ id: string; confidence: number; matchedFields: string[] }> = [];
+
+    for (const existing of existingAddresses) {
+      const result = this.compare(newAddress, existing.address);
+      if (result.isMatch || result.confidence >= 0.5) {
+        matches.push({
+          id: existing.id,
+          confidence: result.confidence,
+          matchedFields: result.matchedFields,
+        });
+      }
+    }
+
+    // Sort by confidence descending
+    return matches.sort((a, b) => b.confidence - a.confidence);
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Geocoding Cascade Helpers (Kanye9)
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Generate geocoding query strings in cascade order (most specific first)
+   *
+   * @param normalized - Normalized address
+   * @returns Array of query strings to try, from most to least specific
+   */
+  static getGeocodingCascade(normalized: NormalizedAddress): string[] {
+    const queries: string[] = [];
+
+    // Tier 1: Full address (street, city, state, zip)
+    if (normalized.street && normalized.city && normalized.state) {
+      const fullParts = [normalized.street, normalized.city, normalized.state];
+      if (normalized.zipcode) fullParts.push(normalized.zipcode);
+      queries.push(fullParts.join(', '));
+    }
+
+    // Tier 2: City + State (+ optional zipcode)
+    if (normalized.city && normalized.state) {
+      if (normalized.zipcode) {
+        queries.push(`${normalized.city}, ${normalized.state} ${normalized.zipcode}`);
+      }
+      queries.push(`${normalized.city}, ${normalized.state}`);
+    }
+
+    // Tier 3: Zipcode only (very reliable for US)
+    if (normalized.zipcode && normalized.zipcode.length >= 5) {
+      queries.push(normalized.zipcode);
+    }
+
+    // Tier 4: County + State
+    if (normalized.county && normalized.state) {
+      queries.push(`${normalized.county} County, ${normalized.state}`);
+    }
+
+    // Tier 5: State only (last resort - will center on state)
+    if (normalized.state) {
+      queries.push(normalized.state);
+    }
+
+    // Remove duplicates while preserving order
+    return [...new Set(queries)];
+  }
+
+  /**
+   * Get the geocoding tier description for a query
+   */
+  static getGeocodingTier(normalized: NormalizedAddress, query: string): {
+    tier: number;
+    description: string;
+    expectedAccuracy: string;
+  } {
+    const queryLower = query.toLowerCase();
+
+    if (normalized.street && queryLower.includes(normalized.street.toLowerCase())) {
+      return { tier: 1, description: 'Full Address', expectedAccuracy: 'Building level (±50m)' };
+    }
+    if (normalized.city && normalized.state && queryLower.includes(normalized.city.toLowerCase())) {
+      return { tier: 2, description: 'City + State', expectedAccuracy: 'City center (±5km)' };
+    }
+    if (normalized.zipcode && queryLower.includes(normalized.zipcode)) {
+      return { tier: 3, description: 'Zipcode', expectedAccuracy: 'ZIP area (±10km)' };
+    }
+    if (normalized.county && queryLower.includes(normalized.county.toLowerCase())) {
+      return { tier: 4, description: 'County + State', expectedAccuracy: 'County center (±30km)' };
+    }
+    return { tier: 5, description: 'State only', expectedAccuracy: 'State center (±100km)' };
+  }
+
+  // ─────────────────────────────────────────────────────────────────
   // Private methods
   // ─────────────────────────────────────────────────────────────────
 

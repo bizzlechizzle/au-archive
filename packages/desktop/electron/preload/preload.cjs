@@ -69,6 +69,8 @@ const api = {
   geocode: {
     reverse: (lat, lng) => ipcRenderer.invoke("geocode:reverse", lat, lng),
     forward: (address) => ipcRenderer.invoke("geocode:forward", address),
+    // Kanye9: Cascade geocoding - tries full → city → zipcode → county → state
+    forwardCascade: (address) => ipcRenderer.invoke("geocode:forwardCascade", address),
     clearCache: (daysOld) => ipcRenderer.invoke("geocode:clearCache", daysOld),
   },
 

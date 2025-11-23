@@ -1,12 +1,14 @@
 /**
  * Geocoding IPC Handlers
  * Handles geocode:* IPC channels
+ * Kanye9: Added cascade geocoding for zipcode-only and county-only support
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { GeocodingService } from '../../services/geocoding-service';
+import { AddressService, type NormalizedAddress } from '../../services/address-service';
 
 export function registerGeocodeHandlers(db: Kysely<Database>) {
   const geocodingService = new GeocodingService(db);
@@ -66,6 +68,73 @@ export function registerGeocodeHandlers(db: Kysely<Database>) {
       };
     } catch (error) {
       console.error('Error forward geocoding:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * Kanye9: Cascade geocoding - tries multiple query strategies until one succeeds
+   * Supports: full address → city+state → zipcode → county+state → state only
+   */
+  ipcMain.handle('geocode:forwardCascade', async (_event, address: unknown) => {
+    try {
+      // Validate input as NormalizedAddress
+      const AddressSchema = z.object({
+        street: z.string().nullable().optional(),
+        city: z.string().nullable().optional(),
+        county: z.string().nullable().optional(),
+        state: z.string().nullable().optional(),
+        zipcode: z.string().nullable().optional(),
+      });
+
+      const validAddress = AddressSchema.parse(address) as NormalizedAddress;
+
+      // Get cascade queries from AddressService
+      const queries = AddressService.getGeocodingCascade(validAddress);
+
+      if (queries.length === 0) {
+        console.log('[Geocode] No valid queries for cascade geocoding');
+        return null;
+      }
+
+      console.log(`[Geocode] Cascade geocoding with ${queries.length} queries:`, queries);
+
+      // Try each query until one succeeds
+      for (const query of queries) {
+        try {
+          const result = await geocodingService.forwardGeocode(query);
+
+          if (result?.lat && result?.lng) {
+            const tier = AddressService.getGeocodingTier(validAddress, query);
+            console.log(`[Geocode] Cascade success at tier ${tier.tier}: ${tier.description}`);
+
+            return {
+              lat: result.lat,
+              lng: result.lng,
+              displayName: result.displayName,
+              address: result.address,
+              confidence: result.confidence,
+              source: result.source,
+              // Cascade metadata
+              cascadeTier: tier.tier,
+              cascadeDescription: tier.description,
+              cascadeQuery: query,
+              expectedAccuracy: tier.expectedAccuracy,
+            };
+          }
+        } catch (err) {
+          // Continue to next query on failure
+          console.log(`[Geocode] Query "${query}" failed, trying next...`);
+        }
+      }
+
+      console.log('[Geocode] All cascade queries failed');
+      return null;
+    } catch (error) {
+      console.error('Error in cascade geocoding:', error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
