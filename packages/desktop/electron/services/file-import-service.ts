@@ -451,40 +451,19 @@ export class FileImportService {
           }
           console.log('[FileImport] GPS check complete');
 
-          // FIX 3.3: #import_address - Reverse geocode to update location address
-          // Only trigger if: geocodingService exists, location has no address, file has GPS
-          if (this.geocodingService && !location.address?.street && !location.address?.city) {
-            try {
-              console.log('[FileImport] Step 5c: Reverse geocoding for #import_address...');
-              const geocodeResult = await this.geocodingService.reverseGeocode(gps.lat, gps.lng);
-              if (geocodeResult && geocodeResult.address) {
-                // Update location address (outside transaction - separate update)
-                await this.db
-                  .updateTable('locs')
-                  .set({
-                    address_street: geocodeResult.address.street || null,
-                    address_city: geocodeResult.address.city || null,
-                    address_county: geocodeResult.address.county || null,
-                    address_state: geocodeResult.address.stateCode || geocodeResult.address.state || null,
-                    address_zip: geocodeResult.address.zipcode || null,
-                    address_country: geocodeResult.address.countryCode || geocodeResult.address.country || null,
-                    address_geocoded_at: new Date().toISOString(),
-                  })
-                  .where('locid', '=', file.locid)
-                  .execute();
-                console.log('[FileImport] Location address updated from media GPS');
-              }
-            } catch (geocodeError) {
-              console.warn('[FileImport] Reverse geocoding failed:', geocodeError);
-              // Non-fatal - continue import
-            }
-          }
+          // NOTE: Geocoding moved to Step 8 (after file copy) per spec: LOG IT → SERIALIZE IT → COPY & NAME IT → DUMP
+          // GPS → Address is part of DUMP phase, not metadata extraction phase
         }
       }
     } catch (error) {
       console.warn('[FileImport] Failed to extract metadata:', error);
       // Continue without metadata
     }
+
+    // Store GPS data for post-copy geocoding (Step 8)
+    const gpsForGeocode = (type === 'image' || type === 'video' || type === 'map')
+      ? (metadata?.gps || null)
+      : null;
 
     // Kanye5: Step 5d - Extract preview for RAW files and generate thumbnails
     let previewPath: string | null = null;
@@ -563,12 +542,45 @@ export class FileImportService {
     );
     console.log('[FileImport] Step 7 complete in', Date.now() - insertStart, 'ms');
 
-    // 8. Delete original if requested (after DB success)
+    // 8. Non-blocking geocoding (DUMP phase per spec: GPS → Address)
+    // Fire-and-forget: Don't block import, don't fail if geocoding fails
+    // Only trigger if: geocodingService exists, location has no address, file has GPS
+    if (gpsForGeocode && this.geocodingService && !location.address_street && !location.address_city) {
+      console.log('[FileImport] Step 8: Queueing reverse geocode (non-blocking)...');
+      // Fire-and-forget - don't await, don't block
+      this.geocodingService.reverseGeocode(gpsForGeocode.lat, gpsForGeocode.lng)
+        .then(async (geocodeResult) => {
+          if (geocodeResult && geocodeResult.address) {
+            try {
+              await this.db
+                .updateTable('locs')
+                .set({
+                  address_street: geocodeResult.address.street || null,
+                  address_city: geocodeResult.address.city || null,
+                  address_county: geocodeResult.address.county || null,
+                  address_state: geocodeResult.address.stateCode || geocodeResult.address.state || null,
+                  address_zipcode: geocodeResult.address.zipcode || null,
+                  address_geocoded_at: new Date().toISOString(),
+                })
+                .where('locid', '=', file.locid)
+                .execute();
+              console.log('[FileImport] Location address updated from media GPS (async)');
+            } catch (dbError) {
+              console.warn('[FileImport] Failed to update location address:', dbError);
+            }
+          }
+        })
+        .catch((geocodeError) => {
+          console.warn('[FileImport] Reverse geocoding failed (non-fatal):', geocodeError);
+        });
+    }
+
+    // 9. Delete original if requested (after DB success)
     if (deleteOriginal) {
-      console.log('[FileImport] Step 8: Deleting original file...');
+      console.log('[FileImport] Step 9: Deleting original file...');
       try {
         await fs.unlink(file.filePath);
-        console.log('[FileImport] Step 8 complete - original deleted');
+        console.log('[FileImport] Step 9 complete - original deleted');
       } catch (error) {
         console.warn('[FileImport] Failed to delete original file:', error);
         // Don't fail import if deletion fails
