@@ -421,6 +421,39 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration completed: users table created with default user');
     }
+
+    // Migration 8: Add thumbnail/preview/XMP columns to imgs and vids tables
+    const imgColumns = sqlite.pragma('table_info(imgs)') as Array<{ name: string }>;
+    const hasThumbPath = imgColumns.some(col => col.name === 'thumb_path');
+
+    if (!hasThumbPath) {
+      console.log('Running migration: Adding thumbnail/preview/XMP columns');
+
+      // Add columns to imgs table
+      sqlite.exec(`
+        ALTER TABLE imgs ADD COLUMN thumb_path TEXT;
+        ALTER TABLE imgs ADD COLUMN preview_path TEXT;
+        ALTER TABLE imgs ADD COLUMN preview_extracted INTEGER DEFAULT 0;
+        ALTER TABLE imgs ADD COLUMN xmp_synced INTEGER DEFAULT 0;
+        ALTER TABLE imgs ADD COLUMN xmp_modified_at TEXT;
+      `);
+
+      // Add columns to vids table
+      sqlite.exec(`
+        ALTER TABLE vids ADD COLUMN thumb_path TEXT;
+        ALTER TABLE vids ADD COLUMN poster_extracted INTEGER DEFAULT 0;
+        ALTER TABLE vids ADD COLUMN xmp_synced INTEGER DEFAULT 0;
+        ALTER TABLE vids ADD COLUMN xmp_modified_at TEXT;
+      `);
+
+      // Create indexes for finding media without thumbnails
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_imgs_thumb_path ON imgs(thumb_path);
+        CREATE INDEX IF NOT EXISTS idx_vids_thumb_path ON vids(thumb_path);
+      `);
+
+      console.log('Migration completed: thumbnail/preview/XMP columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

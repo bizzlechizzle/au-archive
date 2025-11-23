@@ -7,6 +7,7 @@
   import Map from '../components/Map.svelte';
   import LocationEditForm from '../components/LocationEditForm.svelte';
   import NotesSection from '../components/NotesSection.svelte';
+  import MediaViewer from '../components/MediaViewer.svelte';
   import type { Location, LocationInput } from '@au-archive/core';
 
   interface Props {
@@ -67,8 +68,25 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let isEditing = $state(false);
-  let selectedImage = $state<string | null>(null);
+  let selectedImageIndex = $state<number | null>(null);
   let currentUser = $state('default');
+
+  // Transform images for MediaViewer component
+  const mediaViewerList = $derived(images.map(img => ({
+    hash: img.imgsha,
+    path: img.imgloc,
+    thumbPath: (img as any).thumb_path || null,
+    previewPath: (img as any).preview_path || null,
+    type: 'image' as const,
+    name: img.imgnam,
+    width: img.meta_width,
+    height: img.meta_height,
+    dateTaken: img.meta_date_taken,
+    cameraMake: (img as any).meta_camera_make || null,
+    cameraModel: (img as any).meta_camera_model || null,
+    gpsLat: (img as any).meta_gps_lat || null,
+    gpsLng: (img as any).meta_gps_lng || null,
+  })));
   let showAllImages = $state(false);
   let showAllVideos = $state(false);
   let showAllDocuments = $state(false);
@@ -160,12 +178,12 @@
     }
   }
 
-  function openLightbox(imagePath: string) {
-    selectedImage = imagePath;
+  function openLightbox(index: number) {
+    selectedImageIndex = index;
   }
 
   function closeLightbox() {
-    selectedImage = null;
+    selectedImageIndex = null;
   }
 
   function formatDuration(seconds: number | null): string {
@@ -533,7 +551,7 @@
       {#if images.length > 0}
         <div class="mb-6 -mx-8 -mt-8">
           <button
-            onclick={() => openLightbox(images[0].imgloc)}
+            onclick={() => openLightbox(0)}
             class="relative w-full h-64 md:h-96 bg-gray-100 overflow-hidden group cursor-pointer"
           >
             <div class="absolute inset-0 flex items-center justify-center text-gray-400">
@@ -969,9 +987,10 @@
           <h3 class="text-sm font-medium text-gray-500 mb-3">Images ({images.length})</h3>
           {#if images.length > 0}
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {#each displayedImages as image}
+              {#each displayedImages as image, displayIndex}
+                {@const actualIndex = images.findIndex(img => img.imgsha === image.imgsha)}
                 <button
-                  onclick={() => openLightbox(image.imgloc)}
+                  onclick={() => openLightbox(actualIndex)}
                   class="aspect-square bg-gray-100 rounded overflow-hidden hover:opacity-90 transition relative group"
                 >
                   <div class="absolute inset-0 flex items-center justify-center text-gray-400">
@@ -1357,32 +1376,12 @@
     </div>
   {/if}
 
-  <!-- Image Lightbox -->
-  {#if selectedImage}
-    <div
-      class="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
-      onclick={closeLightbox}
-    >
-      <button
-        onclick={closeLightbox}
-        class="absolute top-4 right-4 text-white hover:text-gray-300 transition"
-      >
-        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-      <button
-        onclick={(e) => { e.stopPropagation(); openMediaFile(selectedImage); }}
-        class="absolute top-4 left-4 px-4 py-2 bg-white bg-opacity-20 text-white rounded hover:bg-opacity-30 transition text-sm"
-      >
-        Open in System Viewer
-      </button>
-      <div class="max-w-7xl max-h-full flex items-center justify-center">
-        <p class="text-white text-center">
-          Image preview not available<br/>
-          <span class="text-sm text-gray-400">Click "Open in System Viewer" to view the image</span>
-        </p>
-      </div>
-    </div>
+  <!-- Media Viewer -->
+  {#if selectedImageIndex !== null && mediaViewerList.length > 0}
+    <MediaViewer
+      mediaList={mediaViewerList}
+      startIndex={selectedImageIndex}
+      onClose={closeLightbox}
+    />
   {/if}
 </div>

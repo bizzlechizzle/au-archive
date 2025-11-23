@@ -25,6 +25,13 @@ import { getMaintenanceScheduler } from '../services/maintenance-scheduler';
 import { getRecoverySystem } from '../services/recovery-system';
 import { getConfigService } from '../services/config-service';
 import { GeocodingService } from '../services/geocoding-service';
+import { MediaPathService } from '../services/media-path-service';
+import { ThumbnailService } from '../services/thumbnail-service';
+import { PreviewExtractorService } from '../services/preview-extractor-service';
+import { PosterFrameService } from '../services/poster-frame-service';
+import { MediaCacheService } from '../services/media-cache-service';
+import { PreloadService } from '../services/preload-service';
+import { XmpService } from '../services/xmp-service';
 import { LocationInputSchema } from '@au-archive/core';
 import type { LocationInput, LocationFilters } from '@au-archive/core';
 import { z } from 'zod';
@@ -1756,6 +1763,179 @@ export function registerIpcHandlers() {
       return { deleted };
     } catch (error) {
       console.error('Error clearing geocode cache:', error);
+      throw error;
+    }
+  });
+
+  // ============================================
+  // Media Operations (Phase 1-8 per kanye.md)
+  // ============================================
+
+  // Get archive path for media services initialization
+  const getArchivePath = async (): Promise<string> => {
+    const archivePath = await getConfigService().get('archivePath');
+    if (!archivePath) {
+      throw new Error('Archive path not configured');
+    }
+    return archivePath;
+  };
+
+  // Media: Open file in system viewer
+  ipcMain.handle('media:openFile', async (_event, filePath: unknown) => {
+    try {
+      const validPath = z.string().min(1).parse(filePath);
+      await shell.openPath(validPath);
+      return { success: true };
+    } catch (error) {
+      console.error('Error opening file:', error);
+      throw error;
+    }
+  });
+
+  // Media: Generate thumbnail for an image
+  ipcMain.handle('media:generateThumbnail', async (_event, sourcePath: unknown, hash: unknown) => {
+    try {
+      const validPath = z.string().min(1).parse(sourcePath);
+      const validHash = z.string().min(1).parse(hash);
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+      const thumbnailService = new ThumbnailService(mediaPathService);
+      const result = await thumbnailService.generateThumbnail(validPath, validHash);
+      return result;
+    } catch (error) {
+      console.error('Error generating thumbnail:', error);
+      return null;
+    }
+  });
+
+  // Media: Extract preview from RAW file
+  ipcMain.handle('media:extractPreview', async (_event, sourcePath: unknown, hash: unknown) => {
+    try {
+      const validPath = z.string().min(1).parse(sourcePath);
+      const validHash = z.string().min(1).parse(hash);
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+      const previewService = new PreviewExtractorService(mediaPathService, exifToolService);
+      const result = await previewService.extractPreview(validPath, validHash);
+      return result;
+    } catch (error) {
+      console.error('Error extracting preview:', error);
+      return null;
+    }
+  });
+
+  // Media: Generate poster frame for video
+  ipcMain.handle('media:generatePoster', async (_event, sourcePath: unknown, hash: unknown) => {
+    try {
+      const validPath = z.string().min(1).parse(sourcePath);
+      const validHash = z.string().min(1).parse(hash);
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+      const posterService = new PosterFrameService(mediaPathService, ffmpegService);
+      const result = await posterService.generatePoster(validPath, validHash);
+      return result;
+    } catch (error) {
+      console.error('Error generating poster:', error);
+      return null;
+    }
+  });
+
+  // Media: Get cached image data
+  const mediaCacheService = new MediaCacheService();
+  const preloadService = new PreloadService(mediaCacheService);
+
+  ipcMain.handle('media:getCached', async (_event, key: unknown) => {
+    try {
+      const validKey = z.string().min(1).parse(key);
+      const data = mediaCacheService.get(validKey);
+      return data ? data.toString('base64') : null;
+    } catch (error) {
+      console.error('Error getting cached media:', error);
+      return null;
+    }
+  });
+
+  // Media: Preload adjacent images
+  ipcMain.handle('media:preload', async (_event, mediaList: unknown, currentIndex: unknown) => {
+    try {
+      const validList = z.array(z.object({
+        hash: z.string(),
+        path: z.string()
+      })).parse(mediaList);
+      const validIndex = z.number().int().nonnegative().parse(currentIndex);
+      preloadService.setMediaList(validList);
+      preloadService.setCurrentIndex(validIndex);
+      return { success: true };
+    } catch (error) {
+      console.error('Error preloading media:', error);
+      return { success: false };
+    }
+  });
+
+  // Media: Read XMP sidecar
+  ipcMain.handle('media:readXmp', async (_event, mediaPath: unknown) => {
+    try {
+      const validPath = z.string().min(1).parse(mediaPath);
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+      const xmpService = new XmpService(mediaPathService);
+      const xmpPath = mediaPathService.getXmpPath(validPath);
+      const data = await xmpService.readXmp(xmpPath);
+      return data;
+    } catch (error) {
+      console.error('Error reading XMP:', error);
+      return null;
+    }
+  });
+
+  // Media: Write XMP sidecar
+  ipcMain.handle('media:writeXmp', async (_event, mediaPath: unknown, data: unknown) => {
+    try {
+      const validPath = z.string().min(1).parse(mediaPath);
+      const validData = z.object({
+        rating: z.number().optional(),
+        label: z.string().optional(),
+        keywords: z.array(z.string()).optional(),
+        title: z.string().optional(),
+        description: z.string().optional()
+      }).parse(data);
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+      const xmpService = new XmpService(mediaPathService);
+      const xmpPath = mediaPathService.getXmpPath(validPath);
+      await xmpService.writeXmp(xmpPath, validData);
+      return { success: true };
+    } catch (error) {
+      console.error('Error writing XMP:', error);
+      throw error;
+    }
+  });
+
+  // Media: Batch generate thumbnails for existing imports
+  ipcMain.handle('media:regenerateAllThumbnails', async (_event) => {
+    try {
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+      const thumbnailService = new ThumbnailService(mediaPathService);
+
+      // Get images without thumbnails
+      const images = await mediaRepo.getImagesWithoutThumbnails();
+      let generated = 0;
+      let failed = 0;
+
+      for (const img of images) {
+        const result = await thumbnailService.generateThumbnail(img.imgloc, img.imgsha);
+        if (result) {
+          await mediaRepo.updateImageThumbnailPath(img.imgsha, result);
+          generated++;
+        } else {
+          failed++;
+        }
+      }
+
+      return { generated, failed, total: images.length };
+    } catch (error) {
+      console.error('Error regenerating thumbnails:', error);
       throw error;
     }
   });

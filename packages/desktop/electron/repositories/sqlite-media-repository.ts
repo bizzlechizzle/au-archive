@@ -195,4 +195,77 @@ export class SQLiteMediaRepository {
 
     return { images, videos, documents };
   }
+
+  // ==================== THUMBNAIL/PREVIEW OPERATIONS ====================
+
+  /**
+   * Get images without thumbnails for batch generation
+   */
+  async getImagesWithoutThumbnails(): Promise<Array<{ imgsha: string; imgloc: string }>> {
+    const rows = await this.db
+      .selectFrom('imgs')
+      .select(['imgsha', 'imgloc'])
+      .where('thumb_path', 'is', null)
+      .execute();
+    return rows;
+  }
+
+  /**
+   * Update thumbnail path for an image
+   */
+  async updateImageThumbnailPath(imgsha: string, thumbPath: string): Promise<void> {
+    await this.db
+      .updateTable('imgs')
+      .set({ thumb_path: thumbPath })
+      .where('imgsha', '=', imgsha)
+      .execute();
+  }
+
+  /**
+   * Update preview path for a RAW image
+   */
+  async updateImagePreviewPath(imgsha: string, previewPath: string): Promise<void> {
+    await this.db
+      .updateTable('imgs')
+      .set({ preview_path: previewPath, preview_extracted: 1 })
+      .where('imgsha', '=', imgsha)
+      .execute();
+  }
+
+  /**
+   * Get videos without poster frames
+   */
+  async getVideosWithoutPosters(): Promise<Array<{ vidsha: string; vidloc: string }>> {
+    const rows = await this.db
+      .selectFrom('vids')
+      .select(['vidsha', 'vidloc'])
+      .where('thumb_path', 'is', null)
+      .execute();
+    return rows;
+  }
+
+  /**
+   * Update poster frame path for a video
+   */
+  async updateVideoPosterPath(vidsha: string, posterPath: string): Promise<void> {
+    await this.db
+      .updateTable('vids')
+      .set({ thumb_path: posterPath, poster_extracted: 1 })
+      .where('vidsha', '=', vidsha)
+      .execute();
+  }
+
+  /**
+   * Update XMP sync status for an image
+   */
+  async updateImageXmpStatus(imgsha: string, synced: boolean): Promise<void> {
+    await this.db
+      .updateTable('imgs')
+      .set({
+        xmp_synced: synced ? 1 : 0,
+        xmp_modified_at: new Date().toISOString()
+      })
+      .where('imgsha', '=', imgsha)
+      .execute();
+  }
 }
