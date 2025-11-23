@@ -23,6 +23,15 @@
     meta_width: number | null;
     meta_height: number | null;
     meta_date_taken: string | null;
+    meta_camera_make: string | null;
+    meta_camera_model: string | null;
+    meta_gps_lat: number | null;
+    meta_gps_lng: number | null;
+    // Thumbnail fields (Premium Archive)
+    thumb_path: string | null;
+    thumb_path_sm: string | null;
+    thumb_path_lg: string | null;
+    preview_path: string | null;
   }
 
   interface MediaVideo {
@@ -33,6 +42,13 @@
     meta_width: number | null;
     meta_height: number | null;
     meta_codec: string | null;
+    meta_gps_lat: number | null;
+    meta_gps_lng: number | null;
+    // Thumbnail fields (Premium Archive)
+    thumb_path: string | null;
+    thumb_path_sm: string | null;
+    thumb_path_lg: string | null;
+    preview_path: string | null;
   }
 
   interface MediaDocument {
@@ -71,21 +87,21 @@
   let selectedImageIndex = $state<number | null>(null);
   let currentUser = $state('default');
 
-  // Transform images for MediaViewer component
+  // Transform images for MediaViewer component (Premium Archive)
   const mediaViewerList = $derived(images.map(img => ({
     hash: img.imgsha,
     path: img.imgloc,
-    thumbPath: (img as any).thumb_path || null,
-    previewPath: (img as any).preview_path || null,
+    thumbPath: img.thumb_path_sm || img.thumb_path || null,
+    previewPath: img.preview_path || null,
     type: 'image' as const,
     name: img.imgnam,
     width: img.meta_width,
     height: img.meta_height,
     dateTaken: img.meta_date_taken,
-    cameraMake: (img as any).meta_camera_make || null,
-    cameraModel: (img as any).meta_camera_model || null,
-    gpsLat: (img as any).meta_gps_lat || null,
-    gpsLng: (img as any).meta_gps_lng || null,
+    cameraMake: img.meta_camera_make || null,
+    cameraModel: img.meta_camera_model || null,
+    gpsLat: img.meta_gps_lat || null,
+    gpsLng: img.meta_gps_lng || null,
   })));
   let showAllImages = $state(false);
   let showAllVideos = $state(false);
@@ -1054,13 +1070,13 @@
                   onclick={() => openLightbox(actualIndex)}
                   class="aspect-square bg-gray-100 rounded overflow-hidden hover:opacity-90 transition relative group"
                 >
-                  {#if (image as any).thumb_path_sm || (image as any).thumb_path}
-                    <!-- Kanye3: Multi-tier thumbnail with HiDPI support -->
+                  {#if image.thumb_path_sm || image.thumb_path}
+                    <!-- Kanye5: Multi-tier thumbnail with HiDPI support (Premium Archive) -->
                     <img
-                      src={`media://${(image as any).thumb_path_sm || (image as any).thumb_path}`}
+                      src={`media://${image.thumb_path_sm || image.thumb_path}`}
                       srcset={`
-                        media://${(image as any).thumb_path_sm || (image as any).thumb_path} 1x
-                        ${(image as any).thumb_path_lg ? `, media://${(image as any).thumb_path_lg} 2x` : ''}
+                        media://${image.thumb_path_sm || image.thumb_path} 1x
+                        ${image.thumb_path_lg ? `, media://${image.thumb_path_lg} 2x` : ''}
                       `}
                       alt={image.imgnam}
                       loading="lazy"
