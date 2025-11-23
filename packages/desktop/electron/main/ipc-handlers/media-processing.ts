@@ -17,7 +17,6 @@ import { PosterFrameService } from '../../services/poster-frame-service';
 import { MediaCacheService } from '../../services/media-cache-service';
 import { PreloadService } from '../../services/preload-service';
 import { XmpService } from '../../services/xmp-service';
-import { getConfigService } from '../../services/config-service';
 // Kanye10: Darktable integration for premium RAW processing
 import { DarktableService } from '../../services/darktable-service';
 import { DarktableQueueService } from '../../services/darktable-queue-service';
@@ -32,9 +31,9 @@ export function registerMediaProcessingHandlers(
   const preloadService = new PreloadService(mediaCacheService);
 
   const getArchivePath = async (): Promise<string> => {
-    const archivePath = await getConfigService().get('archivePath');
-    if (!archivePath) throw new Error('Archive path not configured');
-    return archivePath;
+    const result = await db.selectFrom('settings').select('value').where('key', '=', 'archive_folder').executeTakeFirst();
+    if (!result?.value) throw new Error('Archive path not configured');
+    return result.value;
   };
 
   ipcMain.handle('media:findByLocation', async (_event, locid: unknown) => {
