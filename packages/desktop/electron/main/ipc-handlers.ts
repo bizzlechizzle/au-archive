@@ -1780,18 +1780,6 @@ export function registerIpcHandlers() {
     return archivePath;
   };
 
-  // Media: Open file in system viewer
-  ipcMain.handle('media:openFile', async (_event, filePath: unknown) => {
-    try {
-      const validPath = z.string().min(1).parse(filePath);
-      await shell.openPath(validPath);
-      return { success: true };
-    } catch (error) {
-      console.error('Error opening file:', error);
-      throw error;
-    }
-  });
-
   // Media: Generate thumbnail for an image
   ipcMain.handle('media:generateThumbnail', async (_event, sourcePath: unknown, hash: unknown) => {
     try {
