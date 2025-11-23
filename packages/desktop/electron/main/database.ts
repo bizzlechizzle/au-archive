@@ -514,12 +514,34 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 10 completed: hero_imgsha column added');
     }
 
-    // Migration 11: Add address normalization columns to locs table
+    // Migration 11: Add darktable_path column to imgs table
+    // Per Kanye10: Darktable CLI integration for premium RAW processing
+    const imgColsForDarktable = sqlite.prepare('PRAGMA table_info(imgs)').all() as Array<{ name: string }>;
+    const hasDarktablePath = imgColsForDarktable.some(col => col.name === 'darktable_path');
+
+    if (!hasDarktablePath) {
+      console.log('Running migration 11: Adding Darktable columns to imgs');
+
+      sqlite.exec(`
+        ALTER TABLE imgs ADD COLUMN darktable_path TEXT;
+        ALTER TABLE imgs ADD COLUMN darktable_processed INTEGER DEFAULT 0;
+        ALTER TABLE imgs ADD COLUMN darktable_processed_at TEXT;
+      `);
+
+      // Create index for finding RAW files pending Darktable processing
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_imgs_darktable ON imgs(darktable_processed) WHERE darktable_processed = 0;
+      `);
+
+      console.log('Migration 11 completed: Darktable columns added');
+    }
+
+    // Migration 12: Add address normalization columns to locs table
     // Per Kanye9: Store both raw and normalized addresses for premium archive
     const hasAddressRaw = locsColumnsCheck.some(col => col.name === 'address_raw');
 
     if (!hasAddressRaw) {
-      console.log('Running migration 11: Adding address normalization columns to locs');
+      console.log('Running migration 12: Adding address normalization columns to locs');
 
       sqlite.exec(`
         ALTER TABLE locs ADD COLUMN address_raw TEXT;
@@ -528,22 +550,22 @@ function runMigrations(sqlite: Database.Database): void {
         ALTER TABLE locs ADD COLUMN address_source TEXT;
       `);
 
-      console.log('Migration 11 completed: address normalization columns added');
+      console.log('Migration 12 completed: address normalization columns added');
     }
 
-    // Migration 12: Add GPS geocode tier columns to locs table
+    // Migration 13: Add GPS geocode tier columns to locs table
     // Per Kanye9: Track which tier of cascade geocoding was used for accurate zoom levels
     const hasGeocodeTier = locsColumnsCheck.some(col => col.name === 'gps_geocode_tier');
 
     if (!hasGeocodeTier) {
-      console.log('Running migration 12: Adding GPS geocode tier columns to locs');
+      console.log('Running migration 13: Adding GPS geocode tier columns to locs');
 
       sqlite.exec(`
         ALTER TABLE locs ADD COLUMN gps_geocode_tier INTEGER;
         ALTER TABLE locs ADD COLUMN gps_geocode_query TEXT;
       `);
 
-      console.log('Migration 12 completed: GPS geocode tier columns added');
+      console.log('Migration 13 completed: GPS geocode tier columns added');
     }
   } catch (error) {
     console.error('Error running migrations:', error);

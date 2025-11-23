@@ -87,14 +87,16 @@
    * Tries: full address → city+state → zipcode → county+state → state only
    */
   async function ensureGpsFromAddress(): Promise<void> {
-    if (!location) return;
-    if (location.gps?.lat && location.gps?.lng) return;
+    console.log('[Kanye9] ensureGpsFromAddress called');
+    if (!location) { console.log('[Kanye9] No location, skipping'); return; }
+    if (location.gps?.lat && location.gps?.lng) { console.log('[Kanye9] Already has GPS:', location.gps); return; }
 
     const addr = location.address;
     // Need at least one geocodable field
     const hasGeocodeData = addr?.street || addr?.city || addr?.zipcode || addr?.county || addr?.state;
-    if (!hasGeocodeData) return;
+    if (!hasGeocodeData) { console.log('[Kanye9] No address to geocode'); return; }
 
+    console.log('[Kanye9] Using cascade geocoding for address:', addr);
     try {
       // Use cascade geocoding - tries multiple strategies until one succeeds
       const result = await window.electronAPI.geocode.forwardCascade({
@@ -105,8 +107,9 @@
         zipcode: addr?.zipcode || null,
       });
 
+      console.log('[Kanye9] Cascade geocode result:', result);
       if (result?.lat && result?.lng) {
-        console.log(`[LocationDetail] Cascade geocode success: tier ${result.cascadeTier} (${result.cascadeDescription})`);
+        console.log(`[Kanye9] Cascade success: tier ${result.cascadeTier} (${result.cascadeDescription})`);
         await window.electronAPI.locations.update(location.locid, {
           gps_lat: result.lat,
           gps_lng: result.lng,
@@ -115,10 +118,14 @@
           gps_geocode_tier: result.cascadeTier,
           gps_geocode_query: result.cascadeQuery,
         });
+        console.log('[Kanye9] Reloading location to trigger map re-zoom...');
         await loadLocation();
+        console.log('[Kanye9] Cascade geocoding complete!');
+      } else {
+        console.warn('[Kanye9] Cascade geocode returned no coordinates');
       }
     } catch (err) {
-      console.error('[LocationDetail] Cascade geocoding failed:', err);
+      console.error('[Kanye9] Cascade geocoding failed:', err);
     }
   }
 

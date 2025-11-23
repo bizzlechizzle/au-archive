@@ -3,9 +3,11 @@
    * LocationAddress - Address display with copy button, clickable filters
    * Per LILBITS: ~100 lines, single responsibility
    * Per PUEA: Only show if address exists
-   * Kanye8: Clean city names, all parts clickable, open on map link
+   * Kanye8: Use getDisplayCity() to strip "Village of", "City of" prefixes
+   * Kanye9: All parts clickable, open on map link
    */
   import type { Location } from '@au-archive/core';
+  import { getDisplayCity } from '@/lib/display-helpers';
 
   interface Props {
     address: Location['address'];
@@ -14,18 +16,6 @@
   }
 
   let { address, onNavigateFilter, onOpenOnMap }: Props = $props();
-
-  /**
-   * Kanye8: Remove administrative prefixes from city names
-   * "Village Of Cambridge" → "Cambridge"
-   * "City Of Albany" → "Albany"
-   */
-  function getDisplayCity(city: string | undefined): string {
-    if (!city) return '';
-    return city
-      .replace(/^(Village Of|City Of|Town Of|Borough Of|Township Of)\s+/i, '')
-      .trim();
-  }
 
   function copyAddress() {
     const displayCity = getDisplayCity(address?.city);
@@ -82,10 +72,10 @@
       <p>
         {#if displayCity}
           <button
-            onclick={() => onNavigateFilter('city', displayCity)}
+            onclick={() => onNavigateFilter('city', getDisplayCity(address?.city))}
             class="text-accent hover:underline"
-            title="View all locations in {displayCity}"
-          >{displayCity}</button>{address?.state || address?.zipcode ? ', ' : ''}
+            title="View all locations in {getDisplayCity(address?.city)}"
+          >{getDisplayCity(address?.city)}</button>{address?.state || address?.zipcode ? ', ' : ''}
         {/if}
         {#if address?.state}
           <button
