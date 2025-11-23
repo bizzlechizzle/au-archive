@@ -26,6 +26,18 @@ export class MediaPathService {
   }
 
   getPreviewDir(): string {
+    console.log('[DEBUG getPreviewDir] this.archivePath:', this.archivePath);
+    console.log('[DEBUG getPreviewDir] typeof this.archivePath:', typeof this.archivePath);
+    if (typeof this.archivePath !== 'string') {
+      console.error('[DEBUG getPreviewDir] CRITICAL: archivePath is not a string!');
+      console.error('[DEBUG getPreviewDir] JSON:', JSON.stringify(this.archivePath));
+      console.error('[DEBUG getPreviewDir] this:', this);
+      // Try to recover by extracting string if it's an object
+      if (this.archivePath && typeof (this.archivePath as any).value === 'string') {
+        console.error('[DEBUG getPreviewDir] Found .value property, using it');
+        return path.join((this.archivePath as any).value, '.previews');
+      }
+    }
     return path.join(this.archivePath, '.previews');
   }
 
