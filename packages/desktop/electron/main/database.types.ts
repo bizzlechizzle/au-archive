@@ -105,6 +105,15 @@ export interface ImgsTable {
   meta_camera_model: string | null;
   meta_gps_lat: number | null;
   meta_gps_lng: number | null;
+
+  // Thumbnails and previews (Migration 8)
+  thumb_path: string | null;
+  preview_path: string | null;
+  preview_extracted: number;
+
+  // XMP sync status (Migration 8)
+  xmp_synced: number;
+  xmp_modified_at: string | null;
 }
 
 // Videos table
@@ -134,6 +143,14 @@ export interface VidsTable {
   // FIX 3.2: GPS from video metadata (dashcams, phones)
   meta_gps_lat: number | null;
   meta_gps_lng: number | null;
+
+  // Poster frames (Migration 8)
+  thumb_path: string | null;
+  poster_extracted: number;
+
+  // XMP sync status (Migration 8)
+  xmp_synced: number;
+  xmp_modified_at: string | null;
 }
 
 // Documents table

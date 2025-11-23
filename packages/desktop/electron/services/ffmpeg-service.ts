@@ -67,4 +67,37 @@ export class FFmpegService {
       return null;
     }
   }
+
+  /**
+   * Extract a single frame from a video at a specific timestamp
+   *
+   * @param sourcePath - Absolute path to video file
+   * @param outputPath - Absolute path for output JPEG
+   * @param timestampSeconds - Time offset in seconds (default: 1)
+   * @param size - Output size in pixels (square crop, default: 256)
+   * @returns Promise that resolves when frame is extracted
+   */
+  async extractFrame(
+    sourcePath: string,
+    outputPath: string,
+    timestampSeconds: number = 1,
+    size: number = 256
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ffmpeg(sourcePath)
+        .seekInput(timestampSeconds)
+        .frames(1)
+        .outputOptions([
+          '-vf', `scale=${size}:${size}:force_original_aspect_ratio=increase,crop=${size}:${size}`,
+          '-q:v', '2' // JPEG quality (2 is high quality)
+        ])
+        .output(outputPath)
+        .on('end', () => resolve())
+        .on('error', (err) => {
+          console.error('[FFmpeg] Error extracting frame:', err);
+          reject(err);
+        })
+        .run();
+    });
+  }
 }

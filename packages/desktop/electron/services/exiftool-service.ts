@@ -97,6 +97,35 @@ export class ExifToolService {
   }
 
   /**
+   * Extract binary data for a specific tag (e.g., PreviewImage, ThumbnailImage)
+   * Used for extracting embedded JPEG previews from RAW files
+   *
+   * @param filePath - Absolute path to the image file
+   * @param tag - Tag name to extract (e.g., 'PreviewImage', 'JpgFromRaw')
+   * @returns Buffer containing binary data, or null if tag doesn't exist
+   */
+  async extractBinaryTag(filePath: string, tag: string): Promise<Buffer | null> {
+    try {
+      // Read the tags to check if the requested tag exists
+      const tags = await exiftool.read(filePath);
+
+      // Check if the tag exists and has data
+      const tagValue = (tags as any)[tag];
+      if (!tagValue) {
+        return null;
+      }
+
+      // For binary tags, exiftool-vendored returns the data as a Buffer or base64 string
+      // depending on how it was read. We need to use extractBinaryTagToBuffer
+      const result = await exiftool.extractBinaryTagToBuffer(filePath, tag);
+      return result;
+    } catch (error) {
+      console.warn('[ExifTool] Error extracting binary tag:', tag, error);
+      return null;
+    }
+  }
+
+  /**
    * Close the ExifTool process
    * Should be called when the application is shutting down
    */
