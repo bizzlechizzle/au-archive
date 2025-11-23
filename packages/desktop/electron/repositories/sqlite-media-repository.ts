@@ -19,6 +19,14 @@ export interface MediaImage {
   meta_camera_model: string | null;
   meta_gps_lat: number | null;
   meta_gps_lng: number | null;
+  // Thumbnail/Preview fields (Migration 8 & 9 - Premium Archive)
+  thumb_path: string | null;
+  thumb_path_sm: string | null;
+  thumb_path_lg: string | null;
+  preview_path: string | null;
+  preview_extracted: number;
+  xmp_synced: number;
+  xmp_modified_at: string | null;
 }
 
 export interface MediaVideo {
@@ -39,6 +47,17 @@ export interface MediaVideo {
   meta_codec: string | null;
   meta_fps: number | null;
   meta_date_taken: string | null;
+  // GPS fields (FIX 3.2 - dashcams, phones)
+  meta_gps_lat: number | null;
+  meta_gps_lng: number | null;
+  // Thumbnail/Poster fields (Migration 8 & 9 - Premium Archive)
+  thumb_path: string | null;
+  thumb_path_sm: string | null;
+  thumb_path_lg: string | null;
+  preview_path: string | null;
+  poster_extracted: number;
+  xmp_synced: number;
+  xmp_modified_at: string | null;
 }
 
 export interface MediaDocument {
