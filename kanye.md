@@ -36,6 +36,183 @@ Implementation plan for:
 
 ---
 
+## Do Not Change
+
+This section documents key architectural decisions. Do not modify without understanding the rationale.
+
+### 1. XMP Sidecars as Source of Truth
+
+**Decision:** All user metadata (ratings, labels, keywords) is written to XMP sidecar files. SQLite is a cache.
+
+**Why:**
+- Portability: Users can open files in PhotoMechanic, Lightroom, Bridge without AU Archive
+- Disaster recovery: If database is deleted, rebuild from XMP sidecars
+- Industry standard: XMP has been stable since 2001, will outlive this app
+- True archive: Files are self-describing, not locked in proprietary database
+
+**Do not:** Store metadata only in SQLite. That's a catalog, not an archive.
+
+### 2. Extract RAW Previews, Don't Convert
+
+**Decision:** Use embedded JPEG previews from RAW files via ExifTool. Do not use LibRaw or dcraw for full RAW conversion.
+
+**Why:**
+- Speed: Preview extraction is <1 second. Full RAW conversion is 2-5 seconds.
+- Quality: Camera-generated previews are high quality (3-6MP typically)
+- Simplicity: No native dependencies, no 50MB LibRaw binary
+- BPL: ExifTool has supported every RAW format for 20+ years
+
+**Do not:** Add LibRaw, dcraw, or WASM RAW decoders. This is a viewer, not Lightroom.
+
+### 3. Native Browser Rendering
+
+**Decision:** Use native `<img>` and `<video>` tags for display. No custom rendering.
+
+**Why:**
+- Performance: Browser rendering is GPU-accelerated
+- Reliability: Battle-tested in billions of browsers
+- Simplicity: No canvas manipulation, no WebGL complexity
+- Maintenance: Zero code to maintain for image display
+
+**Do not:** Build custom image rendering with canvas or WebGL.
+
+### 4. Thumbnails Generated on Import
+
+**Decision:** Generate thumbnails during file import, not on-demand.
+
+**Why:**
+- UX: Grid browsing is instant, no loading spinners
+- One-time cost: Import is already slow (hashing, copying), thumbnails add negligible time
+- Offline: Thumbnails work without accessing original files
+
+**Do not:** Generate thumbnails on-demand when viewing. That's slow and creates loading jank.
+
+### 5. Full Performance System in v0.1.0
+
+**Decision:** Build LRU cache, preloading, and virtualization now, not later.
+
+**Why:**
+- "Code once, cry once": Retrofitting performance is harder than building it in
+- User expectation: PhotoMechanic users expect instant image switching
+- Architecture: Cache/preload patterns affect IPC design, harder to add later
+- Grid virtualization: Required for locations with 500+ images
+
+**Do not:** Ship a slow viewer and "optimize later". Users will abandon the app.
+
+### 6. Separate Cache and Preload Services
+
+**Decision:** `media-cache-service.ts` and `preload-service.ts` are separate.
+
+**Why:**
+- Single responsibility: Cache manages memory, preload manages prediction
+- Testability: Each service can be unit tested independently
+- LILBITS: Each script under 100 lines, focused purpose
+
+**Do not:** Merge into one mega-service. That violates LILBITS.
+
+---
+
+## Repository Cleanup
+
+Before implementing, clean up the repository to follow standard practices.
+
+### Files to Remove
+
+These are temporary planning/session files that should not be in version control:
+
+```
+ARCHITECTURE_AUDIT.md
+COMPLIANCE_AUDIT.md
+FINAL_AUDIT_REPORT.md
+IMPLEMENTATION_COMPLETE_SUMMARY.md
+IMPLEMENTATION_GUIDE_v010.md
+SESSION_SUMMARY.md
+WEEK_1_2_IMPLEMENTATION_SUMMARY.md
+coding_plan_temp.md
+finish_v010.md
+ineedabrowser.md
+missing_shit.md
+nostartup.md
+officer_doofy.md
+v0.1.0_plan_temp.md
+whereswaldo.md
+whereswaldo2.md
+whereswaldo3.md
+whereswaldo4.md
+whereswaldo5.md
+whereswaldo6.md
+whereswaldo7.md
+whereswaldo8.md
+whereswaldo9.md
+whereswaldo10.md
+whereswaldo11.md
+whereswaldo12.md
+```
+
+### Directories to Remove or Gitignore
+
+```
+logseq/              # Logseq knowledge base - not part of app
+pages/               # Logseq pages - not part of app
+```
+
+### Files to Move
+
+```
+abandonedupstatelogo.png → resources/icons/abandonedupstatelogo.png
+```
+
+### Files to Keep
+
+```
+claude.md            # Main technical specification
+lilbits.md           # Script documentation (required by claude.md)
+techguide.md         # Technical implementation guide
+kanye.md             # This file - v0.1.0 media viewer plan
+README.md            # Standard project readme
+```
+
+### .gitignore Updates
+
+Add to `.gitignore`:
+
+```gitignore
+# Logseq knowledge base
+logseq/
+pages/
+
+# Already present but remove committed files:
+.DS_Store
+```
+
+### Cleanup Commands
+
+```bash
+# Remove temp files
+git rm ARCHITECTURE_AUDIT.md COMPLIANCE_AUDIT.md FINAL_AUDIT_REPORT.md \
+  IMPLEMENTATION_COMPLETE_SUMMARY.md IMPLEMENTATION_GUIDE_v010.md \
+  SESSION_SUMMARY.md WEEK_1_2_IMPLEMENTATION_SUMMARY.md \
+  coding_plan_temp.md finish_v010.md ineedabrowser.md missing_shit.md \
+  nostartup.md officer_doofy.md v0.1.0_plan_temp.md \
+  whereswaldo.md whereswaldo2.md whereswaldo3.md whereswaldo4.md \
+  whereswaldo5.md whereswaldo6.md whereswaldo7.md whereswaldo8.md \
+  whereswaldo9.md whereswaldo10.md whereswaldo11.md whereswaldo12.md
+
+# Remove logseq
+git rm -r logseq/ pages/
+
+# Remove .DS_Store
+git rm .DS_Store
+
+# Move logo
+mkdir -p resources/icons
+git mv abandonedupstatelogo.png resources/icons/
+
+# Update .gitignore and commit
+```
+
+---
+
 ## Media Viewer Strategy
 
 ### Hybrid Approach
@@ -135,6 +312,8 @@ ALTER TABLE vids ADD COLUMN xmp_modified_at TEXT;
 
 -- Indexes
 CREATE INDEX idx_imgs_xmp_synced ON imgs(xmp_synced) WHERE xmp_synced = 0;
+CREATE INDEX idx_imgs_thumb ON imgs(thumb_path) WHERE thumb_path IS NULL;
+CREATE INDEX idx_vids_thumb ON vids(thumb_path) WHERE thumb_path IS NULL;
 ```
 
 ---
@@ -218,10 +397,16 @@ class ThumbnailService {
   ): Promise<string | null>
 
   thumbnailExists(hash: string, archivePath: string): Promise<boolean>
+
+  // Retroactive generation for existing imports
+  regenerateAll(
+    locid?: string,
+    onProgress?: (current: number, total: number) => void
+  ): Promise<{ success: number; failed: number }>
 }
 ```
 
-**Estimated Lines:** ~90
+**Estimated Lines:** ~120
 
 ---
 
@@ -242,6 +427,12 @@ class PreviewExtractorService {
 
   // Fallback chain: PreviewImage -> JpgFromRaw -> ThumbnailImage
   private tryExtractTag(filePath: string, tag: string, outputPath: string): Promise<boolean>
+
+  // Retroactive extraction for existing RAW imports
+  extractAllMissing(
+    locid?: string,
+    onProgress?: (current: number, total: number) => void
+  ): Promise<{ success: number; failed: number }>
 }
 ```
 
@@ -250,7 +441,7 @@ class PreviewExtractorService {
 exiftool -b -PreviewImage source.NEF > preview.jpg
 ```
 
-**Estimated Lines:** ~120
+**Estimated Lines:** ~140
 
 ---
 
@@ -269,10 +460,16 @@ class PosterFrameService {
   ): Promise<string | null>
 
   posterExists(hash: string, archivePath: string): Promise<boolean>
+
+  // Retroactive generation for existing video imports
+  generateAllMissing(
+    locid?: string,
+    onProgress?: (current: number, total: number) => void
+  ): Promise<{ success: number; failed: number }>
 }
 ```
 
-**Estimated Lines:** ~90
+**Estimated Lines:** ~110
 
 ---
 
@@ -382,7 +579,7 @@ class MediaCacheService {
 
 **Features:**
 - LRU eviction when cache exceeds maxSizeMB
-- Preload next/previous images in background
+- Preload images into cache
 - Cache hits/misses tracking
 
 **Estimated Lines:** ~80
@@ -545,6 +742,8 @@ Add handlers for:
 'media:getPoster'
 'media:getFileBase64'
 'media:regenerateThumbnails'
+'media:regeneratePreviews'
+'media:regeneratePosters'
 
 // XMP sync
 'xmp:syncNow'
@@ -552,7 +751,7 @@ Add handlers for:
 'xmp:getSyncStatus'
 ```
 
-**Impact:** ~80 new lines
+**Impact:** ~100 new lines
 
 ---
 
@@ -561,7 +760,7 @@ Add handlers for:
 **Changes:**
 Expose all new IPC handlers to renderer.
 
-**Impact:** ~30 new lines
+**Impact:** ~40 new lines
 
 ---
 
@@ -570,8 +769,9 @@ Expose all new IPC handlers to renderer.
 **Changes:**
 - Replace skeleton lightbox with MediaViewer
 - Use MediaGrid with virtualization
+- Add "Regenerate Thumbnails" button for admin
 
-**Impact:** Refactor ~80 lines
+**Impact:** Refactor ~100 lines
 
 ---
 
@@ -584,11 +784,12 @@ updateThumbnailPath(hash: string, type: 'image' | 'video', thumbPath: string): P
 updatePreviewPath(hash: string, previewPath: string): Promise<void>
 findImagesWithoutThumbnails(locid?: string): Promise<Array<{ imgsha: string; imgloc: string }>>
 findVideosWithoutPosters(locid?: string): Promise<Array<{ vidsha: string; vidloc: string }>>
+findRawImagesWithoutPreviews(locid?: string): Promise<Array<{ imgsha: string; imgloc: string }>>
 findUnsynced(): Promise<MediaItem[]>
 markSynced(hash: string, type: 'image' | 'video'): Promise<void>
 ```
 
-**Impact:** ~60 new lines
+**Impact:** ~80 new lines
 
 ---
 
@@ -693,14 +894,15 @@ function validateArchivePath(filePath: string, archivePath: string): boolean {
 8. MediaGrid.svelte
 9. ExifPanel.svelte
 10. LocationDetail.svelte integration
-11. IPC handlers
+11. IPC handlers (media)
 12. media-cache-service.ts
 13. preload-service.ts
 14. MediaGrid virtualization
 15. xmp-service.ts
 16. xmp-sync-service.ts
 17. Database migration (XMP fields)
-18. XMP IPC handlers
+18. IPC handlers (XMP)
+19. Retroactive thumbnail/preview generation UI
 
 ---
 
@@ -709,9 +911,9 @@ function validateArchivePath(filePath: string, archivePath: string): boolean {
 | Script | Purpose | Est. Lines | Under 300 |
 |--------|---------|------------|-----------|
 | media-path-service.ts | Path utilities | 70 | Yes |
-| thumbnail-service.ts | Thumbnail generation | 90 | Yes |
-| preview-extractor-service.ts | RAW preview extraction | 120 | Yes |
-| poster-frame-service.ts | Video poster frames | 90 | Yes |
+| thumbnail-service.ts | Thumbnail generation | 120 | Yes |
+| preview-extractor-service.ts | RAW preview extraction | 140 | Yes |
+| poster-frame-service.ts | Video poster frames | 110 | Yes |
 | media-cache-service.ts | In-memory LRU cache | 80 | Yes |
 | preload-service.ts | Adjacent image preload | 60 | Yes |
 | xmp-service.ts | XMP read/write | 200 | Yes |
@@ -728,17 +930,20 @@ function validateArchivePath(filePath: string, archivePath: string): boolean {
 - thumbnail-service.test.ts
 - preview-extractor-service.test.ts
 - xmp-service.test.ts
+- media-cache-service.test.ts
 
 ### Integration Tests
 - Import flow generates thumbnails
 - RAW import extracts preview
 - XMP rebuild populates database
+- Retroactive generation works on existing imports
 
 ### Manual Testing
 - Open lightbox for JPG, PNG, RAW
 - Video playback
 - Keyboard shortcuts
 - XMP interop with PhotoMechanic
+- Regenerate thumbnails for existing location
 
 ---
 
@@ -748,6 +953,7 @@ function validateArchivePath(filePath: string, archivePath: string): boolean {
 - Import succeeds even if thumbnail generation fails
 - XMP is source of truth; SQLite is rebuildable cache
 - PhotoMechanic compatibility is a priority
+- Retroactive generation handles existing imports without thumbnails
 
 ---
 
