@@ -6,10 +6,25 @@ export const GPSCoordinatesSchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   accuracy: z.number().optional(),
-  source: z.enum(['user_map_click', 'photo_exif', 'geocoded_address', 'manual_entry']),
+  // Extended source enum to support all GPS origins in the codebase
+  source: z.enum([
+    'user_map_click',    // User clicked on map
+    'photo_exif',        // From photo EXIF data
+    'geocoded_address',  // Forward geocoded from address
+    'manual_entry',      // Manually typed coordinates
+    'exif',              // Legacy: same as photo_exif
+    'media_gps',         // From media file GPS
+    'geocoding',         // Generic geocoding
+    'reverse_geocode',   // GPS was reverse geocoded to get address
+    'manual',            // Legacy: same as manual_entry
+    'user_input',        // Legacy: same as manual_entry
+  ]),
   verifiedOnMap: z.boolean().default(false),
   capturedAt: z.string().datetime().optional(),
-  leafletData: z.record(z.unknown()).optional()
+  leafletData: z.record(z.unknown()).optional(),
+  // Kanye9: Cascade geocoding tier (1-5, only for geocoded_address source)
+  geocodeTier: z.number().min(1).max(5).optional(),
+  geocodeQuery: z.string().optional(),
 });
 
 export type GPSCoordinates = z.infer<typeof GPSCoordinatesSchema>;

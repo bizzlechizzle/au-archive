@@ -49,6 +49,8 @@ const api = {
     favorites: () => ipcRenderer.invoke("location:favorites"),
     toggleFavorite: (id) => ipcRenderer.invoke("location:toggleFavorite", id),
     findNearby: (lat, lng, radiusKm) => ipcRenderer.invoke("location:findNearby", lat, lng, radiusKm),
+    // Kanye9: Check for duplicate locations by address
+    checkDuplicates: (address) => ipcRenderer.invoke("location:checkDuplicates", address),
   },
 
   stats: {
@@ -69,6 +71,8 @@ const api = {
   geocode: {
     reverse: (lat, lng) => ipcRenderer.invoke("geocode:reverse", lat, lng),
     forward: (address) => ipcRenderer.invoke("geocode:forward", address),
+    // Kanye9: Cascade geocoding - tries full → city → zipcode → county → state
+    forwardCascade: (address) => ipcRenderer.invoke("geocode:forwardCascade", address),
     clearCache: (daysOld) => ipcRenderer.invoke("geocode:clearCache", daysOld),
   },
 

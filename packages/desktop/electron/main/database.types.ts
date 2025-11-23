@@ -39,6 +39,9 @@ export interface LocsTable {
   gps_verified_on_map: number;
   gps_captured_at: string | null;
   gps_leaflet_data: string | null;
+  // Kanye9: Track cascade geocoding tier for accurate zoom levels
+  gps_geocode_tier: number | null;     // 1-5 (1=full address, 5=state only)
+  gps_geocode_query: string | null;    // The query that succeeded
 
   // Address (Secondary, Optional)
   address_street: string | null;
@@ -48,6 +51,12 @@ export interface LocsTable {
   address_zipcode: string | null;
   address_confidence: string | null;
   address_geocoded_at: string | null;
+
+  // Address Normalization (Kanye9: Raw + Normalized storage)
+  address_raw: string | null;           // Original input exactly as entered
+  address_normalized: string | null;    // Formatted normalized string
+  address_parsed_json: string | null;   // JSON of parsed components
+  address_source: string | null;        // 'libpostal' | 'fallback' | 'nominatim' | 'manual'
 
   // Status
   condition: string | null;

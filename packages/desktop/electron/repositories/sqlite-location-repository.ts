@@ -9,6 +9,8 @@ import {
   LocationEntity
 } from '@au-archive/core';
 import { AddressNormalizer } from '../services/address-normalizer';
+// Kanye9: AddressService for libpostal-powered normalization
+import { AddressService } from '../services/address-service';
 // FIX 6.7: Import GPS validator for proximity search
 import { GPSValidator } from '../services/gps-validator';
 
@@ -21,13 +23,31 @@ export class SQLiteLocationRepository implements LocationRepository {
     const slocnam = input.slocnam || LocationEntity.generateShortName(input.locnam);
     const locadd = new Date().toISOString();
 
-    // Normalize address fields before storage
-    // This ensures consistent formatting: 2-letter state codes, proper zipcode format, etc.
-    const normalizedStreet = AddressNormalizer.normalizeStreet(input.address?.street);
-    const normalizedCity = AddressNormalizer.normalizeCity(input.address?.city);
-    const normalizedCounty = AddressNormalizer.normalizeCounty(input.address?.county);
-    const normalizedState = AddressNormalizer.normalizeStateCode(input.address?.state);
-    const normalizedZipcode = AddressNormalizer.normalizeZipcode(input.address?.zipcode);
+    // Kanye9: Process address through AddressService for raw + normalized storage
+    let addressRecord = null;
+    let normalizedStreet: string | null = null;
+    let normalizedCity: string | null = null;
+    let normalizedCounty: string | null = null;
+    let normalizedState: string | null = null;
+    let normalizedZipcode: string | null = null;
+
+    if (input.address) {
+      // Process structured address input
+      addressRecord = AddressService.processStructured({
+        street: input.address.street,
+        houseNumber: null, // Not typically provided separately
+        city: input.address.city,
+        county: input.address.county,
+        state: input.address.state,
+        zipcode: input.address.zipcode,
+      });
+
+      normalizedStreet = addressRecord.normalized.street;
+      normalizedCity = addressRecord.normalized.city;
+      normalizedCounty = addressRecord.normalized.county || AddressNormalizer.normalizeCounty(input.address.county);
+      normalizedState = addressRecord.normalized.state;
+      normalizedZipcode = addressRecord.normalized.zipcode;
+    }
 
     await this.db
       .insertInto('locs')
@@ -46,6 +66,9 @@ export class SQLiteLocationRepository implements LocationRepository {
         gps_verified_on_map: input.gps?.verifiedOnMap ? 1 : 0,
         gps_captured_at: input.gps?.capturedAt || null,
         gps_leaflet_data: input.gps?.leafletData ? JSON.stringify(input.gps.leafletData) : null,
+        // Kanye9: Store geocode tier for accurate map zoom
+        gps_geocode_tier: input.gps?.geocodeTier || null,
+        gps_geocode_query: input.gps?.geocodeQuery || null,
         address_street: normalizedStreet,
         address_city: normalizedCity,
         address_county: normalizedCounty,
@@ -53,6 +76,11 @@ export class SQLiteLocationRepository implements LocationRepository {
         address_zipcode: normalizedZipcode,
         address_confidence: input.address?.confidence || null,
         address_geocoded_at: input.address?.geocodedAt || null,
+        // Kanye9: Store raw + normalized + parsed for premium archive
+        address_raw: addressRecord?.raw || null,
+        address_normalized: addressRecord ? AddressService.format(addressRecord.normalized) : null,
+        address_parsed_json: addressRecord ? JSON.stringify(addressRecord.parsed) : null,
+        address_source: addressRecord?.source || null,
         condition: input.condition || null,
         status: input.status || null,
         documentation: input.documentation || null,
@@ -151,17 +179,34 @@ export class SQLiteLocationRepository implements LocationRepository {
       updates.gps_verified_on_map = input.gps.verifiedOnMap ? 1 : 0;
       updates.gps_captured_at = input.gps.capturedAt || null;
       updates.gps_leaflet_data = input.gps.leafletData ? JSON.stringify(input.gps.leafletData) : null;
+      // Kanye9: Store geocode tier for accurate map zoom
+      updates.gps_geocode_tier = input.gps.geocodeTier || null;
+      updates.gps_geocode_query = input.gps.geocodeQuery || null;
     }
 
     if (input.address !== undefined) {
-      // Normalize address fields before storage
-      updates.address_street = AddressNormalizer.normalizeStreet(input.address.street);
-      updates.address_city = AddressNormalizer.normalizeCity(input.address.city);
-      updates.address_county = AddressNormalizer.normalizeCounty(input.address.county);
-      updates.address_state = AddressNormalizer.normalizeStateCode(input.address.state);
-      updates.address_zipcode = AddressNormalizer.normalizeZipcode(input.address.zipcode);
+      // Kanye9: Process address through AddressService for raw + normalized storage
+      const addressRecord = AddressService.processStructured({
+        street: input.address.street,
+        houseNumber: null,
+        city: input.address.city,
+        county: input.address.county,
+        state: input.address.state,
+        zipcode: input.address.zipcode,
+      });
+
+      updates.address_street = addressRecord.normalized.street;
+      updates.address_city = addressRecord.normalized.city;
+      updates.address_county = addressRecord.normalized.county || AddressNormalizer.normalizeCounty(input.address.county);
+      updates.address_state = addressRecord.normalized.state;
+      updates.address_zipcode = addressRecord.normalized.zipcode;
       updates.address_confidence = input.address.confidence || null;
       updates.address_geocoded_at = input.address.geocodedAt || null;
+      // Kanye9: Store raw + normalized + parsed for premium archive
+      updates.address_raw = addressRecord.raw;
+      updates.address_normalized = AddressService.format(addressRecord.normalized);
+      updates.address_parsed_json = JSON.stringify(addressRecord.parsed);
+      updates.address_source = addressRecord.source;
     }
 
     if (input.condition !== undefined) updates.condition = input.condition;
@@ -172,6 +217,14 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.favorite !== undefined) updates.favorite = input.favorite ? 1 : 0;
     if (input.hero_imgsha !== undefined) updates.hero_imgsha = input.hero_imgsha;
     if (input.auth_imp !== undefined) updates.auth_imp = input.auth_imp;
+
+    // Kanye9: Handle flat GPS field updates (for cascade geocoding and other direct updates)
+    const inputAny = input as any;
+    if (inputAny.gps_lat !== undefined) updates.gps_lat = inputAny.gps_lat;
+    if (inputAny.gps_lng !== undefined) updates.gps_lng = inputAny.gps_lng;
+    if (inputAny.gps_source !== undefined) updates.gps_source = inputAny.gps_source;
+    if (inputAny.gps_geocode_tier !== undefined) updates.gps_geocode_tier = inputAny.gps_geocode_tier;
+    if (inputAny.gps_geocode_query !== undefined) updates.gps_geocode_query = inputAny.gps_geocode_query;
 
     await this.db
       .updateTable('locs')
@@ -235,45 +288,48 @@ export class SQLiteLocationRepository implements LocationRepository {
       locid: row.locid,
       loc12: row.loc12,
       locnam: row.locnam,
-      slocnam: row.slocnam,
-      akanam: row.akanam,
-      type: row.type,
-      stype: row.stype,
+      slocnam: row.slocnam ?? undefined,
+      akanam: row.akanam ?? undefined,
+      type: row.type ?? undefined,
+      stype: row.stype ?? undefined,
       gps:
         row.gps_lat && row.gps_lng
           ? {
               lat: row.gps_lat,
               lng: row.gps_lng,
-              accuracy: row.gps_accuracy,
-              source: row.gps_source,
+              accuracy: row.gps_accuracy ?? undefined,
+              source: (row.gps_source ?? 'manual_entry') as any,
               verifiedOnMap: row.gps_verified_on_map === 1,
-              capturedAt: row.gps_captured_at,
-              leafletData: row.gps_leaflet_data ? JSON.parse(row.gps_leaflet_data) : undefined
+              capturedAt: row.gps_captured_at ?? undefined,
+              leafletData: row.gps_leaflet_data ? JSON.parse(row.gps_leaflet_data) : undefined,
+              // Kanye9: Include geocode tier for accurate map zoom
+              geocodeTier: row.gps_geocode_tier ?? undefined,
+              geocodeQuery: row.gps_geocode_query ?? undefined,
             }
           : undefined,
       address: {
-        street: row.address_street,
-        city: row.address_city,
-        county: row.address_county,
-        state: row.address_state,
-        zipcode: row.address_zipcode,
-        confidence: row.address_confidence,
-        geocodedAt: row.address_geocoded_at
+        street: row.address_street ?? undefined,
+        city: row.address_city ?? undefined,
+        county: row.address_county ?? undefined,
+        state: row.address_state ?? undefined,
+        zipcode: row.address_zipcode ?? undefined,
+        confidence: (row.address_confidence ?? undefined) as any,
+        geocodedAt: row.address_geocoded_at ?? undefined
       },
-      condition: row.condition,
-      status: row.status,
-      documentation: row.documentation,
-      access: row.access,
+      condition: row.condition ?? undefined,
+      status: row.status ?? undefined,
+      documentation: row.documentation ?? undefined,
+      access: row.access ?? undefined,
       historic: row.historic === 1,
       favorite: row.favorite === 1,
-      hero_imgsha: row.hero_imgsha,
+      hero_imgsha: row.hero_imgsha ?? undefined,
       sublocs: row.sublocs ? JSON.parse(row.sublocs) : [],
-      sub12: row.sub12,
-      locadd: row.locadd,
-      locup: row.locup,
-      auth_imp: row.auth_imp,
+      sub12: row.sub12 ?? undefined,
+      locadd: row.locadd ?? new Date().toISOString(),
+      locup: row.locup ?? undefined,
+      auth_imp: row.auth_imp ?? undefined,
       regions: row.regions ? JSON.parse(row.regions) : [],
-      state: row.state
+      state: row.state ?? undefined
     };
   }
 

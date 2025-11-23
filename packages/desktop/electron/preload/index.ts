@@ -40,6 +40,27 @@ const api = {
     // FIX 6.7: Proximity search - find locations within radius
     findNearby: (lat: number, lng: number, radiusKm: number): Promise<Array<Location & { distance: number }>> =>
       ipcRenderer.invoke('location:findNearby', lat, lng, radiusKm),
+    // Kanye9: Check for duplicate locations by address
+    checkDuplicates: (address: {
+      street?: string | null;
+      city?: string | null;
+      county?: string | null;
+      state?: string | null;
+      zipcode?: string | null;
+    }): Promise<Array<{
+      id: string;
+      name: string;
+      confidence: number;
+      matchedFields: string[];
+      address: {
+        street?: string | null;
+        city?: string | null;
+        county?: string | null;
+        state?: string | null;
+        zipcode?: string | null;
+      };
+    }>> =>
+      ipcRenderer.invoke('location:checkDuplicates', address),
   },
 
   stats: {
@@ -99,6 +120,33 @@ const api = {
       source: 'nominatim' | 'cache';
     } | null> =>
       ipcRenderer.invoke('geocode:forward', address),
+    // Kanye9: Cascade geocoding - tries multiple strategies (full → city → zipcode → county → state)
+    forwardCascade: (address: {
+      street?: string | null;
+      city?: string | null;
+      county?: string | null;
+      state?: string | null;
+      zipcode?: string | null;
+    }): Promise<{
+      lat: number;
+      lng: number;
+      displayName: string;
+      address: {
+        street?: string;
+        city?: string;
+        county?: string;
+        state?: string;
+        stateCode?: string;
+        zipcode?: string;
+      };
+      confidence: 'high' | 'medium' | 'low';
+      source: 'nominatim' | 'cache';
+      cascadeTier: number;
+      cascadeDescription: string;
+      cascadeQuery: string;
+      expectedAccuracy: string;
+    } | null> =>
+      ipcRenderer.invoke('geocode:forwardCascade', address),
     clearCache: (daysOld?: number): Promise<{ deleted: number }> =>
       ipcRenderer.invoke('geocode:clearCache', daysOld),
   },

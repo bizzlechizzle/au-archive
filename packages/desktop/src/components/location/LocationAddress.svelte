@@ -4,6 +4,7 @@
    * Per LILBITS: ~100 lines, single responsibility
    * Per PUEA: Only show if address exists
    * Kanye8: Use getDisplayCity() to strip "Village of", "City of" prefixes
+   * Kanye9: All parts clickable, open on map link
    */
   import type { Location } from '@au-archive/core';
   import { getDisplayCity } from '@/lib/display-helpers';
@@ -11,14 +12,16 @@
   interface Props {
     address: Location['address'];
     onNavigateFilter: (type: string, value: string) => void;
+    onOpenOnMap?: () => void;
   }
 
-  let { address, onNavigateFilter }: Props = $props();
+  let { address, onNavigateFilter, onOpenOnMap }: Props = $props();
 
   function copyAddress() {
+    const displayCity = getDisplayCity(address?.city);
     const addr = [
       address?.street,
-      address?.city,
+      displayCity,
       address?.state,
       address?.zipcode
     ].filter(Boolean).join(', ');
@@ -27,6 +30,7 @@
 
   // PUEA: Only render if we have address data
   const hasAddress = $derived(address?.street || address?.city || address?.state);
+  const displayCity = $derived(getDisplayCity(address?.city));
 </script>
 
 {#if hasAddress}
@@ -47,16 +51,31 @@
 
     <div class="text-base text-gray-900 space-y-1">
       {#if address?.street}
-        <p class="font-medium">{address.street}</p>
+        <div class="flex items-center gap-2">
+          <p class="font-medium">{address.street}</p>
+          {#if onOpenOnMap}
+            <button
+              onclick={onOpenOnMap}
+              class="text-xs text-accent hover:underline flex items-center gap-1"
+              title="View this address on map"
+            >
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Map
+            </button>
+          {/if}
+        </div>
       {/if}
 
       <p>
-        {#if address?.city}
+        {#if displayCity}
           <button
-            onclick={() => onNavigateFilter('city', address!.city!)}
+            onclick={() => onNavigateFilter('city', getDisplayCity(address?.city))}
             class="text-accent hover:underline"
-            title="View all locations in {getDisplayCity(address.city)}"
-          >{getDisplayCity(address.city)}</button>{address?.state || address?.zipcode ? ', ' : ''}
+            title="View all locations in {getDisplayCity(address?.city)}"
+          >{getDisplayCity(address?.city)}</button>{address?.state || address?.zipcode ? ', ' : ''}
         {/if}
         {#if address?.state}
           <button
@@ -66,7 +85,11 @@
           >{address.state}</button>{' '}
         {/if}
         {#if address?.zipcode}
-          <span>{address.zipcode}</span>
+          <button
+            onclick={() => onNavigateFilter('zipcode', address!.zipcode!)}
+            class="text-accent hover:underline"
+            title="View all locations with zipcode {address.zipcode}"
+          >{address.zipcode}</button>
         {/if}
       </p>
 

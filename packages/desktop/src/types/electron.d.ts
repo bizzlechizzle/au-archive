@@ -21,6 +21,26 @@ export interface ElectronAPI {
     favorites: () => Promise<Location[]>;
     toggleFavorite: (id: string) => Promise<boolean>;
     findNearby: (lat: number, lng: number, radiusKm: number) => Promise<Array<Location & { distance: number }>>;
+    // Kanye9: Check for duplicate locations by address
+    checkDuplicates: (address: {
+      street?: string | null;
+      city?: string | null;
+      county?: string | null;
+      state?: string | null;
+      zipcode?: string | null;
+    }) => Promise<Array<{
+      id: string;
+      name: string;
+      confidence: number;
+      matchedFields: string[];
+      address: {
+        street?: string | null;
+        city?: string | null;
+        county?: string | null;
+        state?: string | null;
+        zipcode?: string | null;
+      };
+    }>>;
   };
 
   stats: {
@@ -71,6 +91,32 @@ export interface ElectronAPI {
       };
       confidence: 'high' | 'medium' | 'low';
       source: 'nominatim' | 'cache';
+    } | null>;
+    // Kanye9: Cascade geocoding - tries multiple strategies until one succeeds
+    forwardCascade: (address: {
+      street?: string | null;
+      city?: string | null;
+      county?: string | null;
+      state?: string | null;
+      zipcode?: string | null;
+    }) => Promise<{
+      lat: number;
+      lng: number;
+      displayName: string;
+      address: {
+        street?: string;
+        city?: string;
+        county?: string;
+        state?: string;
+        stateCode?: string;
+        zipcode?: string;
+      };
+      confidence: 'high' | 'medium' | 'low';
+      source: 'nominatim' | 'cache';
+      cascadeTier: number;
+      cascadeDescription: string;
+      cascadeQuery: string;
+      expectedAccuracy: string;
     } | null>;
     clearCache: (daysOld?: number) => Promise<{ deleted: number }>;
   };

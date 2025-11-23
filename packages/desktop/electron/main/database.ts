@@ -535,6 +535,38 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 11 completed: Darktable columns added');
     }
+
+    // Migration 12: Add address normalization columns to locs table
+    // Per Kanye9: Store both raw and normalized addresses for premium archive
+    const hasAddressRaw = locsColumnsCheck.some(col => col.name === 'address_raw');
+
+    if (!hasAddressRaw) {
+      console.log('Running migration 12: Adding address normalization columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN address_raw TEXT;
+        ALTER TABLE locs ADD COLUMN address_normalized TEXT;
+        ALTER TABLE locs ADD COLUMN address_parsed_json TEXT;
+        ALTER TABLE locs ADD COLUMN address_source TEXT;
+      `);
+
+      console.log('Migration 12 completed: address normalization columns added');
+    }
+
+    // Migration 13: Add GPS geocode tier columns to locs table
+    // Per Kanye9: Track which tier of cascade geocoding was used for accurate zoom levels
+    const hasGeocodeTier = locsColumnsCheck.some(col => col.name === 'gps_geocode_tier');
+
+    if (!hasGeocodeTier) {
+      console.log('Running migration 13: Adding GPS geocode tier columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN gps_geocode_tier INTEGER;
+        ALTER TABLE locs ADD COLUMN gps_geocode_query TEXT;
+      `);
+
+      console.log('Migration 13 completed: GPS geocode tier columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

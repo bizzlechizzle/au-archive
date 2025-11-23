@@ -129,9 +129,11 @@
     onMapRightClick?: (lat: number, lng: number) => void;
     // FIX 6.8: Enable heat map visualization
     showHeatMap?: boolean;
+    // Kanye9: Custom zoom level based on GPS confidence
+    zoom?: number;
   }
 
-  let { locations = [], onLocationClick, onMapClick, onMapRightClick, showHeatMap = false }: Props = $props();
+  let { locations = [], onLocationClick, onMapClick, onMapRightClick, showHeatMap = false, zoom }: Props = $props();
 
   /**
    * Escape HTML to prevent XSS attacks
@@ -346,9 +348,9 @@
       bounds.getEast(),
       bounds.getNorth(),
     ];
-    const zoom = map.getZoom();
+    const currentZoom = map.getZoom();
 
-    const clusters = cluster.getClusters(bbox, Math.floor(zoom));
+    const clusters = cluster.getClusters(bbox, Math.floor(currentZoom));
 
     clusters.forEach((feature: any) => {
       const [lng, lat] = feature.geometry.coordinates;
@@ -403,15 +405,16 @@
       }
     });
 
-    // Kanye6/Kanye8: For single location view, zoom to street level for exact GPS
-    // or city level for approximate (state capital fallback)
+    // Kanye6/Kanye8/Kanye9: For single location view, zoom based on GPS confidence
     // Kanye8 FIX: Removed DEFAULT_ZOOM check - always zoom for single location
     // This ensures re-zoom after forward geocoding updates GPS coordinates
+    // Kanye9: Use passed zoom prop if available for tier-based zoom levels
     if (locations.length === 1) {
       const coords = getLocationCoordinates(locations[0]);
       if (coords) {
+        // Use prop zoom if provided, otherwise fall back to calculated zoom
         // Street level zoom (17) for exact GPS, city level (10) for approximate
-        const zoomLevel = coords.isApproximate ? 10 : 17;
+        const zoomLevel = zoom ?? (coords.isApproximate ? 10 : 17);
         map.setView([coords.lat, coords.lng], zoomLevel);
       }
     }
