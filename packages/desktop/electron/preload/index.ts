@@ -402,6 +402,40 @@ const api = {
     },
   },
 
+  // Media operations (Phase 1-8 per kanye.md)
+  media: {
+    openFile: (filePath: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('media:openFile', filePath),
+    generateThumbnail: (sourcePath: string, hash: string): Promise<string | null> =>
+      ipcRenderer.invoke('media:generateThumbnail', sourcePath, hash),
+    extractPreview: (sourcePath: string, hash: string): Promise<string | null> =>
+      ipcRenderer.invoke('media:extractPreview', sourcePath, hash),
+    generatePoster: (sourcePath: string, hash: string): Promise<string | null> =>
+      ipcRenderer.invoke('media:generatePoster', sourcePath, hash),
+    getCached: (key: string): Promise<string | null> =>
+      ipcRenderer.invoke('media:getCached', key),
+    preload: (mediaList: Array<{ hash: string; path: string }>, currentIndex: number): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('media:preload', mediaList, currentIndex),
+    readXmp: (mediaPath: string): Promise<{
+      rating?: number;
+      label?: string;
+      keywords?: string[];
+      title?: string;
+      description?: string;
+    } | null> =>
+      ipcRenderer.invoke('media:readXmp', mediaPath),
+    writeXmp: (mediaPath: string, data: {
+      rating?: number;
+      label?: string;
+      keywords?: string[];
+      title?: string;
+      description?: string;
+    }): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('media:writeXmp', mediaPath, data),
+    regenerateAllThumbnails: (): Promise<{ generated: number; failed: number; total: number }> =>
+      ipcRenderer.invoke('media:regenerateAllThumbnails'),
+  },
+
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);
