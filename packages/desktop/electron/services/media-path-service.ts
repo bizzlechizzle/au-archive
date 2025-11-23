@@ -11,7 +11,13 @@ import fs from 'fs/promises';
  * Example: .thumbnails/a3/a3d5e8f9...jpg
  */
 export class MediaPathService {
-  constructor(private readonly archivePath: string) {}
+  constructor(private readonly archivePath: string) {
+    console.log('[DEBUG MediaPathService] constructor called with archivePath:', archivePath);
+    console.log('[DEBUG MediaPathService] typeof archivePath:', typeof archivePath);
+    if (typeof archivePath !== 'string') {
+      console.error('[DEBUG MediaPathService] ERROR: archivePath is NOT a string!', JSON.stringify(archivePath));
+    }
+  }
 
   // === Directory Getters ===
 

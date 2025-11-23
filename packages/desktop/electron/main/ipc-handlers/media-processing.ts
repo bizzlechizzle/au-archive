@@ -32,6 +32,9 @@ export function registerMediaProcessingHandlers(
 
   const getArchivePath = async (): Promise<string> => {
     const result = await db.selectFrom('settings').select('value').where('key', '=', 'archive_folder').executeTakeFirst();
+    console.log('[DEBUG getArchivePath] result:', result);
+    console.log('[DEBUG getArchivePath] result?.value:', result?.value);
+    console.log('[DEBUG getArchivePath] typeof result?.value:', typeof result?.value);
     if (!result?.value) throw new Error('Archive path not configured');
     return result.value;
   };
