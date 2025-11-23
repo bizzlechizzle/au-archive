@@ -1,0 +1,79 @@
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - 8090:8090 # qBittorrent UI
+      - 9696:9696 # Prowlarr UI
+    volumes:
+      - /volume3/docker/storagami/vpn-project/gluetun:/gluetun
+    environment:
+      - PUID=1027
+      - PGID=65536
+      - TZ=America/New_York
+      - VPN_SERVICE_PROVIDER=protonvpn
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - SERVER_COUNTRIES=United States
+      - PORT_FORWARD_ONLY=on
+      - VPN_PORT_FORWARDING=on
+      - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- --retry-connrefused --post-data "json={\"listen_port\":{{PORTS}}}" http://172.20.0.1:8090/api/v2/app/setPreferences 2>&1'
+      - HTTPPROXY=off
+      - SHADOWSOCKS=off
+      - FIREWALL_OUTBOUND_SUBNETS=172.20.0.0/16,192.168.4.0/24
+    network_mode: synobridge
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+    security_opt:
+      - no-new-privileges:true
+    restart: always
+
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=1027
+      - PGID=65536
+      - TZ=America/New_York
+      - WEBUI_PORT=8090
+      - UMASK=022
+    volumes:
+      - /volume3/docker/storagami/vpn-project/qbittorrent:/config
+      - /volume1/media/torrents:/media/torrents
+    network_mode: service:gluetun # tells qbit to use gluetun's network
+    security_opt:
+      - no-new-privileges:true
+    restart: always
+
+  prowlarr:
+    image: linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1027
+      - PGID=65536
+      - TZ=America/New_York
+    volumes:
+      - /volume3/docker/storagami/vpn-project/prowlarr:/config
+    network_mode: service:gluetun # routes prowlarr through VPN
+    security_opt:
+      - no-new-privileges:true
+    restart: always
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=info
+      - LOG_HTML=false
+      - CAPTCHA_SOLVER=none
+      - TZ=America/New_York
+    ports:
+      - 8191:8191
+    network_mode: synobridge
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
