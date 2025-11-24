@@ -88,9 +88,16 @@ This document outlines the next cleanup steps to get us closer to launch.
 
 ### General App
 
-**[ ] Remove Darktable**
+**[ ] Remove Darktable Completely**
 - Remove darktable and any mention of it from scripts, install, etc.
+- Remove "Darktable RAW Processing" section
+- Remove "Darktable CLI Not Found" message
+- Remove "Install Darktable for premium RAW processing: darktable.org/install"
 - Not using this app
+
+**[ ] Navigation: Move Atlas to top**
+- Move Atlas to the top option in navigation
+- Still default to Dashboard page on app load
 
 ---
 
