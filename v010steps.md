@@ -24,6 +24,16 @@ This document outlines the next cleanup steps to get us closer to launch.
 **State**
 - Used for folders, needed for state-type folder structure
 
+#### State/Type Field Dependencies
+
+**[ ] Type depends on State**
+- Type dropdown only shows options available for the selected State
+- Filter Type options based on current State selection
+
+**[ ] Smart defaults on change**
+- If State changes → default Type to "all" if current Type has no results in new State
+- If Type changes → default State to "all" if current Type has no results in current State
+
 ---
 
 #### Document Field Updates
