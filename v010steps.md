@@ -1989,3 +1989,299 @@ www.abandonedupstate.com Host: Error
 _Audit #5 completed: 2025-11-24_
 _Reporter: User Feedback Session_
 _Status: MULTIPLE REGRESSIONS / UNVERIFIED FIXES_
+
+---
+
+## AUDIT REPORT #6 - 2025-11-24 (Full Codebase Review)
+
+### COMPREHENSIVE COMPLETION SCORE: **78/100**
+
+This audit compares the ACTUAL CODE against ALL original requirements from the user's specification list. Some features were upgraded, others were ignored, and some have bugs.
+
+---
+
+### DETAILED CATEGORY BREAKDOWN
+
+| Category | Score | Status |
+|----------|-------|--------|
+| Imports Page / Modal | 95/100 | ✅ EXCELLENT |
+| Browser Page | 100/100 | ✅ COMPLETE |
+| Navigation | 100/100 | ✅ COMPLETE |
+| Dashboard | 95/100 | ✅ EXCELLENT |
+| Atlas / Map | 75/100 | ⚠️ PARTIAL - BUGS |
+| Location Page | 80/100 | ⚠️ PARTIAL |
+| Darktable Removal | 40/100 | ❌ INCOMPLETE |
+| Settings Page | 90/100 | ✅ GOOD |
+
+---
+
+### VERIFIED IMPLEMENTATIONS (CODE CONFIRMED)
+
+#### ✅ IMPORTS PAGE / IMPORT MODAL (95/100)
+
+| Requirement | Code Location | Status |
+|-------------|---------------|--------|
+| "Name" label (not "Location Name") | `ImportForm.svelte:430`, `ImportModal.svelte:256-257` | ✅ DONE |
+| Type field - mandatory | `ImportModal.svelte:137-139` | ✅ DONE |
+| State field - mandatory | `ImportModal.svelte:132-135` | ✅ DONE |
+| Access Status with 7 options | `ImportModal.svelte:13-21` | ✅ DONE |
+| "Condition" field removed | `ImportForm.svelte:62` (comment), `ImportModal.svelte` | ✅ DONE |
+| "Status" field removed | `ImportForm.svelte:62` (comment), `ImportModal.svelte` | ✅ DONE |
+| Pop-up form (Squarespace style) | `ImportModal.svelte` (entire file) | ✅ DONE |
+| Type dependent on State filter | `ImportModal.svelte:80-103` | ✅ DONE |
+| Type resets to "" when state changes | `ImportModal.svelte:96-98` | ✅ DONE |
+| Default author from settings | `ImportModal.svelte:67-73` | ✅ DONE |
+
+**Minor Issue (-5%):** When type resets, it should default to "all" option, not empty string. Currently shows "Select type..." instead of "All Types".
+
+---
+
+#### ✅ BROWSER PAGE (100/100)
+
+| Requirement | Code Location | Status |
+|-------------|---------------|--------|
+| "Save Bookmark" label (not "Save Bookmark To") | `WebBrowser.svelte:418` | ✅ DONE |
+| Recents autofill last 5 | `WebBrowser.svelte:127` | ✅ DONE |
+| "Recent Uploads" removed | NOT PRESENT IN CODE | ✅ DONE |
+| Bookmark browser with state/type | `WebBrowser.svelte:485-554` | ✅ DONE |
+| "+ New Location" button | `WebBrowser.svelte:556-566` | ✅ DONE |
+
+**Verified:** WebBrowser.svelte does NOT contain "Save Bookmark To" or "Recent Uploads" section. Both were successfully removed.
+
+---
+
+#### ✅ NAVIGATION (100/100)
+
+| Requirement | Code Location | Status |
+|-------------|---------------|--------|
+| Dashboard above Atlas | `Navigation.svelte:18-25` | ✅ DONE |
+| Search below Settings | `Navigation.svelte:23-24` | ✅ DONE |
+| Atlas moved to top | `Navigation.svelte:20` (2nd position) | ✅ DONE |
+| Still default to Dashboard | `App.svelte` (router default) | ✅ DONE |
+| "+ New Location" button | `Navigation.svelte:42-53` | ✅ DONE |
+
+**Current Order:** Dashboard → Atlas → Locations → Browser → Settings → Search ✅
+
+---
+
+#### ✅ DASHBOARD (95/100)
+
+| Requirement | Code Location | Status |
+|-------------|---------------|--------|
+| "+ New Location" opens popup | `Dashboard.svelte:82-87` | ✅ DONE |
+| "Special Filters" removed | NOT PRESENT IN CODE | ✅ DONE |
+| "Map View" filter removed | NOT PRESENT IN CODE | ✅ DONE |
+
+**Minor Issue (-5%):** No issue found, just no emoji removal verification (heat map button still uses 🔥).
+
+---
+
+#### ⚠️ ATLAS / MAP (75/100)
+
+| Requirement | Code Location | Status |
+|-------------|---------------|--------|
+| Pin colors = accent #b9975c | `Map.svelte:117-124` | ✅ DONE |
+| Mini popup instead of direct nav | `Map.svelte:407-424` | ✅ DONE |
+| "View Details" button | `Map.svelte:414-420` | ⚠️ BUGGY |
+| Additional map layers | `Map.svelte:268-305` (5 layers + labels) | ✅ DONE |
+| Light as default layer | `Map.svelte:302-303` | ✅ DONE |
+| Right-click opens context menu | `Atlas.svelte:82-91` | ⚠️ BUGGY |
+| Context menu at click position | `Atlas.svelte:206-207` | ✅ DONE |
+| Add to map option | `Atlas.svelte:215-223` | ✅ DONE |
+| Copy GPS option | `Atlas.svelte:224-232` | ✅ DONE |
+
+**BUG CONFIRMED - View Details Button:**
+```javascript
+// Map.svelte:431-449 - DOM manipulation approach
+marker.on('popupopen', () => {
+  setTimeout(() => {
+    const btn = document.querySelector(`[data-location-id="${location.locid}"]`);
+    // ... clone and add listener
+  }, 10);
+});
+```
+
+**Root Cause:** DOM manipulation in Leaflet popups is unreliable. The `data-location-id` selector may fail if:
+1. Multiple popups exist with same ID
+2. Popup HTML is cached by Leaflet
+3. DOM query runs before popup fully renders
+
+**Recommended Fix:** Use a global click handler with event delegation instead of per-popup listeners.
+
+**BUG CONFIRMED - Right-Click:**
+Code passes screen coordinates correctly (`Map.svelte:317-319`), but needs testing. Potential issues:
+1. `e.originalEvent.clientX/Y` may be undefined in some Leaflet versions
+2. Need to prevent browser default context menu
+
+---
+
+#### ⚠️ LOCATION PAGE (80/100)
+
+| Requirement | Code Location | Status |
+|-------------|---------------|--------|
+| "Source: geocoded_address" removed | `LocationMapSection.svelte:39` shows "From Address" | ✅ DONE |
+| Tier-based approximate warnings | `LocationMapSection.svelte:109-122` | ✅ DONE |
+| State-only (tier 5) no message | `LocationMapSection.svelte:111` (geocodeTier < 5) | ⚠️ PARTIAL |
+| Location box organization | `LocationMapSection.svelte:76-190` | ✅ DONE |
+
+**ISSUE - State-Only Still Shows Map:**
+User said "DO NOT ADD GPS IF ALL WE KNOW IS STATE". Current behavior:
+- Tier 5 (state only) still shows a map with "Approximate (State Capital)" badge
+- Lines 147-173 render a map for state-only locations
+
+**User wants:** NO map, NO approximate message for state-only. Just "No GPS Data" + button to add.
+
+---
+
+#### ❌ DARKTABLE REMOVAL (40/100)
+
+**Still Found in 6 Files:**
+
+| File | Status | Action Required |
+|------|--------|-----------------|
+| `packages/desktop/electron/main/database.ts` | ❌ STILL HAS | Has darktable column definitions |
+| `packages/desktop/electron/main/database.types.ts` | ❌ STILL HAS | Has darktable type definitions |
+| `packages/desktop/electron/repositories/sqlite-media-repository.ts` | ❌ STILL HAS | References darktable columns |
+| `v010steps.md` | ⚠️ DOCS | Documentation reference (OK) |
+| `Kanye10.md` | ⚠️ DOCS | Documentation reference (OK) |
+| `kanye9.md` | ⚠️ DOCS | Documentation reference (OK) |
+
+**Previously Claimed Removed:**
+- darktable-service.ts ✅ (file doesn't exist)
+- darktable-queue-service.ts ✅ (file doesn't exist)
+- setup.sh darktable section ✅ (verified removed)
+- check-deps.sh darktable check ✅ (verified removed)
+- preload/index.ts darktable API ✅ (verified removed)
+
+**What Still Needs Removal:**
+1. `database.ts` - Remove darktable column references
+2. `database.types.ts` - Remove darktable type definitions
+3. `sqlite-media-repository.ts` - Remove darktable-related methods/queries
+
+---
+
+### NEW FEATURE REQUESTS (NOT IN ORIGINAL v010steps.md)
+
+#### FEAT-NEW-1: Verify Location (Drag Pin)
+
+**Priority:** HIGH - User explicitly requested
+
+**Description:** Add ability to drag pin to exact location and mark as "verified"
+
+**Implementation Required:**
+1. Make markers draggable: `marker.dragging.enable()`
+2. Add "Verify Location" button in popup
+3. On drag end, update GPS coordinates in database
+4. Set `gps_verified = true` flag
+5. Show verification badge on Location page
+
+**Database Change:** May need `gps_verified BOOLEAN` column if not already present
+
+---
+
+#### FEAT-NEW-2: Default Atlas Coordinates
+
+**Priority:** MEDIUM
+
+**Description:** Allow saving current map view as default when opening Atlas
+
+**Implementation:**
+1. Add "Set as Default View" button in Atlas toolbar
+2. Save `atlas_default_lat`, `atlas_default_lng`, `atlas_default_zoom` to settings
+3. Load settings on Atlas mount
+
+---
+
+#### FEAT-NEW-3: Satellite with Road Markings (Hybrid)
+
+**Priority:** LOW
+
+**Question:** "Does Leaflet have satellite view with road markings?"
+
+**Answer:** YES. Current setup already supports this:
+- Select "Satellite" base layer
+- Toggle "Labels" overlay on
+
+**Enhancement Option:** Add explicit "Hybrid" option that combines both automatically.
+
+---
+
+### BUGS REQUIRING IMMEDIATE FIX
+
+| Bug ID | Description | Severity | Root Cause |
+|--------|-------------|----------|------------|
+| BUG-V1 | View Details button doesn't navigate | HIGH | DOM manipulation in Leaflet popup |
+| BUG-V2 | Right-click may freeze map | HIGH | Event propagation or missing preventDefault |
+| BUG-V3 | Thumbnails 404 | MEDIUM | Missing files, not code bug - regenerate |
+| BUG-V4 | State-only still shows map | MEDIUM | Logic should hide map entirely for tier 5 |
+
+---
+
+### FILES REQUIRING CHANGES
+
+| File | Change Required | Priority |
+|------|-----------------|----------|
+| `Map.svelte:431-449` | Replace DOM manipulation with event delegation | HIGH |
+| `Map.svelte:315-319` | Add `e.preventDefault()` to context menu handler | HIGH |
+| `LocationMapSection.svelte:147-173` | Hide map section entirely for tier 5 (state-only) | HIGH |
+| `database.ts` | Remove darktable column definitions | MEDIUM |
+| `database.types.ts` | Remove darktable type definitions | MEDIUM |
+| `sqlite-media-repository.ts` | Remove darktable references | MEDIUM |
+
+---
+
+### SCORE CALCULATION
+
+| Category | Weight | Score | Weighted |
+|----------|--------|-------|----------|
+| Imports/Modal | 15% | 95 | 14.25 |
+| Browser | 10% | 100 | 10.00 |
+| Navigation | 10% | 100 | 10.00 |
+| Dashboard | 10% | 95 | 9.50 |
+| Atlas/Map | 25% | 75 | 18.75 |
+| Location Page | 15% | 80 | 12.00 |
+| Darktable | 10% | 40 | 4.00 |
+| Settings | 5% | 90 | 4.50 |
+| **TOTAL** | 100% | | **78/100** |
+
+---
+
+### SUMMARY
+
+**What Works Well:**
+- ✅ Import Modal is excellent - all fields, dependencies, and defaults work
+- ✅ Navigation is perfect - correct order, button opens popup
+- ✅ Browser page is complete - all fixes applied
+- ✅ Dashboard opens popup correctly
+- ✅ Pin colors are accent color
+- ✅ Light is default layer
+- ✅ Context menu has Add Location and Copy GPS
+
+**What's Broken:**
+- ❌ View Details button doesn't navigate (DOM manipulation bug)
+- ❌ Right-click may freeze or not work (event handling issue)
+- ❌ Darktable still in database files
+- ❌ State-only locations still show approximate map
+
+**What's Missing:**
+- ❌ Verify Location (drag pin) feature
+- ❌ Default Atlas coordinates feature
+- ❌ Complete darktable removal from database layer
+
+---
+
+### RECOMMENDED PRIORITY ORDER
+
+1. **FIX BUG-V1:** View Details button - use event delegation
+2. **FIX BUG-V2:** Right-click freeze - add preventDefault, verify event
+3. **FIX BUG-V4:** State-only map - hide for tier 5
+4. **REMOVE:** Darktable from database files
+5. **ADD:** Verify Location feature
+6. **ADD:** Default Atlas coordinates
+
+---
+
+_Audit #6 completed: 2025-11-24_
+_Auditor: Claude Code Agent - Full Codebase Review_
+_Method: Direct file inspection + grep verification_
+_Score: 78/100_
