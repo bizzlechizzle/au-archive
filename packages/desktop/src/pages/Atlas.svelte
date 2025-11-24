@@ -79,13 +79,12 @@
     closeContextMenu();
   }
 
-  function handleMapRightClick(lat: number, lng: number) {
-    // P3d: Show context menu with options instead of direct action
-    // Get mouse position from the event (we'll use a workaround since we don't have direct event access)
+  function handleMapRightClick(lat: number, lng: number, screenX: number, screenY: number) {
+    // BUG-2 FIX: Position context menu at actual click location
     contextMenu = {
       show: true,
-      x: window.innerWidth / 2, // Center horizontally as fallback
-      y: window.innerHeight / 2, // Center vertically as fallback
+      x: screenX,
+      y: screenY,
       lat,
       lng,
     };
@@ -201,11 +200,11 @@
       </div>
     {/if}
 
-    <!-- P3d: Right-click context menu -->
+    <!-- BUG-2 FIX: Right-click context menu positioned at click location -->
     {#if contextMenu.show}
       <div
         class="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[160px]"
-        style="left: 50%; top: 50%; transform: translate(-50%, -50%);"
+        style="left: {Math.min(contextMenu.x, window.innerWidth - 180)}px; top: {Math.min(contextMenu.y, window.innerHeight - 150)}px;"
         onclick={(e) => e.stopPropagation()}
       >
         <div class="px-3 py-2 border-b border-gray-100">

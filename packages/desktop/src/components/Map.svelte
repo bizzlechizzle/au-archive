@@ -128,7 +128,8 @@
     locations?: Location[];
     onLocationClick?: (location: Location) => void;
     onMapClick?: (lat: number, lng: number) => void;
-    onMapRightClick?: (lat: number, lng: number) => void;
+    // BUG-2 FIX: Pass screen coordinates for context menu positioning
+    onMapRightClick?: (lat: number, lng: number, screenX: number, screenY: number) => void;
     // FIX 6.8: Enable heat map visualization
     showHeatMap?: boolean;
     // Kanye9: Custom zoom level based on GPS confidence
@@ -298,9 +299,8 @@
         }),
       };
 
-      // Kanye11: Default to Satellite with Labels overlay for premium UX
-      baseLayers['Satellite'].addTo(map);
-      overlayLayers['Labels'].addTo(map);
+      // FEAT-6: Default to Light view per user request
+      baseLayers['Light'].addTo(map);
 
       L.control.layers(baseLayers, overlayLayers).addTo(map);
 
@@ -314,7 +314,8 @@
 
       map.on('contextmenu', (e) => {
         if (onMapRightClick) {
-          onMapRightClick(e.latlng.lat, e.latlng.lng);
+          // BUG-2 FIX: Pass screen coordinates for context menu positioning
+          onMapRightClick(e.latlng.lat, e.latlng.lng, e.originalEvent.clientX, e.originalEvent.clientY);
         }
       });
 
@@ -427,16 +428,24 @@
           marker.openPopup();
         });
 
-        // Handle "View Details" button click via popup open event
+        // BUG-3 FIX: Handle "View Details" button click via popup open event
+        // Use setTimeout to ensure DOM is ready after popup renders
         marker.on('popupopen', () => {
-          const btn = document.querySelector(`[data-location-id="${location.locid}"]`);
-          if (btn) {
-            btn.addEventListener('click', () => {
-              if (onLocationClick) {
-                onLocationClick(location);
-              }
-            });
-          }
+          setTimeout(() => {
+            const btn = document.querySelector(`[data-location-id="${location.locid}"]`) as HTMLButtonElement;
+            if (btn) {
+              // Remove any existing listeners to prevent duplicates
+              const newBtn = btn.cloneNode(true) as HTMLButtonElement;
+              btn.parentNode?.replaceChild(newBtn, btn);
+              newBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (onLocationClick) {
+                  onLocationClick(location);
+                }
+              });
+            }
+          }, 10);
         });
 
         markersLayer.addLayer(marker);

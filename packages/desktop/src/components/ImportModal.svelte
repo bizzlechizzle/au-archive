@@ -46,7 +46,7 @@
   let saving = $state(false);
   let error = $state('');
 
-  // Load states and types from database
+  // Load states, types, and default author from database/settings
   async function loadOptions() {
     try {
       const locations = await window.electronAPI.locations.findAll();
@@ -63,6 +63,14 @@
       availableStates = Array.from(states).sort();
       allTypes = Array.from(types).sort();
       availableTypes = allTypes;
+
+      // FEAT-7: Load default author from settings
+      if (window.electronAPI?.settings) {
+        const settings = await window.electronAPI.settings.getAll();
+        if (settings.current_user && !author) {
+          author = settings.current_user;
+        }
+      }
     } catch (err) {
       console.error('Error loading options:', err);
     }
