@@ -86,6 +86,39 @@ This document outlines the next cleanup steps to get us closer to launch.
 
 ---
 
+### General App
+
+**[ ] Remove Darktable**
+- Remove darktable and any mention of it from scripts, install, etc.
+- Not using this app
+
+---
+
+### Browser
+
+**Bug: abandonedupstate.com fails in internal browser**
+- [ ] Investigate why abandonedupstate.com fails on internal browser but works on real internet
+
+**[ ] Rename "Save Bookmark To" → "Save Bookmark"**
+
+**Bug: Save Bookmark → Recents not autofilling**
+- [ ] Why isn't this autofilling the last 5 recent locations?
+
+**[ ] Remove "Recent Uploads"**
+- Not needed - just need recent locations
+
+**Bookmarks Browser**
+- [ ] Should each state and type be pre-filled in the database?
+
+---
+
+### Current Page
+
+**[ ] Add "New Location" button**
+- Opens the new pop-up locations import form
+
+---
+
 ## Questions to Explore
 
 1. Data migration strategy for removing Condition/Status fields?
