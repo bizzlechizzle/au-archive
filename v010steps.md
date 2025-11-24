@@ -648,11 +648,15 @@ WEEK 4: Polish & Fixes
    - After successful creation: close modal → navigate to location detail page
    - User can then add GPS, address, and other Step 2 details
 
-## Open Questions
+5. **Bookmarks Browser:** ✅ Yes, necessary
+   - Pre-fill State/Type dropdowns from database
+   - Same pattern as Import Modal dropdowns
 
-5. **Bookmarks Browser:** Is pre-filling state/type necessary or nice-to-have?
-
-6. **Right-Click GPS:** What exactly should "Add to map" do in the context menu?
+6. **Right-Click GPS:** ✅ Open Import Modal with pre-filled GPS
+   - Right-click on map → get lat/lng coordinates
+   - Open Import Modal with GPS pre-filled
+   - User completes rest of form (Name, Type, State, etc.)
+   - Matches GPS-first workflow from claude.md
 
 ---
 
