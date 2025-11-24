@@ -12,15 +12,16 @@
     return () => unsubscribe();
   });
 
-  // P1/P7a: Navigation menu items - Atlas moved to top, Imports removed (replaced by modal)
-  // Per v010steps.md: Atlas at top, still default to Dashboard on app load
+  // FEAT-4: Navigation reorder per user request
+  // Order: Dashboard, Atlas, Locations, Browser, Settings, Search
+  // Still default to Dashboard on app load (see App.svelte)
   const menuItems = [
-    { path: '/atlas', label: 'Atlas', icon: 'map' },
     { path: '/dashboard', label: 'Dashboard', icon: 'grid' },
+    { path: '/atlas', label: 'Atlas', icon: 'map' },
     { path: '/locations', label: 'Locations', icon: 'list' },
     { path: '/browser', label: 'Browser', icon: 'globe' },
-    { path: '/search', label: 'Search', icon: 'search' },
     { path: '/settings', label: 'Settings', icon: 'cog' },
+    { path: '/search', label: 'Search', icon: 'search' },
   ];
 
   function navigate(path: string) {
