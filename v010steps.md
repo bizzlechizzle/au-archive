@@ -47,21 +47,29 @@ This document outlines the next cleanup steps to get us closer to launch.
 
 **Pop-up Import Form** ✓ CONFIRMED
 - Implement import form as a modal/dialog component
-- Available globally across all pages
+- Available globally - anywhere, anytime
 - [ ] Wrap import form in modal component
 - [ ] Add trigger button in header/nav ("+ Add Location")
 - [ ] Consider floating action button (FAB) option
 - [ ] Optional: keyboard shortcut (e.g., `Ctrl+I` or `N`)
 
+**Pop-up Form Fields (Step 1 - Quick Add):**
+- Name
+- Type
+- State
+- Author
+- Documentation Level
+- Access Status
+
+**Separate Step (Step 2 - Details):**
+- GPS coordinates
+- Location details
+
 **Benefits:**
 - No page navigation needed
 - Quick access from browse, dashboard, anywhere
 - Consistent experience
-- Form state can be preserved if accidentally closed
-
-**Open Questions:**
-- Full form or simplified "quick add" version?
-- Post-submit behavior: close modal, show success, navigate to record?
+- Streamlined entry - essential fields first, details later
 
 ---
 
