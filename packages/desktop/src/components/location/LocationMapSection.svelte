@@ -108,15 +108,7 @@
 <div class="bg-white rounded-lg shadow">
   <!-- Header: Location with verification status and edit button (DECISION-013: No border) -->
   <div class="flex items-center justify-between px-6 py-4">
-    <div class="flex items-center gap-2">
-      <h2 class="text-xl font-semibold text-foreground">Location</h2>
-      <!-- DECISION-016: Overall location verification dot -->
-      {#if isAddressVerified && isGpsVerified}
-        <span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" title="Location verified"></span>
-      {:else}
-        <span class="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" title="Location incomplete"></span>
-      {/if}
-    </div>
+    <h2 class="text-xl font-semibold text-foreground">Location</h2>
     <button
       onclick={() => showEditModal = true}
       class="px-3 py-1.5 text-sm text-accent border border-accent rounded hover:bg-accent hover:text-white transition flex items-center gap-1.5"
@@ -130,15 +122,7 @@
 
   <!-- SECTION 1: Mailing Address (DECISION-013: No borders, copy below content) -->
   <div class="px-6 py-4">
-    <div class="flex items-center gap-2 mb-2">
-      <h3 class="section-title">Mailing Address</h3>
-      <!-- DECISION-016: Address verification dot -->
-      {#if isAddressVerified}
-        <span class="w-2 h-2 rounded-full bg-green-500 inline-block" title="Address verified"></span>
-      {:else}
-        <span class="w-2 h-2 rounded-full bg-red-400 inline-block" title="Address incomplete"></span>
-      {/if}
-    </div>
+    <h3 class="section-title mb-2">Mailing Address</h3>
 
     {#if hasAddress}
       <div class="text-base text-gray-900 space-y-0.5">
@@ -195,15 +179,7 @@
 
   <!-- SECTION 2: GPS + Mini Map (DECISION-013: No borders, copy below content) -->
   <div class="px-6 py-4">
-    <div class="flex items-center gap-2 mb-2">
-      <h3 class="section-title">GPS</h3>
-      <!-- DECISION-016: GPS verification dot -->
-      {#if isGpsVerified}
-        <span class="w-2 h-2 rounded-full bg-green-500 inline-block" title="GPS verified on map"></span>
-      {:else}
-        <span class="w-2 h-2 rounded-full bg-red-400 inline-block" title="GPS not verified"></span>
-      {/if}
-    </div>
+    <h3 class="section-title mb-2">GPS</h3>
 
     {#if hasGps}
       <button
@@ -258,15 +234,7 @@
 
   <!-- SECTION 3: Area (DECISION-012: County + Census Region/Division + Direction + Cultural Region) -->
   <div class="px-6 py-4">
-    <div class="flex items-center gap-2 mb-2">
-      <h3 class="section-title">Area</h3>
-      <!-- DECISION-016: Area verification dot -->
-      {#if isAreaVerified}
-        <span class="w-2 h-2 rounded-full bg-green-500 inline-block" title="Area data available"></span>
-      {:else}
-        <span class="w-2 h-2 rounded-full bg-red-400 inline-block" title="Area data incomplete"></span>
-      {/if}
-    </div>
+    <h3 class="section-title mb-2">Area</h3>
 
     {#if hasAreaData}
       <div class="space-y-1 text-sm text-gray-700">
