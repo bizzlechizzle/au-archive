@@ -3,31 +3,16 @@
    * ImportModal.svelte
    * P1: Global pop-up import form for creating new locations
    * Per v010steps.md - accessible anywhere, replaces /imports page
+   * Refactored: Uses shared constants and AutocompleteInput for state
    */
   import { onMount } from 'svelte';
+  import type { Location } from '@au-archive/core';
   import { importModal, closeImportModal } from '../stores/import-modal-store';
   import { router } from '../stores/router';
   import { toasts } from '../stores/toast-store';
-
-  // P0: Access options - consolidated from condition/status per v010steps.md
-  const ACCESS_OPTIONS = [
-    'Abandoned',
-    'Demolished',
-    'Active',
-    'Partially Active',
-    'Future Classic',
-    'Vacant',
-    'Unknown',
-  ];
-
-  const DOCUMENTATION_OPTIONS = [
-    'Interior + Exterior',
-    'Exterior Only',
-    'Perimeter Only',
-    'Drive-By',
-    'No Visit / Keyboard Scout',
-    'Drone Only',
-  ];
+  import AutocompleteInput from './AutocompleteInput.svelte';
+  import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
+  import { DOCUMENTATION_OPTIONS, ACCESS_OPTIONS } from '../constants/location-enums';
 
   // Form state
   let name = $state('');
@@ -38,7 +23,7 @@
   let access = $state('');
 
   // P2: Database-driven lists
-  let availableStates = $state<string[]>([]);
+  let allLocations = $state<Location[]>([]);
   let availableTypes = $state<string[]>([]);
   let allTypes = $state<string[]>([]);
 
@@ -46,21 +31,86 @@
   let saving = $state(false);
   let error = $state('');
 
-  // Load states, types, and default author from database/settings
+  // Generate state suggestions (all US states formatted)
+  function getStateSuggestions(): string[] {
+    const existingStates = new Set<string>();
+    allLocations.forEach(loc => {
+      if (loc.address?.state) {
+        const code = loc.address.state.toUpperCase();
+        const fullName = Object.entries(STATE_ABBREVIATIONS).find(([_, abbr]) => abbr === code)?.[0];
+        if (fullName) {
+          const titleCased = fullName.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+          existingStates.add(`${code} (${titleCased})`);
+        } else {
+          existingStates.add(code);
+        }
+      }
+    });
+
+    const allStates = Object.entries(STATE_ABBREVIATIONS).map(([name, code]) => {
+      const titleCased = name.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+      return `${code} (${titleCased})`;
+    });
+
+    const merged = new Set([...existingStates, ...allStates]);
+    return Array.from(merged).sort();
+  }
+
+  // Normalize state input - accepts full name or code
+  function handleStateChange(value: string) {
+    if (!value) {
+      selectedState = '';
+      return;
+    }
+
+    // Extract just the code if format is "NY (New York)"
+    const codeMatch = value.match(/^([A-Z]{2})\s*\(/);
+    if (codeMatch) {
+      selectedState = codeMatch[1];
+      return;
+    }
+
+    // Try to convert full name to code
+    const code = getStateCodeFromName(value);
+    if (code) {
+      selectedState = code;
+      return;
+    }
+
+    // Otherwise store as-is (will be uppercased)
+    selectedState = value.toUpperCase().substring(0, 2);
+  }
+
+  // Get type suggestions from existing locations
+  function getTypeSuggestions(): string[] {
+    const types = new Set<string>();
+    allLocations.forEach(loc => {
+      if (loc.type) types.add(loc.type);
+    });
+    return Array.from(types).sort();
+  }
+
+  // Get author suggestions from existing locations
+  function getAuthorSuggestions(): string[] {
+    const authors = new Set<string>();
+    allLocations.forEach(loc => {
+      if (loc.auth_imp) authors.add(loc.auth_imp);
+    });
+    return Array.from(authors).sort();
+  }
+
+  // Load locations and default author from database/settings
   async function loadOptions() {
     try {
       const locations = await window.electronAPI.locations.findAll();
+      allLocations = locations;
 
-      // Extract unique states
-      const states = new Set<string>();
+      // Extract unique types
       const types = new Set<string>();
-
       locations.forEach((loc: any) => {
-        if (loc.address?.state) states.add(loc.address.state);
         if (loc.type) types.add(loc.type);
       });
 
-      availableStates = Array.from(states).sort();
       allTypes = Array.from(types).sort();
       availableTypes = allTypes;
 
@@ -123,6 +173,13 @@
     }
   });
 
+  // Re-load settings when modal opens (to restore author after resetForm)
+  $effect(() => {
+    if ($importModal.isOpen) {
+      loadOptions();
+    }
+  });
+
   async function handleSubmit() {
     if (!name.trim()) {
       error = 'Name is required';
@@ -131,6 +188,11 @@
 
     if (!selectedState) {
       error = 'State is required';
+      return;
+    }
+
+    if (selectedState.length !== 2) {
+      error = 'State must be 2-letter postal abbreviation (e.g., NY, CA)';
       return;
     }
 
@@ -214,9 +276,9 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if $importModal.isOpen}
-  <!-- Backdrop -->
+  <!-- Backdrop (DECISION-013: z-[99999] ensures modal appears above maps) -->
   <div
-    class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+    class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[99999]"
     onclick={handleCancel}
     role="dialog"
     aria-modal="true"
@@ -224,7 +286,7 @@
   >
     <!-- Modal -->
     <div
-      class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
+      class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto relative z-[100000]"
       onclick={(e) => e.stopPropagation()}
     >
       <!-- Header -->
@@ -266,58 +328,54 @@
           />
         </div>
 
-        <!-- State (required) -->
+        <!-- State (required) - Now with AutocompleteInput -->
         <div>
           <label for="loc-state" class="block text-sm font-medium text-gray-700 mb-1">
             State <span class="text-red-500">*</span>
           </label>
-          <select
+          <AutocompleteInput
+            value={selectedState}
+            onchange={handleStateChange}
+            suggestions={getStateSuggestions()}
             id="loc-state"
-            bind:value={selectedState}
-            disabled={saving}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-          >
-            <option value="">Select state...</option>
-            {#each availableStates as state}
-              <option value={state}>{state}</option>
-            {/each}
-          </select>
-          <p class="text-xs text-gray-500 mt-1">States with existing locations</p>
+            placeholder="NY or New York"
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 uppercase"
+          />
+          <p class="text-xs text-gray-500 mt-1">Type 2-letter code or full state name</p>
         </div>
 
-        <!-- Type (required) -->
+        <!-- Type (required) - AutocompleteInput with suggestions from database -->
         <div>
           <label for="loc-type" class="block text-sm font-medium text-gray-700 mb-1">
             Type <span class="text-red-500">*</span>
           </label>
-          <select
+          <AutocompleteInput
+            value={type}
+            onchange={(val) => type = val}
+            suggestions={availableTypes}
             id="loc-type"
-            bind:value={type}
-            disabled={saving || !selectedState}
+            placeholder="e.g., Factory, Hospital, School"
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-          >
-            <option value="">Select type...</option>
-            {#each availableTypes as t}
-              <option value={t}>{t}</option>
-            {/each}
-          </select>
-          {#if !selectedState}
-            <p class="text-xs text-gray-500 mt-1">Select a state first</p>
+          />
+          {#if selectedState && availableTypes.length > 0}
+            <p class="text-xs text-gray-500 mt-1">Showing types in {selectedState} (or type new)</p>
+          {:else if selectedState}
+            <p class="text-xs text-gray-500 mt-1">No existing types in {selectedState} - enter a new one</p>
           {:else}
-            <p class="text-xs text-gray-500 mt-1">Types in {selectedState}</p>
+            <p class="text-xs text-gray-500 mt-1">Select a state to see existing types</p>
           {/if}
         </div>
 
-        <!-- Author -->
+        <!-- Author - Now with AutocompleteInput -->
         <div>
           <label for="loc-author" class="block text-sm font-medium text-gray-700 mb-1">
             Author
           </label>
-          <input
+          <AutocompleteInput
+            value={author}
+            onchange={(val) => author = val}
+            suggestions={getAuthorSuggestions()}
             id="loc-author"
-            type="text"
-            bind:value={author}
-            disabled={saving}
             placeholder="Your name"
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
           />

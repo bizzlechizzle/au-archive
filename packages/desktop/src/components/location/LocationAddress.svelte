@@ -1,10 +1,10 @@
 <script lang="ts">
   /**
-   * LocationAddress - Address display with copy button, clickable filters
-   * Per LILBITS: ~100 lines, single responsibility
+   * LocationAddress - Standalone address display (for use outside LocationDetail)
+   * Per LILBITS: ~80 lines, single responsibility
    * Per PUEA: Only show if address exists
    * Kanye8: Use getDisplayCity() to strip "Village of", "City of" prefixes
-   * Kanye9: All parts clickable, open on map link
+   * DECISION-009: County moved to LocationMapSection "Area" section on detail page
    */
   import type { Location } from '@au-archive/core';
   import { getDisplayCity } from '@/lib/display-helpers';
@@ -53,7 +53,6 @@
       {#if address?.street}
         <div>
           {#if onOpenOnMap}
-            <!-- Kanye11: Street address clickable to open map page - no icon, seamless -->
             <button
               onclick={onOpenOnMap}
               class="font-medium text-accent hover:underline"
@@ -88,16 +87,6 @@
           >{address.zipcode}</button>
         {/if}
       </p>
-
-      {#if address?.county}
-        <p class="text-sm text-gray-500">
-          <button
-            onclick={() => onNavigateFilter('county', address!.county!)}
-            class="hover:underline"
-            title="View all locations in {address.county} County"
-          >{address.county} County</button>
-        </p>
-      {/if}
     </div>
   </div>
 {/if}

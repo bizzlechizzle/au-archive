@@ -312,6 +312,7 @@
           selectedLocation = newLoc.locid;
         }
       }}
+      defaultAuthor={currentUser}
     />
 
     {#if importResult}

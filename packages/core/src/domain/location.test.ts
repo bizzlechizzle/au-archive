@@ -1,6 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import { LocationEntity, GPSCoordinatesSchema, AddressSchema, LocationInputSchema } from './location';
 
+// DECISION-013: Base location fixture with all required fields
+const baseLocation = {
+  locid: '550e8400-e29b-41d4-a716-446655440000',
+  loc12: '550e8400e29b',
+  locnam: 'Test Location',
+  historic: false,
+  favorite: false,
+  project: false,
+  docInterior: false,
+  docExterior: false,
+  docDrone: false,
+  docWebHistory: false,
+  sublocs: [] as string[],
+  regions: [] as string[],
+  locadd: new Date().toISOString(),
+  locationVerified: false
+};
+
 describe('LocationEntity', () => {
   describe('generateShortName', () => {
     it('should generate short names from location names', () => {
@@ -33,20 +51,13 @@ describe('LocationEntity', () => {
   describe('getGPSConfidence', () => {
     it('should return verified for user map click with verification', () => {
       const location = {
-        locid: '550e8400-e29b-41d4-a716-446655440000',
-        loc12: '550e8400e29b',
-        locnam: 'Test Location',
+        ...baseLocation,
         gps: {
           lat: 40.7128,
           lng: -74.0060,
           source: 'user_map_click' as const,
           verifiedOnMap: true
         },
-        historic: false,
-        favorite: false,
-        sublocs: [],
-        regions: [],
-        locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);
       expect(entity.getGPSConfidence()).toBe('verified');
@@ -54,9 +65,7 @@ describe('LocationEntity', () => {
 
     it('should return high for photo EXIF with good accuracy', () => {
       const location = {
-        locid: '550e8400-e29b-41d4-a716-446655440000',
-        loc12: '550e8400e29b',
-        locnam: 'Test Location',
+        ...baseLocation,
         gps: {
           lat: 40.7128,
           lng: -74.0060,
@@ -64,11 +73,6 @@ describe('LocationEntity', () => {
           verifiedOnMap: false,
           accuracy: 5
         },
-        historic: false,
-        favorite: false,
-        sublocs: [],
-        regions: [],
-        locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);
       expect(entity.getGPSConfidence()).toBe('high');
@@ -76,36 +80,20 @@ describe('LocationEntity', () => {
 
     it('should return medium for geocoded address', () => {
       const location = {
-        locid: '550e8400-e29b-41d4-a716-446655440000',
-        loc12: '550e8400e29b',
-        locnam: 'Test Location',
+        ...baseLocation,
         gps: {
           lat: 40.7128,
           lng: -74.0060,
           source: 'geocoded_address' as const,
           verifiedOnMap: false
         },
-        historic: false,
-        favorite: false,
-        sublocs: [],
-        regions: [],
-        locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);
       expect(entity.getGPSConfidence()).toBe('medium');
     });
 
     it('should return none for no GPS data', () => {
-      const location = {
-        locid: '550e8400-e29b-41d4-a716-446655440000',
-        loc12: '550e8400e29b',
-        locnam: 'Test Location',
-        historic: false,
-        favorite: false,
-        sublocs: [],
-        regions: [],
-        locadd: new Date().toISOString()
-      };
+      const location = { ...baseLocation };
       const entity = new LocationEntity(location);
       expect(entity.getGPSConfidence()).toBe('none');
     });
@@ -114,20 +102,13 @@ describe('LocationEntity', () => {
   describe('hasValidGPS', () => {
     it('should return true for valid GPS coordinates', () => {
       const location = {
-        locid: '550e8400-e29b-41d4-a716-446655440000',
-        loc12: '550e8400e29b',
-        locnam: 'Test Location',
+        ...baseLocation,
         gps: {
           lat: 40.7128,
           lng: -74.0060,
           source: 'user_map_click' as const,
           verifiedOnMap: true
         },
-        historic: false,
-        favorite: false,
-        sublocs: [],
-        regions: [],
-        locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);
       expect(entity.hasValidGPS()).toBe(true);
@@ -135,36 +116,20 @@ describe('LocationEntity', () => {
 
     it('should return false for invalid latitude', () => {
       const location = {
-        locid: '550e8400-e29b-41d4-a716-446655440000',
-        loc12: '550e8400e29b',
-        locnam: 'Test Location',
+        ...baseLocation,
         gps: {
           lat: 91,
           lng: -74.0060,
           source: 'user_map_click' as const,
           verifiedOnMap: true
         },
-        historic: false,
-        favorite: false,
-        sublocs: [],
-        regions: [],
-        locadd: new Date().toISOString()
       };
       const entity = new LocationEntity(location);
       expect(entity.hasValidGPS()).toBe(false);
     });
 
     it('should return false for no GPS data', () => {
-      const location = {
-        locid: '550e8400-e29b-41d4-a716-446655440000',
-        loc12: '550e8400e29b',
-        locnam: 'Test Location',
-        historic: false,
-        favorite: false,
-        sublocs: [],
-        regions: [],
-        locadd: new Date().toISOString()
-      };
+      const location = { ...baseLocation };
       const entity = new LocationEntity(location);
       expect(entity.hasValidGPS()).toBe(false);
     });

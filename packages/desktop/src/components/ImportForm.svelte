@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Location } from '@au-archive/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
+  import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
 
   interface Props {
     locations: Location[];
@@ -18,6 +19,8 @@
     onDragLeave: () => void;
     onDrop: (event: DragEvent) => void;
     onLocationCreated?: (location: Location) => void;
+    // DECISION-013: Auto-fill author from Settings
+    defaultAuthor?: string;
   }
 
   let {
@@ -36,6 +39,8 @@
     onDragLeave,
     onDrop,
     onLocationCreated,
+    // DECISION-013: Auto-fill author from Settings
+    defaultAuthor = '',
   }: Props = $props();
 
   // Documentation level options per spec
@@ -93,24 +98,8 @@
   let newCounty = $state('');
   let newZipcode = $state('');
 
-  // GPS - CRITICAL FIELD
-  let newGpsInput = $state('');
-  let parsedLat = $state<number | null>(null);
-  let parsedLng = $state<number | null>(null);
-  let gpsParseError = $state('');
-  let gpsVerifiedOnMap = $state(false);
-  let gpsSource = $state('manual_entry');
-
-  // GPS source options per spec (must match core GpsSource type)
-  const GPS_SOURCE_OPTIONS = [
-    { value: 'manual_entry', label: 'Manual Entry' },
-    { value: 'user_map_click', label: 'Map Click' },
-    { value: 'photo_exif', label: 'Photo EXIF' },
-    { value: 'geocoded_address', label: 'Address Geocoded' },
-  ];
-
-  // Author
-  let newAuthor = $state('');
+  // Author - DECISION-013: Auto-fill from Settings
+  let newAuthor = $state(defaultAuthor);
 
   // Autocomplete suggestions derived from existing locations
   function getTypeSuggestions(): string[] {
@@ -153,6 +142,35 @@
     return Array.from(counties).sort();
   }
 
+  function getStateSuggestions(): string[] {
+    // Get states from existing locations
+    const existingStates = new Set<string>();
+    locations.forEach(loc => {
+      if (loc.address?.state) {
+        const code = loc.address.state.toUpperCase();
+        // Find full name for this code
+        const fullName = Object.entries(STATE_ABBREVIATIONS).find(([_, abbr]) => abbr === code)?.[0];
+        if (fullName) {
+          // Title case the full name
+          const titleCased = fullName.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+          existingStates.add(`${code} (${titleCased})`);
+        } else {
+          existingStates.add(code);
+        }
+      }
+    });
+
+    // Add all US states in format "NY (New York)"
+    const allStates = Object.entries(STATE_ABBREVIATIONS).map(([name, code]) => {
+      const titleCased = name.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+      return `${code} (${titleCased})`;
+    });
+
+    // Merge and deduplicate
+    const merged = new Set([...existingStates, ...allStates]);
+    return Array.from(merged).sort();
+  }
+
   // Filter out sub-locations for parent selection
   function getParentLocationOptions(): Location[] {
     return locations.filter(loc => !loc.sub12);
@@ -172,67 +190,29 @@
     }
   }
 
-  // Parse GPS input - accepts multiple formats
-  function parseGpsInput(input: string): { lat: number; lng: number } | null {
-    if (!input.trim()) return null;
-
-    const trimmed = input.trim();
-
-    // Format 1: Decimal degrees "42.123456, -73.123456" or "42.123456 -73.123456"
-    const decimalMatch = trimmed.match(/^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$/);
-    if (decimalMatch) {
-      const lat = parseFloat(decimalMatch[1]);
-      const lng = parseFloat(decimalMatch[2]);
-      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-        return { lat, lng };
-      }
+  // Normalize state input - accepts full name or code
+  function handleStateChange(value: string) {
+    if (!value) {
+      newState = '';
+      return;
     }
 
-    // Format 2: DMS "42°7'23.4"N 73°7'23.4"W" (simplified parsing)
-    const dmsMatch = trimmed.match(/(\d+)°(\d+)'([\d.]+)"?([NS])\s*(\d+)°(\d+)'([\d.]+)"?([EW])/i);
-    if (dmsMatch) {
-      let lat = parseInt(dmsMatch[1]) + parseInt(dmsMatch[2]) / 60 + parseFloat(dmsMatch[3]) / 3600;
-      let lng = parseInt(dmsMatch[5]) + parseInt(dmsMatch[6]) / 60 + parseFloat(dmsMatch[7]) / 3600;
-      if (dmsMatch[4].toUpperCase() === 'S') lat = -lat;
-      if (dmsMatch[8].toUpperCase() === 'W') lng = -lng;
-      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-        return { lat, lng };
-      }
+    // Extract just the code if format is "NY (New York)"
+    const codeMatch = value.match(/^([A-Z]{2})\s*\(/);
+    if (codeMatch) {
+      newState = codeMatch[1];
+      return;
     }
 
-    // Format 3: Simple DMS "42 7 23 N 73 7 23 W"
-    const simpleDmsMatch = trimmed.match(/(\d+)\s+(\d+)\s+([\d.]+)\s*([NS])\s+(\d+)\s+(\d+)\s+([\d.]+)\s*([EW])/i);
-    if (simpleDmsMatch) {
-      let lat = parseInt(simpleDmsMatch[1]) + parseInt(simpleDmsMatch[2]) / 60 + parseFloat(simpleDmsMatch[3]) / 3600;
-      let lng = parseInt(simpleDmsMatch[5]) + parseInt(simpleDmsMatch[6]) / 60 + parseFloat(simpleDmsMatch[7]) / 3600;
-      if (simpleDmsMatch[4].toUpperCase() === 'S') lat = -lat;
-      if (simpleDmsMatch[8].toUpperCase() === 'W') lng = -lng;
-      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-        return { lat, lng };
-      }
+    // Try to convert full name to code
+    const code = getStateCodeFromName(value);
+    if (code) {
+      newState = code;
+      return;
     }
 
-    return null;
-  }
-
-  // Handle GPS input change
-  function handleGpsInputChange() {
-    if (newGpsInput) {
-      const parsed = parseGpsInput(newGpsInput);
-      if (parsed) {
-        parsedLat = parsed.lat;
-        parsedLng = parsed.lng;
-        gpsParseError = '';
-      } else {
-        parsedLat = null;
-        parsedLng = null;
-        gpsParseError = 'Could not parse GPS coordinates. Try: "42.123, -73.456" or DMS format';
-      }
-    } else {
-      parsedLat = null;
-      parsedLng = null;
-      gpsParseError = '';
-    }
+    // Otherwise store as-is (will be uppercased by CSS)
+    newState = value.toUpperCase().substring(0, 2);
   }
 
   async function handleCreateLocation() {
@@ -280,16 +260,7 @@
         },
       };
 
-      // Add GPS if parsed successfully
-      if (parsedLat !== null && parsedLng !== null) {
-        locationData.gps = {
-          lat: parsedLat,
-          lng: parsedLng,
-          source: gpsSource,
-          verifiedOnMap: gpsVerifiedOnMap,
-        };
-      }
-
+      // DECISION-013: GPS removed from import form - GPS comes only from EXIF data on imported media
       const newLocation = await window.electronAPI.locations.create(locationData);
 
       // Auto-select the new location
@@ -327,13 +298,8 @@
     newState = '';
     newCounty = '';
     newZipcode = '';
-    newGpsInput = '';
-    parsedLat = null;
-    parsedLng = null;
-    gpsParseError = '';
-    gpsVerifiedOnMap = false;
-    gpsSource = 'manual_entry';
-    newAuthor = '';
+    // DECISION-013: Reset to default author from Settings
+    newAuthor = defaultAuthor;
     createError = '';
   }
 
@@ -658,16 +624,15 @@
               <label for="new-state" class="block text-sm font-medium text-gray-700 mb-1">
                 State <span class="text-red-500">*</span>
               </label>
-              <input
-                id="new-state"
-                type="text"
+              <AutocompleteInput
                 bind:value={newState}
-                maxlength="2"
-                placeholder="NY"
-                disabled={creatingLocation}
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 uppercase"
+                onchange={handleStateChange}
+                suggestions={getStateSuggestions()}
+                id="new-state"
+                placeholder="NY or New York"
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent uppercase"
               />
-              <p class="text-xs text-gray-500 mt-1">2-letter postal abbreviation</p>
+              <p class="text-xs text-gray-500 mt-1">Type 2-letter code or full state name</p>
             </div>
 
             <div>
@@ -701,83 +666,7 @@
           </div>
         </div>
 
-        <!-- Section: GPS COORDINATES - Optional but recommended -->
-        <div class="space-y-4">
-          <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wide border-b pb-2">
-            GPS Coordinates
-            <span class="text-xs font-normal text-gray-500 normal-case">(Optional - enables map display)</span>
-          </h3>
-
-          <div class="p-4 bg-gray-50 border border-gray-200 rounded">
-            <div class="space-y-4">
-              <div>
-                <label for="new-gps-input" class="block text-sm font-medium text-gray-700 mb-1">
-                  GPS Coordinates
-                </label>
-                <input
-                  id="new-gps-input"
-                  type="text"
-                  bind:value={newGpsInput}
-                  oninput={handleGpsInputChange}
-                  placeholder="42.123456, -73.456789 or 42 7 23.4 N 73 27 23.4 W"
-                  disabled={creatingLocation}
-                  class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 font-mono"
-                />
-                <p class="text-xs text-gray-600 mt-1">
-                  Accepts: Decimal degrees (42.123, -73.456), DMS (42 7 23 N 73 27 23 W), or copy-paste from maps
-                </p>
-              </div>
-
-              {#if gpsParseError}
-                <p class="text-sm text-red-600">{gpsParseError}</p>
-              {/if}
-
-              {#if parsedLat !== null && parsedLng !== null}
-                <div class="p-3 bg-green-100 border border-green-300 rounded">
-                  <p class="text-sm text-green-800 font-mono">
-                    Parsed: {parsedLat.toFixed(6)}, {parsedLng.toFixed(6)}
-                  </p>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
-                    <label for="gps-source" class="block text-sm font-medium text-gray-700 mb-1">
-                      GPS Source
-                    </label>
-                    <select
-                      id="gps-source"
-                      bind:value={gpsSource}
-                      disabled={creatingLocation}
-                      class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-                    >
-                      {#each GPS_SOURCE_OPTIONS as option}
-                        <option value={option.value}>{option.label}</option>
-                      {/each}
-                    </select>
-                  </div>
-
-                  <div class="flex items-center pt-6">
-                    <input
-                      type="checkbox"
-                      id="gps-verified"
-                      bind:checked={gpsVerifiedOnMap}
-                      disabled={creatingLocation}
-                      class="mr-2"
-                    />
-                    <label for="gps-verified" class="text-sm text-gray-700">
-                      Verified on map
-                    </label>
-                  </div>
-                </div>
-              {/if}
-
-              <p class="text-xs text-gray-600">
-                <strong>Tip:</strong> GPS coordinates enable map views and proximity searches.
-                You can also add city+state or zipcode for map display via geocoding.
-              </p>
-            </div>
-          </div>
-        </div>
+        <!-- DECISION-013: GPS section removed - GPS comes only from EXIF data on imported media -->
 
         <!-- Section: Author -->
         <div class="space-y-4">

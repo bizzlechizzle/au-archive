@@ -19,6 +19,12 @@
   let defaultZoom = $state<number | null>(null);
   let savingDefaultView = $state(false);
 
+  // DECISION-011: URL param support for centering on location
+  let urlCenter = $state<{ lat: number; lng: number } | null>(null);
+  let urlZoom = $state<number | null>(null);
+  let highlightLocid = $state<string | null>(null);
+  let urlLayer = $state<'satellite' | 'street' | 'topo' | 'light' | 'dark' | 'satellite-labels' | null>(null);
+
   // P3d: Context menu state for right-click options
   let contextMenu = $state<{ show: boolean; x: number; y: number; lat: number; lng: number }>({
     show: false,
@@ -187,7 +193,46 @@
     }
   }
 
+  /**
+   * DECISION-011: Parse URL params for centering map on specific location
+   * URL format: /atlas?lat=X&lng=Y&zoom=Z&locid=ID&layer=satellite-labels
+   */
+  function parseUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    const lat = params.get('lat');
+    const lng = params.get('lng');
+    const zoom = params.get('zoom');
+    const locid = params.get('locid');
+    const layer = params.get('layer');
+
+    if (lat && lng) {
+      const latNum = parseFloat(lat);
+      const lngNum = parseFloat(lng);
+      if (!isNaN(latNum) && !isNaN(lngNum)) {
+        urlCenter = { lat: latNum, lng: lngNum };
+      }
+    }
+
+    if (zoom) {
+      const zoomNum = parseInt(zoom, 10);
+      if (!isNaN(zoomNum) && zoomNum >= 1 && zoomNum <= 19) {
+        urlZoom = zoomNum;
+      }
+    }
+
+    if (locid) {
+      highlightLocid = locid;
+    }
+
+    // DECISION-011: Support layer param for seamless transition from mini map
+    const validLayers = ['satellite', 'street', 'topo', 'light', 'dark', 'satellite-labels'];
+    if (layer && validLayers.includes(layer)) {
+      urlLayer = layer as typeof urlLayer;
+    }
+  }
+
   onMount(() => {
+    parseUrlParams(); // DECISION-011: Parse URL params first
     loadLocations();
     loadDefaultView(); // FEAT-P2: Load saved default view
     // Close context menu on click outside
@@ -270,6 +315,7 @@
 
   <div class="flex-1 relative">
     <!-- ALWAYS show the map - it's an atlas, not a placeholder -->
+    <!-- DECISION-011: Pass URL zoom/layer if available, default to satellite-labels -->
     <Map
       locations={filteredLocations()}
       onLocationClick={handleLocationClick}
@@ -277,6 +323,8 @@
       onMapRightClick={handleMapRightClick}
       showHeatMap={showHeatMap}
       onLocationVerify={handleLocationVerify}
+      zoom={urlZoom ?? undefined}
+      defaultLayer={urlLayer ?? 'satellite-labels'}
     />
     {#if loading}
       <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded shadow-lg z-10">

@@ -15,6 +15,11 @@
   let filterDocumentation = $state('');
   let filterAccess = $state('');
   let filterAuthor = $state('');
+  // DECISION-012: Census region filters
+  let filterCensusRegion = $state('');
+  let filterCensusDivision = $state('');
+  let filterCulturalRegion = $state('');
+  let filterStateDirection = $state('');
   let specialFilter = $state(''); // 'undocumented', 'historical', 'favorites', or ''
   let loading = $state(true);
   let activeFilterCount = $state(0);
@@ -37,11 +42,18 @@
     if (q.documentation) filterDocumentation = q.documentation;
     if (q.access) filterAccess = q.access;
     if (q.author) filterAuthor = q.author;
+    // DECISION-012: Census region query params
+    if (q.censusRegion) filterCensusRegion = q.censusRegion;
+    if (q.censusDivision) filterCensusDivision = q.censusDivision;
+    if (q.culturalRegion) filterCulturalRegion = q.culturalRegion;
+    if (q.stateDirection) filterStateDirection = q.stateDirection;
 
     // Count active filters
     activeFilterCount = [
       filterState, filterType, filterStype, filterCondition, filterStatus,
-      filterCity, filterCounty, filterDocumentation, filterAccess, filterAuthor, specialFilter
+      filterCity, filterCounty, filterDocumentation, filterAccess, filterAuthor,
+      filterCensusRegion, filterCensusDivision, filterCulturalRegion, filterStateDirection,
+      specialFilter
     ].filter(Boolean).length;
   });
 
@@ -60,6 +72,12 @@
       const matchesDocumentation = !filterDocumentation || loc.documentation === filterDocumentation;
       const matchesAccess = !filterAccess || loc.access === filterAccess;
       const matchesAuthor = !filterAuthor || loc.auth_imp === filterAuthor;
+      // DECISION-012: Census region filters
+      const locAny = loc as any;
+      const matchesCensusRegion = !filterCensusRegion || locAny.censusRegion === filterCensusRegion;
+      const matchesCensusDivision = !filterCensusDivision || locAny.censusDivision === filterCensusDivision;
+      const matchesCulturalRegion = !filterCulturalRegion || locAny.culturalRegion === filterCulturalRegion;
+      const matchesStateDirection = !filterStateDirection || locAny.stateDirection === filterStateDirection;
 
       // Apply special filters
       let matchesSpecial = true;
@@ -73,7 +91,9 @@
 
       return matchesSearch && matchesState && matchesType && matchesStype &&
         matchesCondition && matchesStatus && matchesCity && matchesCounty &&
-        matchesDocumentation && matchesAccess && matchesAuthor && matchesSpecial;
+        matchesDocumentation && matchesAccess && matchesAuthor &&
+        matchesCensusRegion && matchesCensusDivision && matchesCulturalRegion &&
+        matchesStateDirection && matchesSpecial;
     });
   });
 
@@ -85,6 +105,22 @@
   let uniqueTypes = $derived(() => {
     const types = new Set(locations.map(l => l.type).filter(Boolean));
     return Array.from(types).sort();
+  });
+
+  // DECISION-012: Unique values for Census region dropdowns
+  let uniqueCensusRegions = $derived(() => {
+    const regions = new Set(locations.map(l => (l as any).censusRegion).filter(Boolean));
+    return Array.from(regions).sort();
+  });
+
+  let uniqueCensusDivisions = $derived(() => {
+    const divisions = new Set(locations.map(l => (l as any).censusDivision).filter(Boolean));
+    return Array.from(divisions).sort();
+  });
+
+  let uniqueCulturalRegions = $derived(() => {
+    const regions = new Set(locations.map(l => (l as any).culturalRegion).filter(Boolean));
+    return Array.from(regions).sort();
   });
 
   function clearAllFilters() {
@@ -99,6 +135,11 @@
     filterDocumentation = '';
     filterAccess = '';
     filterAuthor = '';
+    // DECISION-012: Census region filters
+    filterCensusRegion = '';
+    filterCensusDivision = '';
+    filterCulturalRegion = '';
+    filterStateDirection = '';
     router.navigate('/locations');
   }
 
@@ -115,6 +156,11 @@
       case 'documentation': filterDocumentation = ''; break;
       case 'access': filterAccess = ''; break;
       case 'author': filterAuthor = ''; break;
+      // DECISION-012: Census region filters
+      case 'censusRegion': filterCensusRegion = ''; break;
+      case 'censusDivision': filterCensusDivision = ''; break;
+      case 'culturalRegion': filterCulturalRegion = ''; break;
+      case 'stateDirection': filterStateDirection = ''; break;
     }
     // Rebuild URL with remaining filters
     const newQuery: Record<string, string> = {};
@@ -129,6 +175,11 @@
     if (filterDocumentation) newQuery.documentation = filterDocumentation;
     if (filterAccess) newQuery.access = filterAccess;
     if (filterAuthor) newQuery.author = filterAuthor;
+    // DECISION-012: Census region query params
+    if (filterCensusRegion) newQuery.censusRegion = filterCensusRegion;
+    if (filterCensusDivision) newQuery.censusDivision = filterCensusDivision;
+    if (filterCulturalRegion) newQuery.culturalRegion = filterCulturalRegion;
+    if (filterStateDirection) newQuery.stateDirection = filterStateDirection;
     router.navigate('/locations', undefined, Object.keys(newQuery).length > 0 ? newQuery : undefined);
   }
 
@@ -146,6 +197,11 @@
     if (filterDocumentation) filters.push({ key: 'documentation', label: 'Documentation', value: filterDocumentation });
     if (filterAccess) filters.push({ key: 'access', label: 'Access', value: filterAccess });
     if (filterAuthor) filters.push({ key: 'author', label: 'Author', value: filterAuthor });
+    // DECISION-012: Census region filters
+    if (filterCensusRegion) filters.push({ key: 'censusRegion', label: 'Region', value: filterCensusRegion });
+    if (filterCensusDivision) filters.push({ key: 'censusDivision', label: 'Division', value: filterCensusDivision });
+    if (filterCulturalRegion) filters.push({ key: 'culturalRegion', label: 'Cultural Region', value: filterCulturalRegion });
+    if (filterStateDirection) filters.push({ key: 'stateDirection', label: 'Direction', value: filterStateDirection });
     return filters;
   });
 
@@ -250,6 +306,53 @@
         </select>
       </div>
     </div>
+
+    <!-- DECISION-012: Census Region Filters -->
+    {#if uniqueCensusRegions().length > 0 || uniqueCensusDivisions().length > 0 || uniqueCulturalRegions().length > 0}
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
+        <div>
+          <label for="censusRegion" class="block text-sm font-medium text-gray-700 mb-2">Census Region</label>
+          <select
+            id="censusRegion"
+            bind:value={filterCensusRegion}
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            <option value="">All Regions</option>
+            {#each uniqueCensusRegions() as region}
+              <option value={region}>{region}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div>
+          <label for="censusDivision" class="block text-sm font-medium text-gray-700 mb-2">Census Division</label>
+          <select
+            id="censusDivision"
+            bind:value={filterCensusDivision}
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            <option value="">All Divisions</option>
+            {#each uniqueCensusDivisions() as division}
+              <option value={division}>{division}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div>
+          <label for="culturalRegion" class="block text-sm font-medium text-gray-700 mb-2">Cultural Region</label>
+          <select
+            id="culturalRegion"
+            bind:value={filterCulturalRegion}
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            <option value="">All Cultural Regions</option>
+            {#each uniqueCulturalRegions() as region}
+              <option value={region}>{region}</option>
+            {/each}
+          </select>
+        </div>
+      </div>
+    {/if}
   </div>
 
   {#if loading}

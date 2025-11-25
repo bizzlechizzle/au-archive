@@ -569,6 +569,116 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 13 completed: GPS geocode tier columns added');
     }
+
+    // Migration 14: Add verification tracking columns to locs table
+    // Per DECISION-010: Verification system for address, GPS, and location-level
+    // - address_verified: User confirmed address is correct
+    // - gps_verified_at/by: Metadata for existing gps_verified_on_map
+    // - location_verified: Computed when BOTH address AND GPS verified
+    const locsColsForVerification = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasAddressVerified = locsColsForVerification.some(col => col.name === 'address_verified');
+
+    if (!hasAddressVerified) {
+      console.log('Running migration 14: Adding verification tracking columns to locs');
+
+      sqlite.exec(`
+        -- Address verification
+        ALTER TABLE locs ADD COLUMN address_verified INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN address_verified_at TEXT;
+        ALTER TABLE locs ADD COLUMN address_verified_by TEXT;
+
+        -- GPS verification metadata (gps_verified_on_map already exists)
+        ALTER TABLE locs ADD COLUMN gps_verified_at TEXT;
+        ALTER TABLE locs ADD COLUMN gps_verified_by TEXT;
+
+        -- Location-level verification (set when BOTH address AND GPS verified)
+        ALTER TABLE locs ADD COLUMN location_verified INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN location_verified_at TEXT;
+      `);
+
+      // Create index for finding verified locations
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_locs_verified ON locs(location_verified) WHERE location_verified = 1;
+        CREATE INDEX IF NOT EXISTS idx_locs_address_verified ON locs(address_verified) WHERE address_verified = 1;
+      `);
+
+      console.log('Migration 14 completed: verification tracking columns added');
+    }
+
+    // Migration 15: Add cultural_region column to locs table
+    // Per DECISION-011: Location Box UI redesign with cultural region support
+    // Cultural region is user-entered, subjective, does NOT count toward Location ✓
+    const locsColsForCulturalRegion = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasCulturalRegion = locsColsForCulturalRegion.some(col => col.name === 'cultural_region');
+
+    if (!hasCulturalRegion) {
+      console.log('Running migration 15: Adding cultural_region column to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN cultural_region TEXT;
+      `);
+
+      console.log('Migration 15 completed: cultural_region column added');
+    }
+
+    // Migration 16: Add Census region/division and state direction columns to locs table
+    // Per DECISION-012: Auto-population of regions for location discovery
+    // - census_region: One of 4 US Census regions (Northeast, Midwest, South, West)
+    // - census_division: One of 9 US Census divisions (New England, Middle Atlantic, etc.)
+    // - state_direction: Position within state (e.g., "Eastern NY", "Central TX")
+    // Note: cultural_region already exists from Migration 15
+    const locsColsForCensus = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasCensusRegion = locsColsForCensus.some(col => col.name === 'census_region');
+
+    if (!hasCensusRegion) {
+      console.log('Running migration 16: Adding Census region/division columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN census_region TEXT;
+        ALTER TABLE locs ADD COLUMN census_division TEXT;
+        ALTER TABLE locs ADD COLUMN state_direction TEXT;
+      `);
+
+      // Create indexes for filtering by region
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_locs_census_region ON locs(census_region) WHERE census_region IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_census_division ON locs(census_division) WHERE census_division IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_cultural_region ON locs(cultural_region) WHERE cultural_region IS NOT NULL;
+      `);
+
+      console.log('Migration 16 completed: Census region/division columns added');
+    }
+
+    // Migration 17: Add Information box fields for DECISION-013
+    // - built_year/abandoned_year: Text storage for flexible date formats
+    // - built_type/abandoned_type: 'year', 'range', 'date' for UI formatting
+    // - project: Boolean flag for project membership
+    // - doc_interior/exterior/drone/web_history: Documentation checkboxes
+    const locsColsForInfo = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasBuiltYear = locsColsForInfo.some(col => col.name === 'built_year');
+
+    if (!hasBuiltYear) {
+      console.log('Running migration 17: Adding Information box columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN built_year TEXT;
+        ALTER TABLE locs ADD COLUMN built_type TEXT;
+        ALTER TABLE locs ADD COLUMN abandoned_year TEXT;
+        ALTER TABLE locs ADD COLUMN abandoned_type TEXT;
+        ALTER TABLE locs ADD COLUMN project INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN doc_interior INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN doc_exterior INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN doc_drone INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN doc_web_history INTEGER DEFAULT 0;
+      `);
+
+      // Create index for project flag
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_locs_project ON locs(project) WHERE project = 1;
+      `);
+
+      console.log('Migration 17 completed: Information box columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

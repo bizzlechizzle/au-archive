@@ -13,6 +13,8 @@ import { AddressNormalizer } from '../services/address-normalizer';
 import { AddressService } from '../services/address-service';
 // FIX 6.7: Import GPS validator for proximity search
 import { GPSValidator } from '../services/gps-validator';
+// DECISION-012: Region auto-population service
+import { calculateRegionFields } from '../services/region-service';
 
 export class SQLiteLocationRepository implements LocationRepository {
   constructor(private readonly db: Kysely<Database>) {}
@@ -48,6 +50,14 @@ export class SQLiteLocationRepository implements LocationRepository {
       normalizedState = addressRecord.normalized.state;
       normalizedZipcode = addressRecord.normalized.zipcode;
     }
+
+    // DECISION-012: Auto-populate region fields from state/GPS/county
+    const regionFields = calculateRegionFields({
+      state: normalizedState,
+      county: normalizedCounty,
+      lat: input.gps?.lat,
+      lng: input.gps?.lng,
+    });
 
     await this.db
       .insertInto('locs')
@@ -86,13 +96,28 @@ export class SQLiteLocationRepository implements LocationRepository {
         access: input.access || null,
         historic: input.historic ? 1 : 0,
         favorite: input.favorite ? 1 : 0,
+        // DECISION-013: Information box fields
+        built_year: input.builtYear || null,
+        built_type: input.builtType || null,
+        abandoned_year: input.abandonedYear || null,
+        abandoned_type: input.abandonedType || null,
+        project: input.project ? 1 : 0,
+        doc_interior: input.docInterior ? 1 : 0,
+        doc_exterior: input.docExterior ? 1 : 0,
+        doc_drone: input.docDrone ? 1 : 0,
+        doc_web_history: input.docWebHistory ? 1 : 0,
         sublocs: null,
         sub12: null,
         locadd,
         locup: null,
         auth_imp: input.auth_imp || null,
         regions: null,
-        state: null
+        state: null,
+        // DECISION-012: Census region fields (auto-populated)
+        census_region: regionFields.censusRegion,
+        census_division: regionFields.censusDivision,
+        state_direction: regionFields.stateDirection,
+        cultural_region: regionFields.culturalRegion
       })
       .execute();
 
@@ -149,6 +174,23 @@ export class SQLiteLocationRepository implements LocationRepository {
 
     if (filters?.favorite === true) {
       query = query.where('favorite', '=', 1);
+    }
+
+    // DECISION-013: New filters
+    if (filters?.project === true) {
+      query = query.where('project', '=', 1);
+    }
+
+    if (filters?.county) {
+      query = query.where('address_county', '=', filters.county);
+    }
+
+    if (filters?.stype) {
+      query = query.where('stype', '=', filters.stype);
+    }
+
+    if (filters?.access) {
+      query = query.where('access', '=', filters.access);
     }
 
     query = query.orderBy('locadd', 'desc');
@@ -215,6 +257,16 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.favorite !== undefined) updates.favorite = input.favorite ? 1 : 0;
     if (input.hero_imgsha !== undefined) updates.hero_imgsha = input.hero_imgsha;
     if (input.auth_imp !== undefined) updates.auth_imp = input.auth_imp;
+    // DECISION-013: Information box fields
+    if (input.builtYear !== undefined) updates.built_year = input.builtYear;
+    if (input.builtType !== undefined) updates.built_type = input.builtType;
+    if (input.abandonedYear !== undefined) updates.abandoned_year = input.abandonedYear;
+    if (input.abandonedType !== undefined) updates.abandoned_type = input.abandonedType;
+    if (input.project !== undefined) updates.project = input.project ? 1 : 0;
+    if (input.docInterior !== undefined) updates.doc_interior = input.docInterior ? 1 : 0;
+    if (input.docExterior !== undefined) updates.doc_exterior = input.docExterior ? 1 : 0;
+    if (input.docDrone !== undefined) updates.doc_drone = input.docDrone ? 1 : 0;
+    if (input.docWebHistory !== undefined) updates.doc_web_history = input.docWebHistory ? 1 : 0;
 
     // Kanye9: Handle flat GPS field updates (for cascade geocoding and other direct updates)
     const inputAny = input as any;
@@ -223,6 +275,52 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (inputAny.gps_source !== undefined) updates.gps_source = inputAny.gps_source;
     if (inputAny.gps_geocode_tier !== undefined) updates.gps_geocode_tier = inputAny.gps_geocode_tier;
     if (inputAny.gps_geocode_query !== undefined) updates.gps_geocode_query = inputAny.gps_geocode_query;
+
+    // DECISION-012: Handle region field updates
+    // Cultural region can be set directly by user
+    if (inputAny.culturalRegion !== undefined) {
+      updates.cultural_region = inputAny.culturalRegion;
+    }
+    // Census fields can also be set directly (for backfill or manual override)
+    if (inputAny.censusRegion !== undefined) {
+      updates.census_region = inputAny.censusRegion;
+    }
+    if (inputAny.censusDivision !== undefined) {
+      updates.census_division = inputAny.censusDivision;
+    }
+    if (inputAny.stateDirection !== undefined) {
+      updates.state_direction = inputAny.stateDirection;
+    }
+
+    // DECISION-012: Auto-recalculate region fields when address or GPS changes
+    if (input.address !== undefined || input.gps !== undefined) {
+      // Get current location to get existing values for fields not being updated
+      const current = await this.findById(id);
+      if (current) {
+        const newState = input.address?.state ?? current.address?.state;
+        const newCounty = input.address?.county ?? current.address?.county;
+        const newLat = input.gps?.lat ?? current.gps?.lat;
+        const newLng = input.gps?.lng ?? current.gps?.lng;
+        const existingCulturalRegion = inputAny.culturalRegion ?? current.culturalRegion;
+
+        const regionFields = calculateRegionFields({
+          state: newState,
+          county: newCounty,
+          lat: newLat,
+          lng: newLng,
+          existingCulturalRegion,
+        });
+
+        // Always update Census fields when address/GPS changes
+        updates.census_region = regionFields.censusRegion;
+        updates.census_division = regionFields.censusDivision;
+        updates.state_direction = regionFields.stateDirection;
+        // Only update cultural region if not already set
+        if (!existingCulturalRegion && regionFields.culturalRegion) {
+          updates.cultural_region = regionFields.culturalRegion;
+        }
+      }
+    }
 
     await this.db
       .updateTable('locs')
@@ -277,6 +375,23 @@ export class SQLiteLocationRepository implements LocationRepository {
       query = query.where('favorite', '=', 1);
     }
 
+    // DECISION-013: New filters
+    if (filters?.project === true) {
+      query = query.where('project', '=', 1);
+    }
+
+    if (filters?.county) {
+      query = query.where('address_county', '=', filters.county);
+    }
+
+    if (filters?.stype) {
+      query = query.where('stype', '=', filters.stype);
+    }
+
+    if (filters?.access) {
+      query = query.where('access', '=', filters.access);
+    }
+
     const result = await query.executeTakeFirst();
     return Number(result?.count || 0);
   }
@@ -319,6 +434,16 @@ export class SQLiteLocationRepository implements LocationRepository {
       access: row.access ?? undefined,
       historic: row.historic === 1,
       favorite: row.favorite === 1,
+      // DECISION-013: Information box fields
+      builtYear: row.built_year ?? undefined,
+      builtType: (row.built_type ?? undefined) as any,
+      abandonedYear: row.abandoned_year ?? undefined,
+      abandonedType: (row.abandoned_type ?? undefined) as any,
+      project: row.project === 1,
+      docInterior: row.doc_interior === 1,
+      docExterior: row.doc_exterior === 1,
+      docDrone: row.doc_drone === 1,
+      docWebHistory: row.doc_web_history === 1,
       hero_imgsha: row.hero_imgsha ?? undefined,
       sublocs: row.sublocs ? JSON.parse(row.sublocs) : [],
       sub12: row.sub12 ?? undefined,
@@ -326,7 +451,12 @@ export class SQLiteLocationRepository implements LocationRepository {
       locup: row.locup ?? undefined,
       auth_imp: row.auth_imp ?? undefined,
       regions: row.regions ? JSON.parse(row.regions) : [],
-      state: row.state ?? undefined
+      state: row.state ?? undefined,
+      // DECISION-011/012: Cultural and Census region fields
+      culturalRegion: row.cultural_region ?? undefined,
+      censusRegion: row.census_region ?? undefined,
+      censusDivision: row.census_division ?? undefined,
+      stateDirection: row.state_direction ?? undefined
     };
   }
 
@@ -366,5 +496,56 @@ export class SQLiteLocationRepository implements LocationRepository {
     locationsWithDistance.sort((a, b) => a.distance - b.distance);
 
     return locationsWithDistance;
+  }
+
+  /**
+   * DECISION-012: Backfill region fields for all existing locations
+   * Calculates Census region, division, state direction, and cultural region
+   * for locations that don't have these fields populated yet.
+   * @returns Number of locations updated
+   */
+  async backfillRegions(): Promise<{ updated: number; total: number }> {
+    // Get all locations
+    const rows = await this.db
+      .selectFrom('locs')
+      .selectAll()
+      .execute();
+
+    let updated = 0;
+
+    for (const row of rows) {
+      // Calculate region fields
+      const regionFields = calculateRegionFields({
+        state: row.address_state,
+        county: row.address_county,
+        lat: row.gps_lat,
+        lng: row.gps_lng,
+        existingCulturalRegion: row.cultural_region,
+      });
+
+      // Check if any fields need updating
+      const needsUpdate =
+        (regionFields.censusRegion && !row.census_region) ||
+        (regionFields.censusDivision && !row.census_division) ||
+        (regionFields.stateDirection && !row.state_direction) ||
+        (regionFields.culturalRegion && !row.cultural_region);
+
+      if (needsUpdate) {
+        await this.db
+          .updateTable('locs')
+          .set({
+            census_region: regionFields.censusRegion ?? row.census_region,
+            census_division: regionFields.censusDivision ?? row.census_division,
+            state_direction: regionFields.stateDirection ?? row.state_direction,
+            cultural_region: regionFields.culturalRegion ?? row.cultural_region,
+          })
+          .where('locid', '=', row.locid)
+          .execute();
+
+        updated++;
+      }
+    }
+
+    return { updated, total: rows.length };
   }
 }

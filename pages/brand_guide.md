@@ -11,6 +11,10 @@
 		- background
 	- #454545
 		- text, foreground
+	- #19612E
+		- verified, success (green)
+	- #99221E
+		- error, danger (red)
 -
 - website
 	- abandonedupstate

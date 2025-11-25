@@ -4,7 +4,7 @@
    * Per LILBITS: ~250 lines (orchestrator coordinating child components)
    * Per PUEA: Show only sections with data
    * Per AAA: Import shows results immediately
-   * Kanye6: All original fixes preserved (ensureGpsFromAddress, setHeroImage, etc.)
+   * DECISION-014: Removed auto-geocoding from onMount (GPS from EXIF/user action only)
    */
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
@@ -14,7 +14,7 @@
   import NotesSection from '../components/NotesSection.svelte';
   import MediaViewer from '../components/MediaViewer.svelte';
   import {
-    LocationHero, LocationHeader, LocationInfo, LocationAddress,
+    LocationHero, LocationHeader, LocationInfo,
     LocationMapSection, LocationGallery, LocationVideos, LocationDocuments,
     LocationImportZone, LocationBookmarks, LocationNerdStats,
     type MediaImage, type MediaVideo, type MediaDocument, type Bookmark,
@@ -161,6 +161,49 @@
     finally { verifyingGps = false; }
   }
 
+  /**
+   * DECISION-011: Handle location save from edit modal
+   * Saves address, GPS, verification status, and cultural region
+   */
+  async function handleLocationSave(
+    updates: Partial<LocationInput>,
+    addressVerified: boolean,
+    gpsVerified: boolean,
+    culturalRegion: string | null
+  ) {
+    if (!location) return;
+
+    // Build full update object
+    const fullUpdates: any = { ...updates };
+
+    // Set address verification
+    if (updates.address) {
+      fullUpdates.address = {
+        ...updates.address,
+        verified: addressVerified,
+      };
+    }
+
+    // Set GPS verification
+    if (updates.gps) {
+      fullUpdates.gps = {
+        ...updates.gps,
+        verifiedOnMap: gpsVerified,
+      };
+    }
+
+    // Update location via API
+    await window.electronAPI.locations.update(location.locid, fullUpdates);
+
+    // Update cultural region separately if the API supports it
+    // For now, we'll update it as a direct database field
+    if (window.electronAPI.locations.updateCulturalRegion) {
+      await window.electronAPI.locations.updateCulturalRegion(location.locid, culturalRegion);
+    }
+
+    await loadLocation();
+  }
+
   /** Kanye6: Set hero image */
   async function setHeroImage(imgsha: string) {
     if (!location) return;
@@ -170,8 +213,10 @@
     } catch (err) { console.error('Error setting hero image:', err); }
   }
 
-  function navigateToFilter(type: string, value: string) {
-    router.navigate('/locations', undefined, { [type]: value });
+  function navigateToFilter(type: string, value: string, additionalFilters?: Record<string, string>) {
+    // DECISION-013: Support multiple filters (e.g., county + state to avoid duplicates)
+    const filters: Record<string, string> = { [type]: value, ...additionalFilters };
+    router.navigate('/locations', undefined, filters);
   }
 
   async function openMediaFile(filePath: string) {
@@ -264,7 +309,7 @@
   onMount(async () => {
     await loadLocation();
     loadBookmarks();
-    await ensureGpsFromAddress(); // Kanye6
+    // DECISION-014: Removed ensureGpsFromAddress() - GPS should only come from EXIF or user action
     try { const settings = await window.electronAPI.settings.getAll(); currentUser = settings.current_user || 'default'; }
     catch (err) { console.error('Error loading user settings:', err); }
   });
@@ -283,21 +328,16 @@
   {:else}
     <div class="max-w-6xl mx-auto p-8">
       <LocationHero {images} heroImgsha={location.hero_imgsha || null} onOpenLightbox={(i) => selectedImageIndex = i} />
-      <LocationHeader {location} {isEditing} {togglingFavorite} onToggleFavorite={toggleFavorite} onEditToggle={() => isEditing = !isEditing} />
+      <LocationHeader {location} {isEditing} onEditToggle={() => isEditing = !isEditing} />
 
       {#if isEditing}
         <LocationEditForm {location} onSave={handleSave} onCancel={() => isEditing = false} />
       {:else}
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <LocationInfo {location} onNavigateFilter={navigateToFilter} />
-          <div>
-            <LocationAddress address={location.address} onNavigateFilter={navigateToFilter} onOpenOnMap={() => {
-              // Scroll to map section
-              document.querySelector('.location-map-section')?.scrollIntoView({ behavior: 'smooth' });
-            }} />
-            <div class="location-map-section">
-              <LocationMapSection {location} onMarkVerified={markGpsVerified} verifying={verifyingGps} />
-            </div>
+          <LocationInfo {location} onNavigateFilter={navigateToFilter} onSave={handleSave} />
+          <div class="location-map-section">
+            <!-- DECISION-011: Unified location box with verification checkmarks, edit modal -->
+            <LocationMapSection {location} onSave={handleLocationSave} onNavigateFilter={navigateToFilter} />
           </div>
         </div>
 

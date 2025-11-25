@@ -225,5 +225,22 @@ export function registerLocationHandlers(db: Kysely<Database>) {
     }
   });
 
+  /**
+   * DECISION-012: Backfill region fields for existing locations
+   * Calculates Census region, division, state direction, and cultural region
+   * for all locations that don't have these fields populated yet.
+   */
+  ipcMain.handle('location:backfillRegions', async () => {
+    try {
+      console.log('[Location IPC] Starting region backfill...');
+      const result = await locationRepo.backfillRegions();
+      console.log(`[Location IPC] Region backfill complete: ${result.updated}/${result.total} locations updated`);
+      return result;
+    } catch (error) {
+      console.error('Error backfilling regions:', error);
+      throw error;
+    }
+  });
+
   return locationRepo;
 }

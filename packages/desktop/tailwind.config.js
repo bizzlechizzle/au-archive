@@ -14,8 +14,12 @@ export default {
         foreground: '#454545',
         primary: '#2563eb',
         secondary: '#64748b',
-        danger: '#dc2626',
-        success: '#16a34a',
+        // DECISION-010: Official brand colors
+        danger: '#99221E',      // Error/warning red
+        success: '#19612E',     // Verified/success green
+        verified: '#19612E',    // Alias for verification badges
+        unverified: '#9ca3af',  // Gray for unverified states (DECISION-013)
+        error: '#99221E',       // Alias for error states
       },
       fontFamily: {
         heading: ['Roboto Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],

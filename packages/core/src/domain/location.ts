@@ -25,6 +25,9 @@ export const GPSCoordinatesSchema = z.object({
   // Kanye9: Cascade geocoding tier (1-5, only for geocoded_address source)
   geocodeTier: z.number().min(1).max(5).optional(),
   geocodeQuery: z.string().optional(),
+  // DECISION-010: GPS verification metadata
+  verifiedAt: z.string().datetime().optional(),
+  verifiedBy: z.enum(['user', 'api', 'import']).optional(),
 });
 
 export type GPSCoordinates = z.infer<typeof GPSCoordinatesSchema>;
@@ -37,7 +40,11 @@ export const AddressSchema = z.object({
   state: z.string().length(2).optional(),
   zipcode: z.string().regex(/^\d{5}(-\d{4})?$/).optional(),
   confidence: z.enum(['high', 'medium', 'low']).optional(),
-  geocodedAt: z.string().datetime().optional()
+  geocodedAt: z.string().datetime().optional(),
+  // DECISION-010: Address verification
+  verified: z.boolean().default(false),
+  verifiedAt: z.string().datetime().optional(),
+  verifiedBy: z.enum(['user', 'api', 'import']).optional(),
 });
 
 export type Address = z.infer<typeof AddressSchema>;
@@ -57,6 +64,16 @@ export const LocationInputSchema = z.object({
   access: z.string().optional(),
   historic: z.boolean().default(false),
   favorite: z.boolean().default(false),
+  // DECISION-013: Information box fields
+  builtYear: z.string().optional(),       // Year, range, or date as text
+  builtType: z.enum(['year', 'range', 'date']).optional(),
+  abandonedYear: z.string().optional(),
+  abandonedType: z.enum(['year', 'range', 'date']).optional(),
+  project: z.boolean().default(false),
+  docInterior: z.boolean().default(false),
+  docExterior: z.boolean().default(false),
+  docDrone: z.boolean().default(false),
+  docWebHistory: z.boolean().default(false),
   hero_imgsha: z.string().optional(),
   auth_imp: z.string().optional()
 });
@@ -72,7 +89,16 @@ export const LocationSchema = LocationInputSchema.extend({
   sublocs: z.array(z.string()).default([]),
   sub12: z.string().optional(),
   regions: z.array(z.string()).default([]),
-  state: z.string().optional()
+  state: z.string().optional(),
+  // DECISION-010: Location-level verification (set when BOTH address AND GPS verified)
+  locationVerified: z.boolean().default(false),
+  locationVerifiedAt: z.string().datetime().optional(),
+  // DECISION-011: Cultural region (user-entered, subjective, does NOT count toward Location ✓)
+  culturalRegion: z.string().optional(),
+  // DECISION-012: Census regions (auto-populated from state/GPS, offline-first)
+  censusRegion: z.string().optional(),     // Northeast, Midwest, South, West
+  censusDivision: z.string().optional(),   // New England, Middle Atlantic, etc. (9 divisions)
+  stateDirection: z.string().optional(),   // e.g., "Eastern NY", "Central TX"
 });
 
 export type Location = z.infer<typeof LocationSchema>;
@@ -123,6 +149,23 @@ export class LocationEntity {
   // Check if location needs map verification
   needsMapVerification(): boolean {
     return this.data.gps?.verifiedOnMap === false;
+  }
+
+  // DECISION-010: Check if location is fully verified (both address AND GPS)
+  isFullyVerified(): boolean {
+    const addressVerified = this.data.address?.verified === true;
+    const gpsVerified = this.data.gps?.verifiedOnMap === true;
+    return addressVerified && gpsVerified;
+  }
+
+  // DECISION-010: Check if address is verified
+  isAddressVerified(): boolean {
+    return this.data.address?.verified === true;
+  }
+
+  // DECISION-010: Check if GPS is verified
+  isGPSVerified(): boolean {
+    return this.data.gps?.verifiedOnMap === true;
   }
 
   // Validate GPS coordinates are within reasonable bounds

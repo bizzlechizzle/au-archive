@@ -34,3 +34,8 @@ coverage/
 
 # Electron
 out/
+
+# User data (archive files, test images)
+archive/
+test images/
+logseq/

@@ -431,7 +431,9 @@ export class FileImportService {
         const gps = metadata?.gps || exifData?.gps;
         if (gps && GPSValidator.isValidGPS(gps.lat, gps.lng)) {
           console.log('[FileImport] Step 5b: Checking GPS mismatch...');
-          // Use pre-fetched location (from Step 0) - don't call locationRepo again!
+
+          // DECISION-013: Always check GPS mismatch when both location and media have GPS
+          // This allows users to see when media has better GPS data than the location
           if (location.gps?.lat && location.gps?.lng) {
             const mismatch = GPSValidator.checkGPSMismatch(
               { lat: location.gps.lat, lng: location.gps.lng },

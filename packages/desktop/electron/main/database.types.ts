@@ -58,6 +58,27 @@ export interface LocsTable {
   address_parsed_json: string | null;   // JSON of parsed components
   address_source: string | null;        // 'libpostal' | 'fallback' | 'nominatim' | 'manual'
 
+  // Address Verification (DECISION-010: Verification tracking)
+  address_verified: number;             // 0/1 - User confirmed address is correct
+  address_verified_at: string | null;   // ISO timestamp when verified
+  address_verified_by: string | null;   // 'user' (future: 'api', 'import')
+
+  // GPS Verification Metadata (DECISION-010: gps_verified_on_map already exists)
+  gps_verified_at: string | null;       // ISO timestamp when verified
+  gps_verified_by: string | null;       // 'user' (future: 'api', 'import')
+
+  // Location-level Verification (DECISION-010: Computed when BOTH address AND GPS verified)
+  location_verified: number;            // 0/1 - Set when both address_verified AND gps_verified_on_map are 1
+  location_verified_at: string | null;  // ISO timestamp when both became verified
+
+  // Cultural Region (DECISION-011: User-entered, subjective, does NOT count toward Location ✓)
+  cultural_region: string | null;
+
+  // Census Regions (DECISION-012: Auto-populated from state/GPS, offline-first)
+  census_region: string | null;     // Northeast, Midwest, South, West
+  census_division: string | null;   // New England, Middle Atlantic, etc. (9 divisions)
+  state_direction: string | null;   // e.g., "Eastern NY", "Central TX"
+
   // Status
   condition: string | null;
   status: string | null;
@@ -65,6 +86,17 @@ export interface LocsTable {
   access: string | null;
   historic: number;
   favorite: number;
+
+  // DECISION-013: Information box fields
+  built_year: string | null;       // Text storage for year, range, or date
+  built_type: string | null;       // 'year', 'range', 'date' for UI formatting
+  abandoned_year: string | null;
+  abandoned_type: string | null;
+  project: number;                 // 0/1 boolean for project membership
+  doc_interior: number;            // 0/1 Documentation checkboxes
+  doc_exterior: number;
+  doc_drone: number;
+  doc_web_history: number;
 
   // Hero Image (Kanye6: User-selected featured image)
   hero_imgsha: string | null;

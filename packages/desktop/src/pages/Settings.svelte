@@ -23,6 +23,10 @@
   let normalizing = $state(false);
   let normalizeMessage = $state('');
 
+  // DECISION-012: Region backfill state
+  let backfillingRegions = $state(false);
+  let backfillMessage = $state('');
+
   // P6: Darktable state removed per v010steps.md
 
   async function loadSettings() {
@@ -174,6 +178,39 @@
   }
 
   // P6: Darktable functions removed per v010steps.md
+
+  /**
+   * DECISION-012: Backfill region fields for existing locations
+   * Populates Census region, division, state direction, and cultural region
+   */
+  async function backfillRegions() {
+    if (!window.electronAPI?.locations?.backfillRegions) {
+      backfillMessage = 'Region backfill not available';
+      return;
+    }
+
+    try {
+      backfillingRegions = true;
+      backfillMessage = 'Calculating regions for all locations...';
+
+      const result = await window.electronAPI.locations.backfillRegions();
+
+      if (result.updated === 0) {
+        backfillMessage = `All ${result.total} locations already have region data`;
+      } else {
+        backfillMessage = `Updated ${result.updated} of ${result.total} locations with region data`;
+      }
+
+      setTimeout(() => {
+        backfillMessage = '';
+      }, 5000);
+    } catch (error) {
+      console.error('Region backfill failed:', error);
+      backfillMessage = 'Region backfill failed';
+    } finally {
+      backfillingRegions = false;
+    }
+  }
 
   onMount(() => {
     loadSettings();
@@ -351,6 +388,28 @@
             </div>
             <p class="text-xs text-gray-500 mt-2">
               Cleans city names (removes "Village Of", "City Of"), standardizes state codes, and stores both raw and normalized forms.
+            </p>
+          </div>
+
+          <!-- DECISION-012: Region Backfill -->
+          <div class="mt-6 pt-6 border-t border-gray-200">
+            <p class="text-sm text-gray-700 mb-2">
+              Populate region fields for existing locations. Calculates Census region, division, state direction, and cultural region based on address and GPS data.
+            </p>
+            <div class="flex items-center gap-4">
+              <button
+                onclick={backfillRegions}
+                disabled={backfillingRegions}
+                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+              >
+                {backfillingRegions ? 'Processing...' : 'Backfill Region Data'}
+              </button>
+              {#if backfillMessage}
+                <span class="text-sm text-gray-600">{backfillMessage}</span>
+              {/if}
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+              Adds Census Region (Northeast/Midwest/South/West), Division, state direction (e.g., "Eastern NY"), and Cultural Region fields.
             </p>
           </div>
         </div>

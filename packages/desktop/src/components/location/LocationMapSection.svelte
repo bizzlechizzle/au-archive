@@ -1,172 +1,354 @@
 <script lang="ts">
   /**
-   * LocationMapSection - GPS coordinates, map embed, verify button
-   * Per LILBITS: ~150 lines, single responsibility
-   * Kanye6: GPS confidence badge including 'geocoded_address' source
-   * Kanye9: Dynamic zoom based on GPS confidence
+   * LocationMapSection - Unified location display with edit modal and golden ratio map
+   * DECISION-014: Removed verification checkmarks per user request
    */
   import { router } from '../../stores/router';
   import Map from '../Map.svelte';
-  import type { Location } from '@au-archive/core';
+  import LocationEditModal from './LocationEditModal.svelte';
+  import type { Location, LocationInput } from '@au-archive/core';
   import { GPS_ZOOM_LEVELS, GPS_GEOCODE_TIER_ZOOM } from '../../lib/constants';
+  import { getDisplayCity } from '../../lib/display-helpers';
 
   interface Props {
     location: Location;
-    onMarkVerified: () => void;
-    verifying: boolean;
+    onSave: (updates: Partial<LocationInput>, addressVerified: boolean, gpsVerified: boolean, culturalRegion: string | null) => Promise<void>;
+    onNavigateFilter: (type: string, value: string, additionalFilters?: Record<string, string>) => void;
   }
 
-  let { location, onMarkVerified, verifying }: Props = $props();
+  let { location, onSave, onNavigateFilter }: Props = $props();
 
-  // Kanye6: GPS confidence indicator with 'geocoded_address' support
-  function getGpsConfidence(gps: Location['gps']): { level: 'high' | 'medium' | 'low'; color: string; label: string } {
-    if (!gps) return { level: 'low', color: 'gray', label: 'No GPS' };
+  // Edit modal state
+  let showEditModal = $state(false);
 
-    if (gps.verifiedOnMap) {
-      return { level: 'high', color: 'green', label: 'Verified' };
-    }
+  // Copy notification state
+  let copiedAddress = $state(false);
+  let copiedGps = $state(false);
 
-    if (gps.source === 'exif' || gps.source === 'media_gps') {
-      return { level: 'medium', color: 'blue', label: 'From Media' };
-    }
+  // DECISION-014: Verification checkmarks removed per user request
+  // Keeping gpsVerified for map zoom calculation
 
-    if (gps.source === 'geocoding' || gps.source === 'reverse_geocode') {
-      return { level: 'medium', color: 'blue', label: 'Geocoded' };
-    }
+  // Address helpers
+  const hasAddress = $derived(location.address?.street || location.address?.city || location.address?.state);
+  const displayCity = $derived(getDisplayCity(location.address?.city));
 
-    // Kanye6: Forward geocoded from address
-    if (gps.source === 'geocoded_address') {
-      return { level: 'medium', color: 'blue', label: 'From Address' };
-    }
+  // Area helpers (DECISION-012: Include Census region fields)
+  const culturalRegion = $derived((location as any).culturalRegion);
+  const censusRegion = $derived((location as any).censusRegion);
+  const censusDivision = $derived((location as any).censusDivision);
+  const stateDirection = $derived((location as any).stateDirection);
+  const hasAreaData = $derived(
+    location.address?.county ||
+    (location.regions && location.regions.length > 0) ||
+    culturalRegion ||
+    censusRegion ||
+    censusDivision ||
+    stateDirection
+  );
 
-    if (gps.source === 'manual' || gps.source === 'user_input') {
-      return { level: 'low', color: 'yellow', label: 'Manual Entry' };
-    }
+  // GPS helpers
+  const hasGps = $derived(location.gps?.lat && location.gps?.lng);
 
-    return { level: 'low', color: 'gray', label: 'Unverified' };
+  // Copy address with notification
+  function copyAddress() {
+    const addr = [
+      location.address?.street,
+      displayCity,
+      location.address?.state,
+      location.address?.zipcode
+    ].filter(Boolean).join(', ');
+    navigator.clipboard.writeText(addr);
+    copiedAddress = true;
+    setTimeout(() => copiedAddress = false, 2000);
   }
 
-  // Kanye9: Calculate zoom level based on GPS source/confidence and geocode tier
+  // Copy GPS with notification
+  function copyGPS() {
+    if (location.gps?.lat && location.gps?.lng) {
+      navigator.clipboard.writeText(`${location.gps.lat.toFixed(6)}, ${location.gps.lng.toFixed(6)}`);
+      copiedGps = true;
+      setTimeout(() => copiedGps = false, 2000);
+    }
+  }
+
+  // Navigate to Atlas centered on this location (satellite view for seamless transition)
+  function openOnAtlas() {
+    if (location.gps?.lat && location.gps?.lng) {
+      router.navigate(`/atlas?lat=${location.gps.lat}&lng=${location.gps.lng}&zoom=${mapZoom}&locid=${location.locid}&layer=satellite-labels`);
+    } else {
+      router.navigate('/atlas');
+    }
+  }
+
+  // Calculate zoom level based on GPS source/confidence
   function getZoomLevel(gps: Location['gps'], hasState: boolean): number {
-    if (!gps) {
+    if (!gps || !gps.lat || !gps.lng) {
       return hasState ? GPS_ZOOM_LEVELS.STATE_CAPITAL : GPS_ZOOM_LEVELS.US_CENTER;
     }
-
     if (gps.verifiedOnMap) return GPS_ZOOM_LEVELS.VERIFIED;
-    if (gps.source === 'exif' || gps.source === 'media_gps') return GPS_ZOOM_LEVELS.EXIF;
-
-    // Kanye9: Use tier-based zoom for geocoded addresses
+    if (gps.source === 'exif' || gps.source === 'media_gps' || gps.source === 'photo_exif') return GPS_ZOOM_LEVELS.EXIF;
     if (gps.source === 'geocoded_address') {
       if (gps.geocodeTier && gps.geocodeTier >= 1 && gps.geocodeTier <= 5) {
         return GPS_GEOCODE_TIER_ZOOM[gps.geocodeTier as keyof typeof GPS_GEOCODE_TIER_ZOOM];
       }
-      return GPS_ZOOM_LEVELS.GEOCODED_ADDRESS; // Fallback if no tier stored
+      return GPS_ZOOM_LEVELS.GEOCODED_ADDRESS;
     }
-
     if (gps.source === 'geocoding' || gps.source === 'reverse_geocode') return GPS_ZOOM_LEVELS.REVERSE_GEOCODE;
-    if (gps.source === 'manual' || gps.source === 'user_input') return GPS_ZOOM_LEVELS.MANUAL;
-
-    return GPS_ZOOM_LEVELS.MANUAL; // Default for unknown source with GPS
+    return GPS_ZOOM_LEVELS.MANUAL;
   }
 
-  // Derived zoom level for map
   const mapZoom = $derived(getZoomLevel(location.gps, !!location.address?.state));
 </script>
 
-<div class="bg-white rounded-lg shadow p-6">
-  <h2 class="text-xl font-semibold mb-4 text-foreground">Location</h2>
-
-  {#if location.gps && (!location.gps.geocodeTier || location.gps.geocodeTier < 5)}
-    <!-- BUG-V4 FIX: Only show GPS section if we have real GPS data (not state-only tier 5) -->
-    {@const confidence = getGpsConfidence(location.gps)}
-    <div class="mb-4">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="text-sm font-medium text-gray-500">GPS Coordinates</h3>
-        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium
-          {confidence.color === 'green' ? 'bg-green-100 text-green-800' :
-           confidence.color === 'blue' ? 'bg-blue-100 text-blue-800' :
-           confidence.color === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
-           'bg-gray-100 text-gray-600'}">
-          {#if confidence.level === 'high'}
-            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-            </svg>
-          {:else if confidence.level === 'medium'}
-            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-            </svg>
-          {:else}
-            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-            </svg>
-          {/if}
-          {confidence.label}
-        </span>
-      </div>
-      <p class="text-base text-gray-900 font-mono text-sm">
-        {location.gps.lat.toFixed(6)}, {location.gps.lng.toFixed(6)}
-      </p>
-
-      <!-- FEAT-3 FIX: GPS accuracy warning only for unverified low-tier geocoding -->
-      <!-- Do NOT show message for tier 5 (state only) - we don't want to show fake GPS when we only know state -->
-      {#if !location.gps.verifiedOnMap && location.gps.source === 'geocoded_address' && location.gps.geocodeTier && location.gps.geocodeTier > 1 && location.gps.geocodeTier < 5}
-        <div class="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
-          <span class="font-medium">Approximate location</span> -
-          {#if location.gps.geocodeTier === 2}
-            Based on city center. Click map to set exact location.
-          {:else if location.gps.geocodeTier === 3}
-            Based on zipcode area. Click map to set exact location.
-          {:else if location.gps.geocodeTier === 4}
-            Based on county center. Click map to set exact location.
-          {/if}
-        </div>
-      {/if}
+<div class="bg-white rounded-lg shadow">
+  <!-- Header: Location with verification status and edit button (DECISION-013: No border) -->
+  <div class="flex items-center justify-between px-6 py-4">
+    <div class="flex items-center gap-2">
+      <h2 class="text-xl font-semibold text-foreground">Location</h2>
     </div>
-
-    <div class="h-64 rounded overflow-hidden mb-3">
-      <Map locations={[location]} zoom={mapZoom} />
-    </div>
-
-    <div class="flex flex-wrap items-center gap-3 text-xs">
-      {#if location.gps.verifiedOnMap}
-        <div class="flex items-center gap-1">
-          <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          </svg>
-          <span class="text-green-600">Verified on map</span>
-        </div>
-      {:else}
-        <button
-          onclick={onMarkVerified}
-          disabled={verifying}
-          class="px-3 py-1 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-        >
-          {verifying ? 'Saving...' : 'Mark as Verified'}
-        </button>
-      {/if}
-    </div>
-  {:else}
-    <!-- BUG-V4 FIX: For state-only (tier 5) or no GPS, show simple "Add GPS" prompt -->
-    <!-- User explicitly requested: DO NOT show approximate map for state-only locations -->
-    <!-- PUEA: No GPS and no state - prompt to add -->
-    <div class="text-center py-6 bg-gray-50 rounded">
-      <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+    <button
+      onclick={() => showEditModal = true}
+      class="px-3 py-1.5 text-sm text-accent border border-accent rounded hover:bg-accent hover:text-white transition flex items-center gap-1.5"
+    >
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
       </svg>
-      <p class="text-gray-500 mb-3">
-        {#if location.address?.state}
-          State: {location.address.state} - No exact GPS coordinates
-        {:else}
-          No location data available
+      Edit
+    </button>
+  </div>
+
+  <!-- SECTION 1: Mailing Address (DECISION-013: No borders, copy below content) -->
+  <div class="px-6 py-4">
+    <div class="flex items-center gap-2 mb-2">
+      <h3 class="section-title">Mailing Address</h3>
+    </div>
+
+    {#if hasAddress}
+      <div class="text-base text-gray-900 space-y-0.5">
+        {#if location.address?.street}
+          <button
+            onclick={openOnAtlas}
+            class="text-accent hover:underline text-left"
+            title="View on Atlas"
+          >{location.address.street}</button>
         {/if}
-      </p>
+        <p>
+          {#if displayCity}
+            <button
+              onclick={() => onNavigateFilter('city', displayCity)}
+              class="text-accent hover:underline"
+              title="View all locations in {displayCity}"
+            >{displayCity}</button>{location.address?.state || location.address?.zipcode ? ', ' : ''}
+          {/if}
+          {#if location.address?.state}
+            <button
+              onclick={() => onNavigateFilter('state', location.address!.state!)}
+              class="text-accent hover:underline"
+              title="View all locations in {location.address.state}"
+            >{location.address.state}</button>{' '}
+          {/if}
+          {#if location.address?.zipcode}
+            <button
+              onclick={() => onNavigateFilter('zipcode', location.address!.zipcode!)}
+              class="text-accent hover:underline"
+              title="View all locations with zipcode {location.address.zipcode}"
+            >{location.address.zipcode}</button>
+          {/if}
+        </p>
+      </div>
+      <!-- Copy button below address -->
       <button
-        onclick={() => router.navigate('/atlas')}
-        class="px-4 py-2 text-sm bg-accent text-white rounded hover:opacity-90 transition"
+        onclick={copyAddress}
+        class="mt-2 text-xs text-accent hover:underline flex items-center gap-1"
+        title="Copy address to clipboard"
       >
-        Add GPS on Atlas
+        {#if copiedAddress}
+          <span class="text-verified animate-pulse">Copied!</span>
+        {:else}
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+          </svg>
+          Copy Address
+        {/if}
+      </button>
+    {:else}
+      <p class="text-sm text-gray-400 italic">No address set</p>
+    {/if}
+  </div>
+
+  <!-- SECTION 2: GPS + Mini Map (DECISION-013: No borders, copy below content) -->
+  <div class="px-6 py-4">
+    <div class="flex items-center gap-2 mb-2">
+      <h3 class="section-title">GPS</h3>
+    </div>
+
+    {#if hasGps}
+      <button
+        onclick={openOnAtlas}
+        class="text-accent hover:underline font-mono text-sm text-left"
+        title="View on Atlas"
+      >
+        {location.gps!.lat.toFixed(6)}, {location.gps!.lng.toFixed(6)}
+      </button>
+      <!-- Copy button below GPS -->
+      <button
+        onclick={copyGPS}
+        class="mt-2 text-xs text-accent hover:underline flex items-center gap-1 mb-3"
+        title="Copy GPS to clipboard"
+      >
+        {#if copiedGps}
+          <span class="text-verified animate-pulse">Copied!</span>
+        {:else}
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+          </svg>
+          Copy Coordinates
+        {/if}
+      </button>
+    {:else}
+      <p class="text-sm text-gray-400 italic mb-3">No coordinates available</p>
+    {/if}
+
+    <!-- DECISION-011: Mini map with golden ratio (1.618:1), satellite+labels, limited interaction -->
+    <div class="relative rounded-lg overflow-hidden border border-gray-200 group" style="aspect-ratio: 1.618 / 1;">
+      <Map
+        locations={[location]}
+        zoom={mapZoom}
+        limitedInteraction={true}
+        hideAttribution={true}
+        defaultLayer="satellite-labels"
+      />
+
+      <!-- Expand to Atlas button -->
+      <button
+        onclick={openOnAtlas}
+        class="absolute bottom-2 right-2 z-[1000] px-2 py-1 bg-white/90 rounded shadow text-xs font-medium text-gray-700 hover:bg-white transition flex items-center gap-1 opacity-0 group-hover:opacity-100"
+        title="Open in Atlas"
+      >
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+        </svg>
+        Expand to Atlas
       </button>
     </div>
-  {/if}
+  </div>
+
+  <!-- SECTION 3: Area (DECISION-012: County + Census Region/Division + Direction + Cultural Region) -->
+  <div class="px-6 py-4">
+    <div class="flex items-center gap-2 mb-2">
+      <h3 class="section-title">Area</h3>
+    </div>
+
+    {#if hasAreaData}
+      <div class="space-y-1 text-sm text-gray-700">
+        <!-- Row 1: Census Region + Division -->
+        {#if censusRegion || censusDivision}
+          <div class="flex flex-wrap gap-x-6 gap-y-1">
+            {#if censusRegion}
+              <p>
+                <span class="text-gray-500">Region:</span>{' '}
+                <button
+                  onclick={() => onNavigateFilter('censusRegion', censusRegion)}
+                  class="text-accent hover:underline"
+                  title="View all locations in {censusRegion}"
+                >{censusRegion}</button>
+              </p>
+            {/if}
+            {#if censusDivision}
+              <p>
+                <span class="text-gray-500">Division:</span>{' '}
+                <button
+                  onclick={() => onNavigateFilter('censusDivision', censusDivision)}
+                  class="text-accent hover:underline"
+                  title="View all locations in {censusDivision}"
+                >{censusDivision}</button>
+              </p>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Row 2: State Direction -->
+        {#if stateDirection}
+          <p>
+            <span class="text-gray-500">Direction:</span>{' '}
+            <button
+              onclick={() => onNavigateFilter('stateDirection', stateDirection)}
+              class="text-accent hover:underline"
+              title="View all locations in {stateDirection}"
+            >{stateDirection}</button>
+          </p>
+        {/if}
+
+        <!-- Row 3: Cultural Region -->
+        {#if culturalRegion}
+          <p>
+            <span class="text-gray-500">Cultural Region:</span>{' '}
+            <button
+              onclick={() => onNavigateFilter('culturalRegion', culturalRegion)}
+              class="text-accent hover:underline"
+              title="View all locations in {culturalRegion}"
+            >{culturalRegion}</button>
+          </p>
+        {/if}
+
+        <!-- Row 4: County (DECISION-013: Include state filter to avoid duplicate county names) -->
+        {#if location.address?.county}
+          <p>
+            <span class="text-gray-500">County:</span>{' '}
+            <button
+              onclick={() => onNavigateFilter('county', location.address!.county!, location.address?.state ? { state: location.address.state } : undefined)}
+              class="text-accent hover:underline"
+              title="View all locations in {location.address.county} County, {location.address?.state || ''}"
+            >{location.address.county}</button>
+          </p>
+        {/if}
+
+        <!-- Legacy regions (if any) -->
+        {#if location.regions && location.regions.length > 0}
+          <p>
+            <span class="text-gray-500">Regions:</span>{' '}
+            {#each location.regions as region, i}
+              <button
+                onclick={() => onNavigateFilter('region', region)}
+                class="text-accent hover:underline"
+                title="View all locations in {region}"
+              >{region}</button>{i < location.regions.length - 1 ? ', ' : ''}
+            {/each}
+          </p>
+        {/if}
+      </div>
+    {:else}
+      <p class="text-sm text-gray-400 italic">No area information available</p>
+    {/if}
+  </div>
 </div>
+
+<!-- Edit Modal -->
+{#if showEditModal}
+  <LocationEditModal
+    {location}
+    {onSave}
+    onClose={() => showEditModal = false}
+  />
+{/if}
+
+<style>
+  /* Pulse animation for "Copied!" notification */
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .animate-pulse {
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  /* DECISION-011: Section titles - slightly larger for better hierarchy */
+  .section-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: rgb(107, 114, 128); /* text-gray-500 */
+    line-height: 1.25;
+  }
+
+  /* DECISION-014: Removed verification label styles - checkmarks removed per user request */
+</style>

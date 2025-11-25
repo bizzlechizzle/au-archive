@@ -1,7 +1,86 @@
 /**
  * GPS validation and distance calculation service
  */
+
+/**
+ * Location GPS metadata for confidence checking
+ */
+export interface LocationGPSInfo {
+  gps_lat?: number | null;
+  gps_lng?: number | null;
+  gps_source?: string | null;
+  gps_verified_on_map?: boolean | number | null;
+  gps_geocode_tier?: number | null;
+}
+
 export class GPSValidator {
+  /**
+   * Determine if GPS mismatch checking should be performed for a location.
+   *
+   * Skip mismatch warnings for low-confidence GPS:
+   * - gps_geocode_tier === 5 (state-only geocoding - ~100km expected accuracy)
+   * - gps_source === null (no GPS set at all)
+   * - gps_source === 'geocoded_address' AND gps_verified_on_map === false
+   *
+   * This prevents false mismatch warnings when comparing precise image EXIF GPS
+   * against imprecise state-center geocoded coordinates.
+   */
+  static shouldCheckMismatch(location: LocationGPSInfo): boolean {
+    // No GPS at all - nothing to compare against
+    if (!location.gps_lat || !location.gps_lng) {
+      return false;
+    }
+
+    // No source recorded - treat as unreliable
+    if (!location.gps_source) {
+      return false;
+    }
+
+    // State-only geocoding (tier 5) has ~100km expected accuracy
+    // 10km threshold is inappropriate for this level of precision
+    if (location.gps_geocode_tier === 5) {
+      return false;
+    }
+
+    // Geocoded address that hasn't been verified on map
+    // User hasn't confirmed the geocoded location is accurate
+    const isVerified = location.gps_verified_on_map === true || location.gps_verified_on_map === 1;
+    if (location.gps_source === 'geocoded_address' && !isVerified) {
+      return false;
+    }
+
+    // GPS is precise enough - check for mismatch
+    return true;
+  }
+
+  /**
+   * Check if location should auto-adopt GPS from imported media.
+   *
+   * DECISION-010: Simplified logic per user requirement:
+   * - Auto-adopt ONLY if location has NO GPS at all
+   * - NEVER touch verified GPS (protected)
+   * - All other cases: return false (prompt user instead)
+   *
+   * Returns true ONLY if:
+   * - Location has no GPS at all (gps_lat/gps_lng are null)
+   */
+  static shouldAdoptMediaGPS(location: LocationGPSInfo): boolean {
+    // PROTECTED: Never auto-adopt if GPS is verified
+    const isVerified = location.gps_verified_on_map === true || location.gps_verified_on_map === 1;
+    if (isVerified) {
+      return false;
+    }
+
+    // Only auto-adopt if location has NO GPS at all
+    if (!location.gps_lat || !location.gps_lng) {
+      return true;
+    }
+
+    // All other cases: DO NOT auto-adopt
+    // This includes tier 5 (state-only), unverified geocoded addresses, etc.
+    // User should be prompted to confirm GPS adoption
+    return false;
+  }
   /**
    * Calculate Haversine distance between two GPS coordinates (in meters)
    * Formula: a = sin²(Δφ/2) + cos φ1 * cos φ2 * sin²(Δλ/2)

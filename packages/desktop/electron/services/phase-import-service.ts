@@ -314,7 +314,8 @@ export class PhaseImportService {
           status: 'serialized',
         });
 
-        // Check GPS mismatch
+        // DECISION-013: Always check GPS mismatch when both location and media have GPS
+        // This allows users to see when media has better GPS data than the location
         if (metadata.gps && location.gps) {
           const mismatch = GPSValidator.checkGPSMismatch(
             location.gps,

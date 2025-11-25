@@ -8,6 +8,11 @@ export interface LocationFilters {
   search?: string;
   historic?: boolean;
   favorite?: boolean;
+  // DECISION-013: New filters
+  project?: boolean;
+  county?: string;
+  stype?: string;
+  access?: string;
 }
 
 export interface LocationRepository {

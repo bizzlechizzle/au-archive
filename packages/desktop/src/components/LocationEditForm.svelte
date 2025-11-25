@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { Location, LocationInput } from '@au-archive/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
+  import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
 
   interface Props {
     location: Location;
@@ -15,6 +16,7 @@
   let typeSuggestions = $state<string[]>([]);
   let subtypeSuggestions = $state<string[]>([]);
   let authorSuggestions = $state<string[]>([]);
+  let stateSuggestions = $state<string[]>([]);
 
   let formData = $state({
     locnam: location.locnam,
@@ -51,16 +53,35 @@
       const types = new Set<string>();
       const subtypes = new Set<string>();
       const authors = new Set<string>();
+      const states = new Set<string>();
 
       locations.forEach(loc => {
         if (loc.type) types.add(loc.type);
         if (loc.stype) subtypes.add(loc.stype);
         if (loc.auth_imp) authors.add(loc.auth_imp);
+        if (loc.address?.state) {
+          const code = loc.address.state.toUpperCase();
+          const fullName = Object.entries(STATE_ABBREVIATIONS).find(([_, abbr]) => abbr === code)?.[0];
+          if (fullName) {
+            const titleCased = fullName.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+            states.add(`${code} (${titleCased})`);
+          } else {
+            states.add(code);
+          }
+        }
       });
+
+      // Add all US states in format "NY (New York)"
+      const allStates = Object.entries(STATE_ABBREVIATIONS).map(([name, code]) => {
+        const titleCased = name.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+        return `${code} (${titleCased})`;
+      });
+      states.forEach(s => allStates.push(s));
 
       typeSuggestions = Array.from(types).sort();
       subtypeSuggestions = Array.from(subtypes).sort();
       authorSuggestions = Array.from(authors).sort();
+      stateSuggestions = Array.from(new Set(allStates)).sort();
     } catch (err) {
       console.error('Error loading locations:', err);
     }
@@ -108,6 +129,31 @@
     } finally {
       saving = false;
     }
+  }
+
+  // Normalize state input - accepts full name or code
+  function handleStateChange(value: string) {
+    if (!value) {
+      formData.address_state = '';
+      return;
+    }
+
+    // Extract just the code if format is "NY (New York)"
+    const codeMatch = value.match(/^([A-Z]{2})\s*\(/);
+    if (codeMatch) {
+      formData.address_state = codeMatch[1];
+      return;
+    }
+
+    // Try to convert full name to code
+    const code = getStateCodeFromName(value);
+    if (code) {
+      formData.address_state = code;
+      return;
+    }
+
+    // Otherwise store as-is (will be uppercased)
+    formData.address_state = value.toUpperCase().substring(0, 2);
   }
 </script>
 
@@ -329,12 +375,12 @@
           <label for="state" class="block text-sm font-medium text-gray-700 mb-1">
             State
           </label>
-          <input
-            id="state"
-            type="text"
+          <AutocompleteInput
             bind:value={formData.address_state}
-            maxlength="2"
-            placeholder="NY"
+            onchange={handleStateChange}
+            suggestions={stateSuggestions}
+            id="state"
+            placeholder="NY or New York"
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
           />
         </div>

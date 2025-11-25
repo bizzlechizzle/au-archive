@@ -64,10 +64,14 @@
   // Backwards compatibility alias
   const STATE_CENTROIDS = STATE_CAPITALS;
 
+  // DECISION-009: US center fallback for locations with no GPS and no state
+  const US_CENTER = { lat: 39.8283, lng: -98.5795 }; // Geographic center of contiguous US
+
   /**
-   * Get coordinates for a location - uses GPS if available, otherwise state centroid
+   * Get coordinates for a location - uses GPS if available, otherwise state centroid, otherwise US center
+   * DECISION-009: Never returns null - always provides a fallback for "always show map" requirement
    */
-  function getLocationCoordinates(location: Location): { lat: number; lng: number; isApproximate: boolean } | null {
+  function getLocationCoordinates(location: Location): { lat: number; lng: number; isApproximate: boolean } {
     // Has precise GPS coordinates
     if (location.gps?.lat && location.gps?.lng) {
       return { lat: location.gps.lat, lng: location.gps.lng, isApproximate: false };
@@ -79,7 +83,8 @@
       return { ...STATE_CENTROIDS[state], isApproximate: true };
     }
 
-    return null;
+    // DECISION-009: Ultimate fallback to US center (never return null)
+    return { ...US_CENTER, isApproximate: true };
   }
 
   /**
@@ -136,9 +141,32 @@
     zoom?: number;
     // FEAT-P1: Verify Location callback - called with locid and new lat/lng
     onLocationVerify?: (locid: string, lat: number, lng: number) => void;
+    // DECISION-010: Lock all map interaction (for mini map on location detail)
+    readonly?: boolean;
+    // DECISION-011: Limited interaction for mini map (1-2 zoom levels, slight pan)
+    limitedInteraction?: boolean;
+    // DECISION-011: Hide attribution for mini map (cleaner look)
+    hideAttribution?: boolean;
+    // DECISION-011: Default layer (satellite, street, topo, light, dark)
+    defaultLayer?: 'satellite' | 'street' | 'topo' | 'light' | 'dark' | 'satellite-labels';
+    // DECISION-011: Compact layer control (collapsed by default)
+    compactLayerControl?: boolean;
   }
 
-  let { locations = [], onLocationClick, onMapClick, onMapRightClick, showHeatMap = false, zoom, onLocationVerify }: Props = $props();
+  let {
+    locations = [],
+    onLocationClick,
+    onMapClick,
+    onMapRightClick,
+    showHeatMap = false,
+    zoom,
+    onLocationVerify,
+    readonly = false,
+    limitedInteraction = false,
+    hideAttribution = false,
+    defaultLayer = 'light',
+    compactLayerControl = false
+  }: Props = $props();
 
   /**
    * Escape HTML to prevent XSS attacks
@@ -266,32 +294,54 @@
     await import('leaflet/dist/leaflet.css');
 
     if (!map && mapContainer) {
+      // DECISION-010: Lock all interaction when readonly is true
+      // DECISION-011: Limited interaction allows 1-2 zoom levels, slight pan
+      const initialZoom = zoom ?? MAP_CONFIG.DEFAULT_ZOOM;
       map = L.map(mapContainer, {
         center: [MAP_CONFIG.DEFAULT_CENTER.lat, MAP_CONFIG.DEFAULT_CENTER.lng],
-        zoom: MAP_CONFIG.DEFAULT_ZOOM,
+        zoom: initialZoom,
+        // Interaction controls - disabled when readonly, limited when limitedInteraction
+        dragging: !readonly && true,
+        scrollWheelZoom: !readonly && true,
+        doubleClickZoom: !readonly && !limitedInteraction,
+        touchZoom: !readonly && true,
+        boxZoom: !readonly && !limitedInteraction,
+        keyboard: !readonly && !limitedInteraction,
+        zoomControl: !readonly && !limitedInteraction,
+        // DECISION-011: Limited interaction - restrict zoom range to ±1 from initial
+        minZoom: limitedInteraction ? Math.max(1, initialZoom - 1) : undefined,
+        maxZoom: limitedInteraction ? Math.min(19, initialZoom + 1) : undefined,
+        // DECISION-011: Hide attribution for mini map
+        attributionControl: !hideAttribution,
       });
 
+      // DECISION-011: Limited interaction - restrict panning to ~500m from center
+      // We'll set maxBounds after we know the location coordinates
+      // This will be handled in updateClusters when single location is rendered
+
       // P3c: Additional map layers per v010steps.md
+      // DECISION-011: Attribution empty string when hideAttribution is true
+      const attrSuffix = hideAttribution ? '' : undefined;
       const baseLayers: { [key: string]: TileLayer } = {
         'Satellite': L.tileLayer(TILE_LAYERS.SATELLITE, {
-          attribution: 'Tiles &copy; Esri',
+          attribution: hideAttribution ? '' : 'Tiles &copy; Esri',
           maxZoom: MAP_CONFIG.MAX_ZOOM,
         }),
         'Street': L.tileLayer(TILE_LAYERS.STREET, {
-          attribution: '&copy; OpenStreetMap contributors',
+          attribution: hideAttribution ? '' : '&copy; OpenStreetMap contributors',
           maxZoom: MAP_CONFIG.MAX_ZOOM,
         }),
         'Topo': L.tileLayer(TILE_LAYERS.TOPO, {
-          attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap',
+          attribution: hideAttribution ? '' : 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap',
           maxZoom: 17,
         }),
         'Light': L.tileLayer(TILE_LAYERS.CARTO_LIGHT, {
-          attribution: '&copy; OpenStreetMap contributors, &copy; CartoDB',
+          attribution: hideAttribution ? '' : '&copy; OpenStreetMap contributors, &copy; CartoDB',
           maxZoom: MAP_CONFIG.MAX_ZOOM,
           subdomains: 'abcd',
         }),
         'Dark': L.tileLayer(TILE_LAYERS.CARTO_DARK, {
-          attribution: '&copy; OpenStreetMap contributors, &copy; CartoDB',
+          attribution: hideAttribution ? '' : '&copy; OpenStreetMap contributors, &copy; CartoDB',
           maxZoom: MAP_CONFIG.MAX_ZOOM,
           subdomains: 'abcd',
         }),
@@ -299,33 +349,56 @@
 
       const overlayLayers: { [key: string]: TileLayer } = {
         'Labels': L.tileLayer(TILE_LAYERS.LABELS, {
-          attribution: '&copy; CartoDB',
+          attribution: hideAttribution ? '' : '&copy; CartoDB',
           maxZoom: MAP_CONFIG.MAX_ZOOM,
           subdomains: 'abcd',
         }),
       };
 
-      // FEAT-6: Default to Light view per user request
-      baseLayers['Light'].addTo(map);
+      // DECISION-011: Default layer based on prop
+      const layerMap: Record<string, string> = {
+        'satellite': 'Satellite',
+        'street': 'Street',
+        'topo': 'Topo',
+        'light': 'Light',
+        'dark': 'Dark',
+        'satellite-labels': 'Satellite', // Will also add labels overlay
+      };
+      const selectedLayer = layerMap[defaultLayer] || 'Light';
+      baseLayers[selectedLayer].addTo(map);
 
-      L.control.layers(baseLayers, overlayLayers).addTo(map);
+      // DECISION-011: Add labels overlay if satellite-labels is selected
+      if (defaultLayer === 'satellite-labels') {
+        overlayLayers['Labels'].addTo(map);
+      }
+
+      // DECISION-011: Compact layer control (collapsed, bottom-left) or standard
+      if (!limitedInteraction) {
+        L.control.layers(baseLayers, overlayLayers, {
+          collapsed: compactLayerControl,
+          position: compactLayerControl ? 'bottomleft' : 'topright',
+        }).addTo(map);
+      }
 
       markersLayer = L.layerGroup().addTo(map);
 
-      map.on('click', (e) => {
-        if (onMapClick) {
-          onMapClick(e.latlng.lat, e.latlng.lng);
-        }
-      });
+      // DECISION-010: Skip click handlers when readonly
+      if (!readonly) {
+        map.on('click', (e) => {
+          if (onMapClick) {
+            onMapClick(e.latlng.lat, e.latlng.lng);
+          }
+        });
 
-      map.on('contextmenu', (e) => {
-        // BUG-V2 FIX: Prevent default browser context menu
-        e.originalEvent.preventDefault();
-        if (onMapRightClick) {
-          // BUG-2 FIX: Pass screen coordinates for context menu positioning
-          onMapRightClick(e.latlng.lat, e.latlng.lng, e.originalEvent.clientX, e.originalEvent.clientY);
-        }
-      });
+        map.on('contextmenu', (e) => {
+          // BUG-V2 FIX: Prevent default browser context menu
+          e.originalEvent.preventDefault();
+          if (onMapRightClick) {
+            // BUG-2 FIX: Pass screen coordinates for context menu positioning
+            onMapRightClick(e.latlng.lat, e.latlng.lng, e.originalEvent.clientX, e.originalEvent.clientY);
+          }
+        });
+      }
 
       // BUG-V1 FIX: Event delegation for View Details and Verify button clicks
       // This is more reliable than DOM manipulation in Leaflet popups
@@ -476,7 +549,8 @@
         marker.bindPopup(popupContent);
 
         // FEAT-P1: Make marker draggable if onLocationVerify is provided
-        if (onLocationVerify && !isVerified) {
+        // DECISION-010: Skip marker dragging when readonly
+        if (onLocationVerify && !isVerified && !readonly) {
           marker.options.draggable = true;
           marker.on('dragend', () => {
             const newPos = marker.getLatLng();
@@ -510,6 +584,15 @@
         const zoomLevel = zoom ?? (coords.isApproximate ? 10 : 17);
         initialViewSet = true; // MUST set BEFORE setView to prevent recursion
         map.setView([coords.lat, coords.lng], zoomLevel);
+
+        // DECISION-011: Limited interaction - restrict panning to ~500m from center
+        if (limitedInteraction) {
+          const bounds = L.latLngBounds(
+            [coords.lat - 0.005, coords.lng - 0.007], // ~500m south-west
+            [coords.lat + 0.005, coords.lng + 0.007]  // ~500m north-east
+          );
+          map.setMaxBounds(bounds);
+        }
       }
     }
   }

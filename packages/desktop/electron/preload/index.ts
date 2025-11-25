@@ -61,6 +61,9 @@ const api = {
       };
     }>> =>
       ipcRenderer.invoke('location:checkDuplicates', address),
+    // DECISION-012: Backfill region fields for existing locations
+    backfillRegions: (): Promise<{ updated: number; total: number }> =>
+      ipcRenderer.invoke('location:backfillRegions'),
   },
 
   stats: {
