@@ -49,9 +49,9 @@
   // GPS helpers
   const hasGps = $derived(location.gps?.lat && location.gps?.lng);
 
-  // DECISION-016: Verification states for colored dots
-  const isAddressVerified = $derived(!!(location.address?.street && location.address?.city && location.address?.state));
-  const isGpsVerified = $derived(!!(location.gps?.lat && location.gps?.lng && location.gps?.verifiedOnMap));
+  // DECISION-016: Verification states for colored dots (must check actual verified flags, not just data existence)
+  const isAddressVerified = $derived(location.address?.verified === true);
+  const isGpsVerified = $derived(location.gps?.verifiedOnMap === true);
   const isAreaVerified = $derived(!!(location.address?.county || culturalRegion));
 
   // Copy address with notification
