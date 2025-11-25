@@ -76,20 +76,44 @@
     }
   }
 
-  // Auto-copy on text selection
+  // Auto-copy on text selection (with small delay for back-to-front selection)
   function handleAddressSelection() {
-    const selection = window.getSelection();
-    if (selection && selection.toString().trim().length > 0) {
-      copyAddress();
-      selection.removeAllRanges(); // Clear selection after copy
-    }
+    // Small timeout ensures selection is registered regardless of direction
+    setTimeout(() => {
+      const selection = window.getSelection();
+      if (selection && selection.toString().trim().length > 0) {
+        copyAddress();
+        selection.removeAllRanges();
+      }
+    }, 10);
   }
 
   function handleGpsSelection() {
+    setTimeout(() => {
+      const selection = window.getSelection();
+      if (selection && selection.toString().trim().length > 0) {
+        copyGPS();
+        selection.removeAllRanges();
+      }
+    }, 10);
+  }
+
+  // Right-click backup: copy if text is selected
+  function handleAddressContextMenu(e: MouseEvent) {
     const selection = window.getSelection();
     if (selection && selection.toString().trim().length > 0) {
+      e.preventDefault();
+      copyAddress();
+      selection.removeAllRanges();
+    }
+  }
+
+  function handleGpsContextMenu(e: MouseEvent) {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+      e.preventDefault();
       copyGPS();
-      selection.removeAllRanges(); // Clear selection after copy
+      selection.removeAllRanges();
     }
   }
 
@@ -143,7 +167,7 @@
 
     {#if hasAddress}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="text-base text-gray-900 space-y-0.5 relative" onmouseup={handleAddressSelection}>
+      <div class="text-base text-gray-900 space-y-0.5 relative" onmouseup={handleAddressSelection} oncontextmenu={handleAddressContextMenu}>
         {#if location.address?.street}
           <button
             onclick={openOnAtlas}
@@ -189,7 +213,7 @@
 
     {#if hasGps}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="relative mb-3" onmouseup={handleGpsSelection}>
+      <div class="relative mb-3" onmouseup={handleGpsSelection} oncontextmenu={handleGpsContextMenu}>
         <button
           onclick={openOnAtlas}
           class="text-accent hover:underline font-mono text-sm text-left"
