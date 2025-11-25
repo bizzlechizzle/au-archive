@@ -118,12 +118,12 @@
 
 <div class="bg-white rounded-lg shadow">
   <!-- Header with verification badge and edit button -->
-  <div class="flex items-center justify-between px-8 py-6">
-    <h2 class="text-2xl font-semibold text-foreground leading-none">Information</h2>
+  <div class="flex items-baseline justify-between px-8 py-6">
+    <h2 class="text-2xl font-semibold text-foreground">Information</h2>
     {#if onSave}
       <button
         onclick={openEditModal}
-        class="text-sm text-accent hover:underline self-center"
+        class="text-sm text-accent hover:underline"
         title="Edit information"
       >
         edit
