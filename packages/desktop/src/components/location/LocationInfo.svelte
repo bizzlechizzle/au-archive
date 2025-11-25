@@ -123,7 +123,7 @@
     {#if onSave}
       <button
         onclick={openEditModal}
-        class="text-sm text-accent hover:underline"
+        class="text-sm text-accent hover:underline self-center"
         title="Edit information"
       >
         edit

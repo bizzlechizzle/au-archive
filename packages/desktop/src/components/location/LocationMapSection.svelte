@@ -152,7 +152,7 @@
     <h2 class="text-2xl font-semibold text-foreground">Location</h2>
     <button
       onclick={() => showEditModal = true}
-      class="text-sm text-accent hover:underline"
+      class="text-sm text-accent hover:underline self-center"
       title="Edit location"
     >
       edit
