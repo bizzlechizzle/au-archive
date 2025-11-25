@@ -116,10 +116,10 @@
 
 <svelte:window onkeydown={showEditModal ? handleKeydown : undefined} />
 
-<div class="bg-white rounded-lg shadow p-8">
+<div class="bg-white rounded-lg shadow">
   <!-- Header with verification badge and edit button -->
-  <div class="flex items-center justify-between mb-6">
-    <h2 class="text-xl font-semibold text-foreground">Information</h2>
+  <div class="flex items-center justify-between px-8 py-6">
+    <h2 class="text-2xl font-semibold text-foreground">Information</h2>
     {#if onSave}
       <button
         onclick={openEditModal}
@@ -131,8 +131,10 @@
     {/if}
   </div>
 
-  {#if hasAnyInfo}
-    <dl class="space-y-4">
+  <!-- Content section -->
+  <div class="px-8 py-6">
+    {#if hasAnyInfo}
+      <dl class="space-y-4">
       {#if location.type}
         <div>
           <dt class="text-sm font-medium text-gray-500">Type</dt>
@@ -236,10 +238,11 @@
           </dd>
         </div>
       {/if}
-    </dl>
-  {:else}
-    <p class="text-gray-400 text-sm italic">No information added yet</p>
-  {/if}
+      </dl>
+    {:else}
+      <p class="text-gray-400 text-sm italic">No information added yet</p>
+    {/if}
+  </div>
 </div>
 
 <!-- Edit Modal -->
