@@ -75,6 +75,11 @@
   const hasFlags = $derived(location.historic || location.favorite || location.project);
   const hasAuthor = $derived(!!location.auth_imp);
 
+  // Parse AKA names for display (split by comma)
+  const displayAkaNames = $derived(
+    location.akanam ? location.akanam.split(',').map(s => s.trim()).filter(Boolean) : []
+  );
+
   // Check if we have any info to display at all
   const hasAnyInfo = $derived(
     hasHistoricalName || hasAkaName || hasStatus || hasDocumentation ||
@@ -114,6 +119,30 @@
     }
   }
 
+  // AKA name management
+  let newAkaInput = $state('');
+
+  function removeAkaName(nameToRemove: string) {
+    const names = akaNames.filter(n => n !== nameToRemove);
+    editForm.akanam = names.join(', ');
+  }
+
+  function addAkaName() {
+    const trimmed = newAkaInput.trim();
+    if (trimmed && !akaNames.includes(trimmed)) {
+      const names = [...akaNames, trimmed];
+      editForm.akanam = names.join(', ');
+    }
+    newAkaInput = '';
+  }
+
+  function handleAkaKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addAkaName();
+    }
+  }
+
   function openEditModal() {
     originalStatus = location.access || '';
     editForm = {
@@ -140,6 +169,7 @@
       docMapFind: location.docMapFind || false,
       auth_imp: location.auth_imp || '',
     };
+    newAkaInput = '';
     showEditModal = true;
   }
 
@@ -216,7 +246,11 @@
       {#if hasAkaName}
         <div class="mb-4">
           <h3 class="section-title mb-1">Also Known As</h3>
-          <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{location.akanam}</span>
+          <div class="flex flex-wrap gap-2">
+            {#each displayAkaNames as name}
+              <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{name}</span>
+            {/each}
+          </div>
         </div>
       {/if}
 
@@ -302,15 +336,15 @@
         </div>
       {/if}
 
-      <!-- Flags - accent color for all badges -->
+      <!-- Flags - text links (clickable filters) -->
       {#if hasFlags}
         <div class="mb-4">
           <h3 class="section-title mb-1">Flags</h3>
-          <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap gap-3">
             {#if location.project}
               <button
                 onclick={() => onNavigateFilter('project', 'true')}
-                class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm hover:bg-accent/20"
+                class="text-base text-accent hover:underline"
                 title="View all project locations"
               >
                 Project
@@ -319,7 +353,7 @@
             {#if location.favorite}
               <button
                 onclick={() => onNavigateFilter('favorite', 'true')}
-                class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm hover:bg-accent/20"
+                class="text-base text-accent hover:underline"
                 title="View all favorites"
               >
                 Favorite
@@ -328,7 +362,7 @@
             {#if location.historic}
               <button
                 onclick={() => onNavigateFilter('historic', 'true')}
-                class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm hover:bg-accent/20"
+                class="text-base text-accent hover:underline"
                 title="View all historic landmarks"
               >
                 Historical
@@ -399,14 +433,36 @@
           />
         </div>
 
-        <!-- AKA Name -->
+        <!-- AKA Name - Pill tag UI -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Also Known As</label>
+          <!-- Existing AKA names as pills -->
+          {#if akaNames.length > 0}
+            <div class="flex flex-wrap gap-2 mb-2">
+              {#each akaNames as name}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">
+                  {name}
+                  <button
+                    type="button"
+                    onclick={() => removeAkaName(name)}
+                    class="text-accent/60 hover:text-accent ml-0.5"
+                    title="Remove {name}"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              {/each}
+            </div>
+          {/if}
+          <!-- Input to add new AKA name -->
           <input
             type="text"
-            bind:value={editForm.akanam}
+            bind:value={newAkaInput}
+            onkeydown={handleAkaKeydown}
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-            placeholder="Name 1, Name 2, Name 3"
+            placeholder="Type a name and press Enter"
           />
         </div>
 
