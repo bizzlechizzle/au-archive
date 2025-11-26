@@ -43,6 +43,11 @@
   let verifyingGps = $state(false);
   let togglingFavorite = $state(false);
 
+  // Hero title text fitting - premium single-line scaling
+  let titleContainer: HTMLDivElement | undefined = $state();
+  let titleElement: HTMLHeadingElement | undefined = $state();
+  let titleFontSize = $state(60);
+
   // Derived
   const mediaViewerList = $derived(images.map(img => ({
     hash: img.imgsha, path: img.imgloc,
@@ -94,6 +99,34 @@
     const baseName = location.locnamShort || generateHeroName(location.locnam, location.type, location.stype);
     const prefix = location.locnamUseThe ? 'The ' : '';
     return prefix + baseName;
+  });
+
+  // Text fitting effect - scales font to fit container width
+  function fitTitleText() {
+    if (!titleContainer || !titleElement) return;
+
+    const maxSize = 60;
+    const minSize = 16;
+    let size = maxSize;
+
+    // Reset to max size first
+    titleElement.style.fontSize = `${size}px`;
+
+    // Shrink until it fits
+    while (titleElement.scrollWidth > titleContainer.clientWidth && size > minSize) {
+      size -= 2;
+      titleElement.style.fontSize = `${size}px`;
+    }
+
+    titleFontSize = size;
+  }
+
+  // Re-fit when heroDisplayName changes or elements mount
+  $effect(() => {
+    if (heroDisplayName && titleContainer && titleElement) {
+      // Small delay to ensure DOM is ready
+      requestAnimationFrame(() => fitTitleText());
+    }
   });
 
   // Load functions
@@ -366,6 +399,9 @@
   });
 </script>
 
+<!-- Resize handler for title text fitting -->
+<svelte:window onresize={fitTitleText} />
+
 <div class="h-full overflow-auto">
   {#if loading}
     <div class="flex items-center justify-center h-full"><p class="text-gray-500">Loading location...</p></div>
@@ -380,15 +416,21 @@
     <!-- Hero outside max-w container for full-width stretch -->
     <LocationHero {images} heroImgsha={location.hero_imgsha || null} />
 
-    <!-- Title below hero: smart display name, single line, no truncation -->
-    <div class="max-w-6xl mx-auto px-8 pt-6 pb-2">
-      <h1
-        class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight max-w-[75%]"
-        style="color: #454545;"
-        title={location.locnam}
+    <!-- Title below hero: premium text fitting - always one line -->
+    <div class="max-w-6xl mx-auto px-8 pt-6 pb-4">
+      <div
+        bind:this={titleContainer}
+        class="w-full lg:max-w-[70%]"
       >
-        {heroDisplayName}
-      </h1>
+        <h1
+          bind:this={titleElement}
+          class="font-bold leading-tight whitespace-nowrap"
+          style="color: #454545; font-size: {titleFontSize}px;"
+          title={location.locnam}
+        >
+          {heroDisplayName}
+        </h1>
+      </div>
     </div>
 
     <div class="max-w-6xl mx-auto px-8 pb-8">
