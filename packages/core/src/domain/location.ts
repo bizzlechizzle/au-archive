@@ -271,15 +271,20 @@ export class LocationEntity {
 
   /**
    * Generate hero display name from full location name
-   * Strips type/subtype suffixes but maintains minimum 2 words
+   * Strips leading "The" and type/subtype suffixes, maintains minimum 2 words
    */
   static generateHeroName(name: string, type?: string, subtype?: string): string {
     // Split into words (preserve case)
-    const words = name.split(/\s+/).filter(w => w.length > 0);
+    let words = name.split(/\s+/).filter(w => w.length > 0);
+
+    // Strip leading "The" - the toggle can add it back
+    if (words.length > 0 && words[0].toLowerCase() === 'the') {
+      words = words.slice(1);
+    }
 
     if (words.length <= 2) {
       // Already short enough, keep as-is
-      return name;
+      return words.join(' ');
     }
 
     // Build list of suffixes to strip (type, subtype, and common location terms)

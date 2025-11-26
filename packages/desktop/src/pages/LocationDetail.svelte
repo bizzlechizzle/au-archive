@@ -66,8 +66,14 @@
   ]);
 
   function generateHeroName(name: string, type?: string, subtype?: string): string {
-    const words = name.split(/\s+/).filter(w => w.length > 0);
-    if (words.length <= 2) return name;
+    let words = name.split(/\s+/).filter(w => w.length > 0);
+
+    // Strip leading "The" - the toggle can add it back
+    if (words.length > 0 && words[0].toLowerCase() === 'the') {
+      words = words.slice(1);
+    }
+
+    if (words.length <= 2) return words.join(' ');
 
     const suffixesToStrip = new Set<string>(LOCATION_SUFFIXES);
     if (type) { suffixesToStrip.add(type.toLowerCase()); suffixesToStrip.add(type.toLowerCase() + 's'); }
