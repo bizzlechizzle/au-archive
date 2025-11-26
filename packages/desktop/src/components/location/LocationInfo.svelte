@@ -342,7 +342,7 @@
       {#if hasHistoricalName}
         <div class="mb-4">
           <h3 class="section-title mb-1">Historical Name</h3>
-          <p class="text-base text-gray-900">{location.historicalName}</p>
+          <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{location.historicalName}</span>
         </div>
       {/if}
 
