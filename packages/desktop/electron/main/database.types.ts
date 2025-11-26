@@ -118,6 +118,10 @@ export interface LocsTable {
   // Hero Image (Kanye6: User-selected featured image)
   hero_imgsha: string | null;
 
+  // Hero Display Name (Migration 21: Smart title shortening)
+  locnam_short: string | null;    // Optional custom short name for hero display
+  locnam_use_the: number;         // 0/1 - Prepend "The" to display name
+
   // Relationships
   sublocs: string | null;
   sub12: string | null;

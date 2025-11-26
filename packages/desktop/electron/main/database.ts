@@ -748,6 +748,24 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 20 completed: doc_map_find and status_changed_at columns added');
     }
+
+    // Migration 21: Add hero display name fields
+    // Per hero redesign: Smart title shortening with manual override
+    // - locnam_short: Optional custom short name for hero display
+    // - locnam_use_the: Boolean to prepend "The" to display name
+    const locsColsForDisplayName = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasLocnamShort = locsColsForDisplayName.some(col => col.name === 'locnam_short');
+
+    if (!hasLocnamShort) {
+      console.log('Running migration 21: Adding hero display name columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN locnam_short TEXT;
+        ALTER TABLE locs ADD COLUMN locnam_use_the INTEGER DEFAULT 0;
+      `);
+
+      console.log('Migration 21 completed: hero display name columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

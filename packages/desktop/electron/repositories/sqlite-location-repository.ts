@@ -116,6 +116,9 @@ export class SQLiteLocationRepository implements LocationRepository {
         locnam_verified: input.locnamVerified ? 1 : 0,
         historical_name_verified: input.historicalNameVerified ? 1 : 0,
         akanam_verified: input.akanamVerified ? 1 : 0,
+        // Migration 21: Hero display name fields
+        locnam_short: input.locnamShort || null,
+        locnam_use_the: input.locnamUseThe ? 1 : 0,
         sublocs: null,
         sub12: null,
         locadd,
@@ -290,6 +293,9 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.locnamVerified !== undefined) updates.locnam_verified = input.locnamVerified ? 1 : 0;
     if (input.historicalNameVerified !== undefined) updates.historical_name_verified = input.historicalNameVerified ? 1 : 0;
     if (input.akanamVerified !== undefined) updates.akanam_verified = input.akanamVerified ? 1 : 0;
+    // Migration 21: Hero display name fields
+    if (input.locnamShort !== undefined) updates.locnam_short = input.locnamShort;
+    if (input.locnamUseThe !== undefined) updates.locnam_use_the = input.locnamUseThe ? 1 : 0;
 
     // Kanye9: Handle flat GPS field updates (for cascade geocoding and other direct updates)
     const inputAny = input as any;
@@ -519,6 +525,9 @@ export class SQLiteLocationRepository implements LocationRepository {
       locnamVerified: row.locnam_verified === 1,
       historicalNameVerified: row.historical_name_verified === 1,
       akanamVerified: row.akanam_verified === 1,
+      // Migration 21: Hero display name fields
+      locnamShort: row.locnam_short ?? undefined,
+      locnamUseThe: row.locnam_use_the === 1,
     };
   }
 

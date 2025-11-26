@@ -38,6 +38,8 @@
   let editForm = $state({
     locnam: '',
     locnamVerified: false,
+    locnamShort: '',      // Migration 21: Custom short name for hero
+    locnamUseThe: false,  // Migration 21: Prepend "The" to display name
     historicalName: '',
     historicalNameVerified: false,
     akanam: '',
@@ -148,6 +150,8 @@
     editForm = {
       locnam: location.locnam || '',
       locnamVerified: location.locnamVerified || false,
+      locnamShort: location.locnamShort || '',
+      locnamUseThe: location.locnamUseThe || false,
       historicalName: location.historicalName || '',
       historicalNameVerified: location.historicalNameVerified || false,
       akanam: location.akanam || '',
@@ -185,6 +189,8 @@
       await onSave({
         locnam: editForm.locnam,
         locnamVerified: editForm.locnamVerified,
+        locnamShort: editForm.locnamShort || undefined,
+        locnamUseThe: editForm.locnamUseThe,
         historicalName: editForm.historicalName || undefined,
         historicalNameVerified: editForm.historicalNameVerified,
         akanam: editForm.akanam || undefined,
@@ -431,6 +437,37 @@
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
             placeholder="Location name"
           />
+        </div>
+
+        <!-- Hero Display Name - Migration 21 -->
+        <div class="bg-gray-50 rounded-lg p-4 -mx-1">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Hero Display Name</label>
+          <p class="text-xs text-gray-500 mb-3">Override the auto-generated title shown on the hero image</p>
+
+          <div class="space-y-3">
+            <div>
+              <input
+                type="text"
+                bind:value={editForm.locnamShort}
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                placeholder="Custom short name (leave empty for auto)"
+              />
+            </div>
+
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                bind:checked={editForm.locnamUseThe}
+                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+              />
+              <span class="text-sm">Prepend "The"</span>
+            </label>
+
+            <!-- Preview -->
+            <div class="text-xs text-gray-500">
+              Preview: <span class="font-medium text-gray-700">{editForm.locnamUseThe ? 'The ' : ''}{editForm.locnamShort || '(auto-generated from name)'}</span>
+            </div>
+          </div>
         </div>
 
         <!-- AKA Name - Pill tag UI -->

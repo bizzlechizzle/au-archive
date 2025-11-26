@@ -95,6 +95,9 @@ export const LocationInputSchema = z.object({
   locnamVerified: z.boolean().default(false),  // User verified location name is correct
   historicalNameVerified: z.boolean().default(false), // User verified historical name is correct
   akanamVerified: z.boolean().default(false),  // User verified AKA name is correct
+  // Hero Display Name (Migration 21)
+  locnamShort: z.string().optional(),          // Optional custom short name for hero
+  locnamUseThe: z.boolean().default(false),    // Prepend "The" to display name
 });
 
 export type LocationInput = z.infer<typeof LocationInputSchema>;
@@ -232,12 +235,84 @@ export class LocationEntity {
     return parts.length > 0 ? parts.join(', ') : null;
   }
 
-  // Get display name (with AKA if exists)
+  // Get display name (with AKA if exists) - for lists, cards, etc.
   getDisplayName(): string {
     if (this.data.akanam) {
       return `${this.data.locnam} (${this.data.akanam})`;
     }
     return this.data.locnam;
+  }
+
+  /**
+   * Get hero display name - smart single-line title for hero section
+   * Priority: locnamShort (custom) > auto-generated from locnam
+   * Rules:
+   * - Strip type/subtype suffixes from end (e.g., "First Baptist Church" → "First Baptist")
+   * - Never reduce below 2 words (avoid single word titles)
+   * - Prepend "The" if locnamUseThe is true
+   */
+  getHeroDisplayName(): string {
+    // If custom short name is set, use it
+    if (this.data.locnamShort) {
+      const prefix = this.data.locnamUseThe ? 'The ' : '';
+      return prefix + this.data.locnamShort;
+    }
+
+    // Auto-generate from locnam
+    const autoName = LocationEntity.generateHeroName(
+      this.data.locnam,
+      this.data.type || undefined,
+      this.data.stype || undefined
+    );
+
+    const prefix = this.data.locnamUseThe ? 'The ' : '';
+    return prefix + autoName;
+  }
+
+  /**
+   * Generate hero display name from full location name
+   * Strips type/subtype suffixes but maintains minimum 2 words
+   */
+  static generateHeroName(name: string, type?: string, subtype?: string): string {
+    // Split into words (preserve case)
+    const words = name.split(/\s+/).filter(w => w.length > 0);
+
+    if (words.length <= 2) {
+      // Already short enough, keep as-is
+      return name;
+    }
+
+    // Build list of suffixes to strip (type, subtype, and common location terms)
+    const suffixesToStrip = new Set<string>();
+
+    // Add type and subtype variations
+    if (type) {
+      suffixesToStrip.add(type.toLowerCase());
+      // Also add plural forms
+      suffixesToStrip.add(type.toLowerCase() + 's');
+    }
+    if (subtype) {
+      suffixesToStrip.add(subtype.toLowerCase());
+      suffixesToStrip.add(subtype.toLowerCase() + 's');
+    }
+
+    // Add common location suffixes
+    LOCATION_SUFFIXES.forEach(s => suffixesToStrip.add(s));
+
+    // Work backwards, stripping matching suffixes while keeping at least 2 words
+    const result = [...words];
+
+    while (result.length > 2) {
+      const lastWord = result[result.length - 1].toLowerCase();
+      // Remove common suffix patterns (like "Church", "Factory", "Hospital")
+      if (suffixesToStrip.has(lastWord)) {
+        result.pop();
+      } else {
+        break;
+      }
+    }
+
+    return result.join(' ');
   }
 
   // Check if location is documented

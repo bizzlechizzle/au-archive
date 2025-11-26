@@ -54,6 +54,42 @@
     gpsLat: img.meta_gps_lat || null, gpsLng: img.meta_gps_lng || null,
   })));
 
+  // Hero display name: uses custom short name or auto-generates from locnam
+  const LOCATION_SUFFIXES = new Set([
+    'church', 'hospital', 'factory', 'mill', 'school', 'building',
+    'house', 'mansion', 'hotel', 'motel', 'inn', 'theater', 'theatre',
+    'station', 'depot', 'warehouse', 'plant', 'complex', 'center',
+    'centre', 'asylum', 'sanitarium', 'sanatorium', 'prison', 'jail',
+    'penitentiary', 'cemetery', 'memorial', 'monument', 'cathedral',
+    'chapel', 'temple', 'synagogue', 'mosque', 'abbey', 'monastery',
+    'convent', 'rectory', 'parsonage', 'vicarage', 'catholic'
+  ]);
+
+  function generateHeroName(name: string, type?: string, subtype?: string): string {
+    const words = name.split(/\s+/).filter(w => w.length > 0);
+    if (words.length <= 2) return name;
+
+    const suffixesToStrip = new Set<string>(LOCATION_SUFFIXES);
+    if (type) { suffixesToStrip.add(type.toLowerCase()); suffixesToStrip.add(type.toLowerCase() + 's'); }
+    if (subtype) { suffixesToStrip.add(subtype.toLowerCase()); suffixesToStrip.add(subtype.toLowerCase() + 's'); }
+
+    const result = [...words];
+    while (result.length > 2) {
+      const lastWord = result[result.length - 1].toLowerCase();
+      if (suffixesToStrip.has(lastWord)) result.pop();
+      else break;
+    }
+    return result.join(' ');
+  }
+
+  const heroDisplayName = $derived.by(() => {
+    if (!location) return '';
+    // Priority: custom short name > auto-generated
+    const baseName = location.locnamShort || generateHeroName(location.locnam, location.type, location.stype);
+    const prefix = location.locnamUseThe ? 'The ' : '';
+    return prefix + baseName;
+  });
+
   // Load functions
   async function loadLocation() {
     try {
@@ -338,14 +374,14 @@
     <!-- Hero outside max-w container for full-width stretch -->
     <LocationHero {images} heroImgsha={location.hero_imgsha || null} />
 
-    <!-- Title below hero: single line, truncated, seamless with page -->
+    <!-- Title below hero: smart display name, single line, no truncation -->
     <div class="max-w-6xl mx-auto px-8 pt-6 pb-2">
       <h1
-        class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight max-w-[75%] truncate"
+        class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight max-w-[75%]"
         style="color: #454545;"
         title={location.locnam}
       >
-        {location.locnam}
+        {heroDisplayName}
       </h1>
     </div>
 
