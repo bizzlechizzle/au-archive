@@ -235,7 +235,7 @@ export interface ElectronAPI {
       title?: string;
       description?: string;
     }) => Promise<{ success: boolean }>;
-    regenerateAllThumbnails: () => Promise<{ generated: number; failed: number; total: number }>;
+    regenerateAllThumbnails: (options?: { force?: boolean }) => Promise<{ generated: number; failed: number; total: number; rawTotal?: number; previewsExtracted?: number; previewsFailed?: number }>;
   };
 
   notes: {

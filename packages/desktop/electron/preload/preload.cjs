@@ -131,7 +131,7 @@ const api = {
     preload: (mediaList, currentIndex) => ipcRenderer.invoke("media:preload", mediaList, currentIndex),
     readXmp: (mediaPath) => ipcRenderer.invoke("media:readXmp", mediaPath),
     writeXmp: (mediaPath, data) => ipcRenderer.invoke("media:writeXmp", mediaPath, data),
-    regenerateAllThumbnails: () => ipcRenderer.invoke("media:regenerateAllThumbnails"),
+    regenerateAllThumbnails: (options) => ipcRenderer.invoke("media:regenerateAllThumbnails", options),
     regenerateVideoThumbnails: (options) => ipcRenderer.invoke("media:regenerateVideoThumbnails", options),
     // Kanye11: Regenerate preview/thumbnails for a single file
     regenerateSingleFile: (hash, filePath) => ipcRenderer.invoke("media:regenerateSingleFile", hash, filePath),

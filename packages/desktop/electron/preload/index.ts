@@ -350,8 +350,8 @@ const api = {
       description?: string;
     }): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('media:writeXmp', mediaPath, data),
-    regenerateAllThumbnails: (): Promise<{ generated: number; failed: number; total: number }> =>
-      ipcRenderer.invoke('media:regenerateAllThumbnails'),
+    regenerateAllThumbnails: (options?: { force?: boolean }): Promise<{ generated: number; failed: number; total: number; rawTotal?: number; previewsExtracted?: number; previewsFailed?: number }> =>
+      ipcRenderer.invoke('media:regenerateAllThumbnails', options),
     // DECISION-020: Regenerate video thumbnails (poster frames)
     regenerateVideoThumbnails: (options?: { force?: boolean }): Promise<{ generated: number; failed: number; total: number }> =>
       ipcRenderer.invoke('media:regenerateVideoThumbnails', options),

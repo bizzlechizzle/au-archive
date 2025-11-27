@@ -93,8 +93,9 @@
   /**
    * Kanye6: Regenerate thumbnails for all images missing multi-tier thumbnails
    * This repairs old imports that only have 256px thumbnails
+   * @param force - If true, regenerate ALL thumbnails/previews (fixes rotation issues)
    */
-  async function regenerateThumbnails() {
+  async function regenerateThumbnails(force: boolean = false) {
     if (!window.electronAPI?.media?.regenerateAllThumbnails) {
       regenMessage = 'Thumbnail regeneration not available';
       return;
@@ -104,9 +105,9 @@
       regenerating = true;
       regenProgress = 0;
       regenTotal = 0;
-      regenMessage = 'Starting thumbnail regeneration...';
+      regenMessage = force ? 'Regenerating ALL thumbnails and previews...' : 'Starting thumbnail regeneration...';
 
-      const result = await window.electronAPI.media.regenerateAllThumbnails();
+      const result = await window.electronAPI.media.regenerateAllThumbnails({ force });
 
       if (result.total === 0 && result.rawTotal === 0) {
         regenMessage = 'All images already have thumbnails and previews';
@@ -352,20 +353,28 @@
               Regenerate thumbnails for images imported before the multi-tier system.
               This creates 400px, 800px, and 1920px versions for better quality display.
             </p>
-            <div class="flex items-center gap-4">
+            <div class="flex flex-wrap items-center gap-3">
               <button
-                onclick={regenerateThumbnails}
+                onclick={() => regenerateThumbnails(false)}
                 disabled={regenerating}
                 class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
               >
-                {regenerating ? 'Regenerating...' : 'Regenerate All Thumbnails'}
+                {regenerating ? 'Regenerating...' : 'Regenerate Missing'}
+              </button>
+              <button
+                onclick={() => regenerateThumbnails(true)}
+                disabled={regenerating}
+                class="px-4 py-2 bg-gray-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                title="Re-extracts all RAW previews with correct EXIF rotation"
+              >
+                {regenerating ? 'Regenerating...' : 'Fix All Rotations'}
               </button>
               {#if regenMessage}
                 <span class="text-sm text-gray-600">{regenMessage}</span>
               {/if}
             </div>
             <p class="text-xs text-gray-500 mt-2">
-              This may take a while for large archives. RAW files (NEF, CR2, etc.) will have previews extracted first.
+              "Regenerate Missing" processes only images without thumbnails. "Fix All Rotations" re-processes everything to fix sideways DSLR images.
             </p>
           </div>
 
