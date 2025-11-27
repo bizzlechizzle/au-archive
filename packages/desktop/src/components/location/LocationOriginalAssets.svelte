@@ -16,9 +16,7 @@
     heroImgsha: string | null;
     onOpenImageLightbox: (index: number) => void;
     onOpenVideoLightbox: (index: number) => void;
-    onSetHeroImage: (imgsha: string) => void;
     onOpenDocument: (path: string) => void;
-    onShowInFinder?: (path: string) => void;
   }
 
   let {
@@ -28,9 +26,7 @@
     heroImgsha,
     onOpenImageLightbox,
     onOpenVideoLightbox,
-    onSetHeroImage,
     onOpenDocument,
-    onShowInFinder,
   }: Props = $props();
 
   // Outer accordion - collapsed by default (user can expand if wanted)
@@ -67,13 +63,10 @@
         {images}
         {heroImgsha}
         onOpenLightbox={onOpenImageLightbox}
-        onSetHeroImage={onSetHeroImage}
-        {onShowInFinder}
       />
       <LocationVideos
         {videos}
         onOpenLightbox={onOpenVideoLightbox}
-        {onShowInFinder}
       />
       <LocationDocuments
         {documents}

@@ -7,6 +7,7 @@
    * - Displays RAW previews extracted by ExifTool
    * - Keyboard navigation (arrow keys, Escape to close)
    * - Two-tier metadata panel: Summary + All Fields
+   * - Hero image selection with focal point editor
    */
 
   interface Props {
@@ -27,9 +28,14 @@
     }>;
     startIndex?: number;
     onClose: () => void;
+    // Hero image props
+    heroImgsha?: string | null;
+    focalX?: number;
+    focalY?: number;
+    onSetHeroImage?: (imgsha: string, focalX: number, focalY: number) => void;
   }
 
-  let { mediaList, startIndex = 0, onClose }: Props = $props();
+  let { mediaList, startIndex = 0, onClose, heroImgsha, focalX = 0.5, focalY = 0.5, onSetHeroImage }: Props = $props();
 
   let currentIndex = $state(startIndex);
   let showExif = $state(false);
@@ -45,7 +51,14 @@
   let showAllFields = $state(false);
   let lastLoadedHash = $state<string | null>(null);
 
+  // Hero focal point editor state
+  let isEditingFocal = $state(false);
+  let pendingFocalX = $state(focalX);
+  let pendingFocalY = $state(focalY);
+
   const currentMedia = $derived(mediaList[currentIndex]);
+  const isCurrentHero = $derived(currentMedia?.hash === heroImgsha);
+  const canBeHero = $derived(currentMedia?.type === 'image');
 
   // Get the best available image source
   // Uses custom media:// protocol registered in main process to bypass file:// restrictions
@@ -61,7 +74,11 @@
   function handleKeydown(event: KeyboardEvent) {
     switch (event.key) {
       case 'Escape':
-        onClose();
+        if (isEditingFocal) {
+          cancelFocalEdit();
+        } else {
+          onClose();
+        }
         break;
       case 'ArrowLeft':
         goToPrevious();
@@ -80,6 +97,7 @@
       currentIndex--;
       imageError = false;
       showAllFields = false;
+      isEditingFocal = false;
       triggerPreload();
       if (showExif) loadFullMetadata();
     }
@@ -90,6 +108,7 @@
       currentIndex++;
       imageError = false;
       showAllFields = false;
+      isEditingFocal = false;
       triggerPreload();
       if (showExif) loadFullMetadata();
     }
@@ -144,6 +163,31 @@
     if (showExif && lastLoadedHash !== currentMedia?.hash) {
       await loadFullMetadata();
     }
+  }
+
+  // Hero focal point editing
+  function startFocalEdit() {
+    pendingFocalX = isCurrentHero ? focalX : 0.5;
+    pendingFocalY = isCurrentHero ? focalY : 0.5;
+    isEditingFocal = true;
+  }
+
+  function handleFocalDrag(e: MouseEvent) {
+    const target = e.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    pendingFocalX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    pendingFocalY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+  }
+
+  function saveFocalEdit() {
+    if (currentMedia && onSetHeroImage) {
+      onSetHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
+    }
+    isEditingFocal = false;
+  }
+
+  function cancelFocalEdit() {
+    isEditingFocal = false;
   }
 
   // Helper: Format file size
@@ -324,7 +368,7 @@
     {/if}
   </div>
 
-  <!-- Metadata Panel (Two-tier: Summary + All Fields) -->
+  <!-- Metadata Panel (Two-tier: Summary + All Fields + Hero Editor) -->
   {#if showExif && currentMedia}
     <div class="absolute right-0 top-16 bottom-0 w-96 bg-white/95 text-foreground overflow-y-auto shadow-lg border-l border-gray-200">
       <div class="p-4">
@@ -335,6 +379,106 @@
         {:else if metadataError}
           <div class="text-red-500 text-sm">{metadataError}</div>
         {:else}
+          <!-- Hero Image Section (Images only) -->
+          {#if canBeHero && onSetHeroImage}
+            <div class="pb-4 mb-4 border-b border-gray-200">
+              <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Hero Image</div>
+
+              {#if isEditingFocal}
+                <!-- Focal Point Editor -->
+                <div class="space-y-3">
+                  <p class="text-xs text-gray-500">Click to set the focal point for hero crop</p>
+
+                  <!-- Preview with gradient simulation -->
+                  <div
+                    class="relative w-full aspect-[2.35/1] bg-gray-100 rounded-lg overflow-hidden cursor-crosshair"
+                    role="button"
+                    tabindex="0"
+                    onclick={handleFocalDrag}
+                  >
+                    <img
+                      src={imageSrc()}
+                      alt="Hero preview"
+                      class="w-full h-full object-cover"
+                      style="object-position: {pendingFocalX * 100}% {pendingFocalY * 100}%;"
+                    />
+                    <!-- Gradient overlay simulation -->
+                    <div
+                      class="absolute bottom-0 left-0 right-0 h-[80%] pointer-events-none"
+                      style="background: linear-gradient(to top,
+                        #fffbf7 0%,
+                        #fffbf7 12.5%,
+                        rgba(255,251,247,0.95) 20%,
+                        rgba(255,251,247,0.82) 30%,
+                        rgba(255,251,247,0.62) 42%,
+                        rgba(255,251,247,0.40) 54%,
+                        rgba(255,251,247,0.22) 66%,
+                        rgba(255,251,247,0.10) 78%,
+                        rgba(255,251,247,0.03) 90%,
+                        transparent 100%
+                      );"
+                    ></div>
+                    <!-- Focal point indicator -->
+                    <div
+                      class="absolute w-6 h-6 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10"
+                      style="left: {pendingFocalX * 100}%; top: {pendingFocalY * 100}%;"
+                    >
+                      <div class="absolute inset-0 rounded-full border-2 border-white shadow-lg"></div>
+                      <div class="absolute inset-1 rounded-full bg-accent/80"></div>
+                    </div>
+                  </div>
+
+                  <div class="flex gap-2">
+                    <button
+                      onclick={cancelFocalEdit}
+                      class="flex-1 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onclick={saveFocalEdit}
+                      class="flex-1 px-3 py-2 text-sm bg-accent text-white hover:bg-accent/90 rounded-lg transition"
+                    >
+                      {isCurrentHero ? 'Save Position' : 'Set as Hero'}
+                    </button>
+                  </div>
+                </div>
+              {:else}
+                <!-- Hero Status + Action Button -->
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    {#if isCurrentHero}
+                      <span class="inline-flex items-center gap-1 px-2 py-1 bg-accent/10 text-accent text-xs font-medium rounded">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                        </svg>
+                        Current Hero
+                      </span>
+                    {:else}
+                      <span class="text-sm text-gray-500">Not currently hero</span>
+                    {/if}
+                  </div>
+                  <button
+                    onclick={startFocalEdit}
+                    class="px-3 py-1.5 text-sm {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition flex items-center gap-1.5"
+                  >
+                    {#if isCurrentHero}
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" />
+                      </svg>
+                      Adjust
+                    {:else}
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                      </svg>
+                      Make Hero
+                    {/if}
+                  </button>
+                </div>
+              {/if}
+            </div>
+          {/if}
+
           <!-- Summary Section -->
           <div class="space-y-3 text-sm">
             <!-- File Info -->
