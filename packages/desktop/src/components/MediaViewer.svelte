@@ -6,7 +6,7 @@
    * - Displays images via native <img> (standard formats)
    * - Displays RAW previews extracted by ExifTool
    * - Keyboard navigation (arrow keys, Escape to close)
-   * - Shows EXIF panel on toggle
+   * - Two-tier metadata panel: Summary + All Fields
    */
 
   interface Props {
@@ -15,7 +15,7 @@
       path: string;
       thumbPath?: string | null;
       previewPath?: string | null;
-      type: 'image' | 'video';
+      type: 'image' | 'video' | 'document';
       name?: string;
       width?: number | null;
       height?: number | null;
@@ -36,6 +36,14 @@
   let imageError = $state(false);
   let regenerating = $state(false);
   let regenerateError = $state<string | null>(null);
+
+  // Full metadata state (lazy-loaded)
+  let fullMetadata = $state<Record<string, unknown> | null>(null);
+  let ffmpegMetadata = $state<Record<string, unknown> | null>(null);
+  let loadingMetadata = $state(false);
+  let metadataError = $state<string | null>(null);
+  let showAllFields = $state(false);
+  let lastLoadedHash = $state<string | null>(null);
 
   const currentMedia = $derived(mediaList[currentIndex]);
 
@@ -62,7 +70,7 @@
         goToNext();
         break;
       case 'i':
-        showExif = !showExif;
+        toggleInfo();
         break;
     }
   }
@@ -71,7 +79,9 @@
     if (currentIndex > 0) {
       currentIndex--;
       imageError = false;
+      showAllFields = false;
       triggerPreload();
+      if (showExif) loadFullMetadata();
     }
   }
 
@@ -79,7 +89,9 @@
     if (currentIndex < mediaList.length - 1) {
       currentIndex++;
       imageError = false;
+      showAllFields = false;
       triggerPreload();
+      if (showExif) loadFullMetadata();
     }
   }
 
@@ -97,6 +109,84 @@
     if (currentMedia) {
       await window.electronAPI?.media?.showInFolder(currentMedia.path);
     }
+  }
+
+  // Load full metadata when panel opens (lazy-load)
+  async function loadFullMetadata() {
+    if (!currentMedia || lastLoadedHash === currentMedia.hash) return;
+
+    loadingMetadata = true;
+    metadataError = null;
+
+    try {
+      const result = await window.electronAPI?.media?.getFullMetadata(
+        currentMedia.hash,
+        currentMedia.type
+      );
+
+      if (result?.success) {
+        fullMetadata = result.exiftool || null;
+        ffmpegMetadata = result.ffmpeg || null;
+        lastLoadedHash = currentMedia.hash;
+      } else {
+        metadataError = result?.error || 'Failed to load metadata';
+      }
+    } catch (err) {
+      metadataError = err instanceof Error ? err.message : 'Unknown error';
+    } finally {
+      loadingMetadata = false;
+    }
+  }
+
+  // Toggle info panel and load metadata on first open
+  async function toggleInfo() {
+    showExif = !showExif;
+    if (showExif && lastLoadedHash !== currentMedia?.hash) {
+      await loadFullMetadata();
+    }
+  }
+
+  // Helper: Format file size
+  function formatFileSize(size: string | number | undefined): string {
+    if (!size) return '';
+    if (typeof size === 'string') return size;
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  // Helper: Format exposure time
+  function formatExposure(val: string | number | undefined): string {
+    if (!val) return '';
+    if (typeof val === 'string') return val;
+    if (val >= 1) return `${val}s`;
+    return `1/${Math.round(1 / val)}`;
+  }
+
+  // Helper: Format date from ExifTool object or string
+  function formatDate(val: unknown): string {
+    if (!val) return '';
+    if (typeof val === 'string') {
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? val : d.toLocaleString();
+    }
+    if (typeof val === 'object' && val !== null && '_ctor' in val) {
+      const exifDate = val as { year?: number; month?: number; day?: number; hour?: number; minute?: number; second?: number };
+      if (exifDate.year && exifDate.month && exifDate.day) {
+        const d = new Date(exifDate.year, (exifDate.month || 1) - 1, exifDate.day, exifDate.hour || 0, exifDate.minute || 0, exifDate.second || 0);
+        return d.toLocaleString();
+      }
+    }
+    return String(val);
+  }
+
+  // Helper: Get nested value from object
+  function getVal(obj: Record<string, unknown> | null, ...keys: string[]): unknown {
+    if (!obj) return undefined;
+    for (const key of keys) {
+      if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+    }
+    return undefined;
   }
 
   // Kanye11: Regenerate preview for RAW files that couldn't be displayed
@@ -234,51 +324,266 @@
     {/if}
   </div>
 
-  <!-- EXIF Panel -->
+  <!-- Metadata Panel (Two-tier: Summary + All Fields) -->
   {#if showExif && currentMedia}
-    <div class="absolute right-0 top-16 bottom-0 w-80 bg-white/95 text-foreground p-4 overflow-y-auto shadow-lg border-l border-gray-200">
-      <h3 class="text-lg font-semibold mb-4">Info</h3>
+    <div class="absolute right-0 top-16 bottom-0 w-96 bg-white/95 text-foreground overflow-y-auto shadow-lg border-l border-gray-200">
+      <div class="p-4">
+        <h3 class="text-lg font-semibold mb-4">Metadata</h3>
 
-      <div class="space-y-2 text-sm">
-        {#if currentMedia.name}
-          <div>
-            <span class="text-gray-500">Name:</span>
-            <span class="ml-2">{currentMedia.name}</span>
-          </div>
-        {/if}
+        {#if loadingMetadata}
+          <div class="text-gray-500 text-sm">Loading metadata...</div>
+        {:else if metadataError}
+          <div class="text-red-500 text-sm">{metadataError}</div>
+        {:else}
+          <!-- Summary Section -->
+          <div class="space-y-3 text-sm">
+            <!-- File Info -->
+            <div class="pb-3 border-b border-gray-100">
+              <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">File</div>
+              {#if currentMedia.name}
+                <div class="flex justify-between">
+                  <span class="text-gray-500">Name</span>
+                  <span class="text-right truncate ml-2 max-w-[200px]" title={currentMedia.name}>{currentMedia.name}</span>
+                </div>
+              {/if}
+              {#if fullMetadata}
+                {@const fileSize = getVal(fullMetadata, 'FileSize')}
+                {@const fileType = getVal(fullMetadata, 'FileType', 'MIMEType')}
+                {#if fileSize}
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Size</span>
+                    <span>{formatFileSize(fileSize as string | number)}</span>
+                  </div>
+                {/if}
+                {#if fileType}
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Format</span>
+                    <span>{fileType}</span>
+                  </div>
+                {/if}
+              {/if}
+            </div>
 
-        {#if currentMedia.width && currentMedia.height}
-          <div>
-            <span class="text-gray-500">Dimensions:</span>
-            <span class="ml-2">{currentMedia.width} × {currentMedia.height}</span>
-          </div>
-        {/if}
+            <!-- Dimensions / Duration -->
+            <div class="pb-3 border-b border-gray-100">
+              <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+                {currentMedia.type === 'video' ? 'Video' : 'Image'}
+              </div>
+              {#if currentMedia.width && currentMedia.height}
+                <div class="flex justify-between">
+                  <span class="text-gray-500">Dimensions</span>
+                  <span>{currentMedia.width} × {currentMedia.height}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-500">Megapixels</span>
+                  <span>{((currentMedia.width * currentMedia.height) / 1000000).toFixed(1)} MP</span>
+                </div>
+              {/if}
+              {#if currentMedia.type === 'video' && ffmpegMetadata}
+                {@const duration = getVal(ffmpegMetadata, 'format', 'duration') as number | undefined}
+                {@const streams = (ffmpegMetadata.streams || []) as Array<Record<string, unknown>>}
+                {@const videoStream = streams.find((s: Record<string, unknown>) => s.codec_type === 'video')}
+                {@const audioStream = streams.find((s: Record<string, unknown>) => s.codec_type === 'audio')}
+                {#if duration}
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Duration</span>
+                    <span>{Math.floor(duration / 60)}:{String(Math.floor(duration % 60)).padStart(2, '0')}</span>
+                  </div>
+                {/if}
+                {#if videoStream}
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Codec</span>
+                    <span>{videoStream.codec_name}</span>
+                  </div>
+                  {#if videoStream.r_frame_rate}
+                    {@const fps = videoStream.r_frame_rate as string}
+                    {@const [num, den] = fps.split('/').map(Number)}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Frame Rate</span>
+                      <span>{den ? (num / den).toFixed(2) : num} fps</span>
+                    </div>
+                  {/if}
+                {/if}
+                {#if audioStream}
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Audio</span>
+                    <span>{audioStream.codec_name}{audioStream.channels ? ` (${audioStream.channels}ch)` : ''}</span>
+                  </div>
+                {/if}
+              {/if}
+            </div>
 
-        {#if currentMedia.dateTaken}
-          <div>
-            <span class="text-gray-500">Date Taken:</span>
-            <span class="ml-2">{new Date(currentMedia.dateTaken).toLocaleString()}</span>
-          </div>
-        {/if}
+            <!-- Camera/Device -->
+            {#if fullMetadata}
+              {@const make = getVal(fullMetadata, 'Make')}
+              {@const model = getVal(fullMetadata, 'Model')}
+              {@const lens = getVal(fullMetadata, 'LensModel', 'Lens')}
+              {@const focalLength = getVal(fullMetadata, 'FocalLength')}
+              {@const software = getVal(fullMetadata, 'Software')}
+              {#if make || model || lens}
+                <div class="pb-3 border-b border-gray-100">
+                  <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Camera</div>
+                  {#if make || model}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Device</span>
+                      <span>{[make, model].filter(Boolean).join(' ')}</span>
+                    </div>
+                  {/if}
+                  {#if lens}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Lens</span>
+                      <span class="text-right truncate ml-2 max-w-[180px]" title={String(lens)}>{lens}</span>
+                    </div>
+                  {/if}
+                  {#if focalLength}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Focal Length</span>
+                      <span>{focalLength}</span>
+                    </div>
+                  {/if}
+                  {#if software}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Software</span>
+                      <span>{software}</span>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            {/if}
 
-        {#if currentMedia.cameraMake || currentMedia.cameraModel}
-          <div>
-            <span class="text-gray-500">Camera:</span>
-            <span class="ml-2">{[currentMedia.cameraMake, currentMedia.cameraModel].filter(Boolean).join(' ')}</span>
-          </div>
-        {/if}
+            <!-- Exposure (Images only) -->
+            {#if fullMetadata && currentMedia.type === 'image'}
+              {@const exposure = getVal(fullMetadata, 'ExposureTime', 'ShutterSpeedValue')}
+              {@const aperture = getVal(fullMetadata, 'FNumber', 'ApertureValue')}
+              {@const iso = getVal(fullMetadata, 'ISO')}
+              {@const exposureComp = getVal(fullMetadata, 'ExposureCompensation')}
+              {@const metering = getVal(fullMetadata, 'MeteringMode')}
+              {@const flash = getVal(fullMetadata, 'Flash')}
+              {#if exposure || aperture || iso}
+                <div class="pb-3 border-b border-gray-100">
+                  <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Exposure</div>
+                  {#if exposure}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Shutter</span>
+                      <span>{formatExposure(exposure as string | number)}</span>
+                    </div>
+                  {/if}
+                  {#if aperture}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Aperture</span>
+                      <span>f/{aperture}</span>
+                    </div>
+                  {/if}
+                  {#if iso}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">ISO</span>
+                      <span>{iso}</span>
+                    </div>
+                  {/if}
+                  {#if exposureComp !== undefined && exposureComp !== 0}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Compensation</span>
+                      <span>{exposureComp > 0 ? '+' : ''}{exposureComp} EV</span>
+                    </div>
+                  {/if}
+                  {#if metering}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Metering</span>
+                      <span>{metering}</span>
+                    </div>
+                  {/if}
+                  {#if flash}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Flash</span>
+                      <span class="text-right truncate ml-2 max-w-[150px]" title={String(flash)}>{flash}</span>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            {/if}
 
-        {#if currentMedia.gpsLat && currentMedia.gpsLng}
-          <div>
-            <span class="text-gray-500">GPS:</span>
-            <a
-              href={`https://www.openstreetmap.org/?mlat=${currentMedia.gpsLat}&mlon=${currentMedia.gpsLng}&zoom=15`}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="ml-2 text-accent hover:underline"
-            >
-              {currentMedia.gpsLat.toFixed(6)}, {currentMedia.gpsLng.toFixed(6)}
-            </a>
+            <!-- Date/Time -->
+            {#if fullMetadata}
+              {@const dateTaken = getVal(fullMetadata, 'DateTimeOriginal', 'CreateDate')}
+              {@const timezone = getVal(fullMetadata, 'OffsetTimeOriginal', 'OffsetTime', 'zone')}
+              {#if dateTaken}
+                <div class="pb-3 border-b border-gray-100">
+                  <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Date & Time</div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Captured</span>
+                    <span>{formatDate(dateTaken)}</span>
+                  </div>
+                  {#if timezone}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Timezone</span>
+                      <span>{timezone}</span>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            {/if}
+
+            <!-- GPS -->
+            {#if currentMedia.gpsLat && currentMedia.gpsLng}
+              <div class="pb-3 border-b border-gray-100">
+                <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Location</div>
+                <div class="flex justify-between">
+                  <span class="text-gray-500">Coordinates</span>
+                  <a
+                    href={`https://www.openstreetmap.org/?mlat=${currentMedia.gpsLat}&mlon=${currentMedia.gpsLng}&zoom=15`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-accent hover:underline"
+                  >
+                    {currentMedia.gpsLat.toFixed(6)}, {currentMedia.gpsLng.toFixed(6)}
+                  </a>
+                </div>
+                {#if fullMetadata}
+                  {@const altitude = getVal(fullMetadata, 'GPSAltitude')}
+                  {#if altitude}
+                    <div class="flex justify-between">
+                      <span class="text-gray-500">Altitude</span>
+                      <span>{typeof altitude === 'number' ? `${altitude.toFixed(1)} m` : altitude}</span>
+                    </div>
+                  {/if}
+                {/if}
+              </div>
+            {/if}
+
+            <!-- All Fields (Expandable) -->
+            {#if fullMetadata}
+              <div class="pt-2">
+                <button
+                  onclick={() => showAllFields = !showAllFields}
+                  class="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                >
+                  <svg
+                    class="w-3 h-3 transition-transform {showAllFields ? 'rotate-90' : ''}"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                  All Fields ({Object.keys(fullMetadata).length})
+                </button>
+
+                {#if showAllFields}
+                  <div class="mt-3 bg-gray-50 rounded p-3 max-h-80 overflow-y-auto">
+                    <div class="font-mono text-xs space-y-1">
+                      {#each Object.entries(fullMetadata).sort(([a], [b]) => a.localeCompare(b)) as [key, value]}
+                        <div class="flex gap-2">
+                          <span class="text-gray-500 shrink-0">{key}:</span>
+                          <span class="text-gray-700 break-all">
+                            {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                          </span>
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {/if}
           </div>
         {/if}
       </div>
@@ -293,7 +598,7 @@
   <!-- Bottom-right action buttons -->
   <div class="absolute bottom-6 right-6 flex flex-col gap-2 z-10">
     <button
-      onclick={() => showExif = !showExif}
+      onclick={toggleInfo}
       class="px-4 py-2 bg-white text-foreground rounded shadow hover:bg-gray-50 transition text-sm"
       aria-pressed={showExif}
     >

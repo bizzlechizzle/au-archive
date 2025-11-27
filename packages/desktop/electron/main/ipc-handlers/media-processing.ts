@@ -97,6 +97,69 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // Get full metadata (ExifTool/FFprobe) for a media item
+  // Used by MediaViewer's enhanced info panel
+  ipcMain.handle('media:getFullMetadata', async (_event, hash: unknown, mediaType: unknown) => {
+    try {
+      const validHash = z.string().min(1).parse(hash);
+      const validType = z.enum(['image', 'video', 'document']).parse(mediaType);
+
+      let result: { meta_exiftool: string | null; meta_ffmpeg?: string | null } | undefined;
+
+      if (validType === 'image') {
+        result = await db
+          .selectFrom('imgs')
+          .select(['meta_exiftool'])
+          .where('imgsha', '=', validHash)
+          .executeTakeFirst();
+      } else if (validType === 'video') {
+        result = await db
+          .selectFrom('vids')
+          .select(['meta_exiftool', 'meta_ffmpeg'])
+          .where('vidsha', '=', validHash)
+          .executeTakeFirst();
+      } else if (validType === 'document') {
+        result = await db
+          .selectFrom('docs')
+          .select(['meta_exiftool'])
+          .where('docsha', '=', validHash)
+          .executeTakeFirst();
+      }
+
+      if (!result) {
+        return { success: false, error: 'Media not found' };
+      }
+
+      // Parse JSON strings into objects
+      let exiftool = null;
+      let ffmpeg = null;
+
+      if (result.meta_exiftool) {
+        try {
+          exiftool = JSON.parse(result.meta_exiftool);
+        } catch {
+          console.warn('Failed to parse meta_exiftool JSON');
+        }
+      }
+
+      if ('meta_ffmpeg' in result && result.meta_ffmpeg) {
+        try {
+          ffmpeg = JSON.parse(result.meta_ffmpeg);
+        } catch {
+          console.warn('Failed to parse meta_ffmpeg JSON');
+        }
+      }
+
+      return { success: true, exiftool, ffmpeg };
+    } catch (error) {
+      console.error('Error getting full metadata:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
   ipcMain.handle('media:generateThumbnail', async (_event, sourcePath: unknown, hash: unknown) => {
     try {
       const validPath = z.string().min(1).parse(sourcePath);

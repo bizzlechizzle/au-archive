@@ -317,6 +317,13 @@ const api = {
       ipcRenderer.invoke('media:openFile', filePath),
     showInFolder: (filePath: string): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('media:showInFolder', filePath),
+    getFullMetadata: (hash: string, mediaType: 'image' | 'video' | 'document'): Promise<{
+      success: boolean;
+      error?: string;
+      exiftool?: Record<string, unknown>;
+      ffmpeg?: Record<string, unknown>;
+    }> =>
+      ipcRenderer.invoke('media:getFullMetadata', hash, mediaType),
     generateThumbnail: (sourcePath: string, hash: string): Promise<string | null> =>
       ipcRenderer.invoke('media:generateThumbnail', sourcePath, hash),
     extractPreview: (sourcePath: string, hash: string): Promise<string | null> =>

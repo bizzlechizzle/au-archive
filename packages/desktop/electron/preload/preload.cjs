@@ -123,6 +123,7 @@ const api = {
     // Media viewing and processing
     openFile: (filePath) => ipcRenderer.invoke("media:openFile", filePath),
     showInFolder: (filePath) => ipcRenderer.invoke("media:showInFolder", filePath),
+    getFullMetadata: (hash, mediaType) => ipcRenderer.invoke("media:getFullMetadata", hash, mediaType),
     generateThumbnail: (sourcePath, hash) => ipcRenderer.invoke("media:generateThumbnail", sourcePath, hash),
     extractPreview: (sourcePath, hash) => ipcRenderer.invoke("media:extractPreview", sourcePath, hash),
     generatePoster: (sourcePath, hash) => ipcRenderer.invoke("media:generatePoster", sourcePath, hash),
