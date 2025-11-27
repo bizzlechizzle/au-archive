@@ -1,8 +1,12 @@
 import fs from 'fs/promises';
 import path from 'path';
 import sharp from 'sharp';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { MediaPathService } from './media-path-service';
 import { ExifToolService } from './exiftool-service';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * PreviewExtractorService - Extract embedded JPEG previews from RAW files
@@ -15,8 +19,10 @@ import { ExifToolService } from './exiftool-service';
  * 5. ExifTool only - Do not add LibRaw, dcraw, or WASM decoders
  */
 export class PreviewExtractorService {
-  // RAW formats that contain embedded JPEG previews
-  private readonly RAW_EXTENSIONS = new Set([
+  // Formats that contain embedded JPEG previews (RAW + HEIC)
+  // Sharp cannot decode HEIC directly (missing libheif plugin), so we extract embedded JPEG
+  private readonly PREVIEW_FORMATS = new Set([
+    // RAW camera formats
     '.nef', '.nrw',                    // Nikon
     '.cr2', '.cr3', '.crw',            // Canon
     '.arw', '.srf', '.sr2',            // Sony
@@ -33,6 +39,8 @@ export class PreviewExtractorService {
     '.mef',                            // Mamiya
     '.mos',                            // Leaf
     '.kdc', '.dcr',                    // Kodak
+    // HEIC/HEIF (iPhone, modern cameras) - Sharp can't decode without libheif
+    '.heic', '.heif',                  // Apple HEIC
   ]);
 
   // Tags to try for preview extraction, in order of preference
@@ -48,25 +56,59 @@ export class PreviewExtractorService {
   ) {}
 
   /**
-   * Check if a file is a RAW format that likely contains an embedded preview
+   * Check if a file format requires preview extraction (RAW or HEIC)
+   * These formats either can't be decoded by sharp or benefit from embedded JPEG extraction
    */
-  isRawFormat(filePath: string): boolean {
+  needsPreviewExtraction(filePath: string): boolean {
     const ext = path.extname(filePath).toLowerCase();
-    return this.RAW_EXTENSIONS.has(ext);
+    return this.PREVIEW_FORMATS.has(ext);
   }
 
   /**
-   * Extract embedded JPEG preview from a RAW file
+   * Check if file is HEIC/HEIF (requires sips conversion, not ExifTool extraction)
+   */
+  isHeicFormat(filePath: string): boolean {
+    const ext = path.extname(filePath).toLowerCase();
+    return ext === '.heic' || ext === '.heif';
+  }
+
+  /**
+   * @deprecated Use needsPreviewExtraction instead
+   */
+  isRawFormat(filePath: string): boolean {
+    return this.needsPreviewExtraction(filePath);
+  }
+
+  /**
+   * Convert HEIC to JPEG using macOS sips (built-in tool)
+   * sips preserves EXIF metadata including orientation
+   */
+  private async convertHeicWithSips(sourcePath: string, outputPath: string): Promise<boolean> {
+    try {
+      await execFileAsync('sips', [
+        '-s', 'format', 'jpeg',
+        sourcePath,
+        '--out', outputPath
+      ]);
+      return true;
+    } catch (error) {
+      console.error(`[PreviewExtractor] sips conversion failed:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Extract embedded JPEG preview from a RAW or HEIC file
    *
-   * @param sourcePath - Absolute path to RAW file
+   * @param sourcePath - Absolute path to RAW/HEIC file
    * @param hash - SHA256 hash of the file (for naming)
    * @param force - If true, re-extract even if preview exists (for upgrading to higher-res)
    * @returns Absolute path to extracted preview, or null on failure
    */
   async extractPreview(sourcePath: string, hash: string, force: boolean = false): Promise<string | null> {
     try {
-      // Skip non-RAW files
-      if (!this.isRawFormat(sourcePath)) {
+      // Skip files that don't need preview extraction
+      if (!this.needsPreviewExtraction(sourcePath)) {
         return null;
       }
 
@@ -88,6 +130,29 @@ export class PreviewExtractorService {
         hash
       );
 
+      // HEIC files: Use sips (macOS) to convert to JPEG
+      // Sharp can't decode HEIC without libheif plugin
+      if (this.isHeicFormat(sourcePath)) {
+        console.log(`[PreviewExtractor] Converting HEIC via sips: ${sourcePath}`);
+
+        // Convert to temp file first, then apply rotation with sharp
+        const tempPath = previewPath + '.tmp.jpg';
+        const success = await this.convertHeicWithSips(sourcePath, tempPath);
+
+        if (success) {
+          // Apply EXIF rotation (sips preserves EXIF, but doesn't apply it visually)
+          const rotatedBuffer = await sharp(tempPath).rotate().toBuffer();
+          await fs.writeFile(previewPath, rotatedBuffer);
+          await fs.unlink(tempPath).catch(() => {}); // Clean up temp file
+          console.log(`[PreviewExtractor] HEIC converted and rotated: ${previewPath}`);
+          return previewPath;
+        }
+
+        console.log(`[PreviewExtractor] HEIC conversion failed for ${sourcePath}`);
+        return null;
+      }
+
+      // RAW files: Extract embedded JPEG preview via ExifTool
       // Try ALL preview tags and pick the LARGEST one (highest resolution)
       // Different RAW formats store the best preview under different tags:
       // - Nikon NEF: JpgFromRaw is full-res, PreviewImage is smaller

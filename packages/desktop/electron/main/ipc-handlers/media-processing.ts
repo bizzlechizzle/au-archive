@@ -285,12 +285,12 @@ export function registerMediaProcessingHandlers(
 
       for (const img of images) {
         try {
-          // For RAW files, extract preview first
-          // For non-RAW files, ALWAYS use original when force=true to fix rotation
+          // For RAW/HEIC files, extract preview first (sharp can't decode these directly)
+          // For other files, ALWAYS use original when force=true to fix rotation
           let sourcePath = img.imgloc;
-          const isRaw = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr)$/i.test(img.imgloc);
+          const needsPreviewExtraction = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr|heic|heif)$/i.test(img.imgloc);
 
-          if (isRaw) {
+          if (needsPreviewExtraction) {
             // Always re-extract preview when force=true (picks highest resolution)
             const preview = await previewService.extractPreview(img.imgloc, img.imgsha, force);
             if (preview) {
@@ -308,14 +308,14 @@ export function registerMediaProcessingHandlers(
 
           if (result.thumb_sm) {
             // Update database with all thumbnail paths
-            // FIX: Preserve RAW preview_path, don't overwrite with thumbnail preview
+            // FIX: Preserve RAW/HEIC preview_path, don't overwrite with thumbnail preview
             await db
               .updateTable('imgs')
               .set({
                 thumb_path_sm: result.thumb_sm,
                 thumb_path_lg: result.thumb_lg,
-                // For RAW files, keep extracted preview; for others, use thumbnail preview
-                preview_path: isRaw ? (sourcePath !== img.imgloc ? sourcePath : img.preview_path) : (result.preview || img.preview_path),
+                // For RAW/HEIC files, keep extracted preview; for others, use thumbnail preview
+                preview_path: needsPreviewExtraction ? (sourcePath !== img.imgloc ? sourcePath : img.preview_path) : (result.preview || img.preview_path),
               })
               .where('imgsha', '=', img.imgsha)
               .execute();
@@ -456,18 +456,18 @@ export function registerMediaProcessingHandlers(
       let sourcePath = validPath;
       let previewPath: string | null = null;
 
-      // For RAW files, extract preview first
-      const isRaw = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr)$/i.test(validPath);
+      // For RAW/HEIC files, extract preview first (sharp can't decode these directly)
+      const needsPreviewExtraction = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr|heic|heif)$/i.test(validPath);
 
-      if (isRaw) {
-        console.log(`[Kanye11] Extracting preview for RAW file: ${validHash}`);
+      if (needsPreviewExtraction) {
+        console.log(`[Kanye11] Extracting preview for RAW/HEIC file: ${validHash}`);
         previewPath = await previewService.extractPreview(validPath, validHash);
         if (previewPath) {
           sourcePath = previewPath;
           console.log(`[Kanye11] Preview extracted: ${previewPath}`);
         } else {
-          console.warn(`[Kanye11] No embedded preview found in RAW file`);
-          return { success: false, error: 'No embedded preview found in RAW file' };
+          console.warn(`[Kanye11] No embedded preview found in RAW/HEIC file`);
+          return { success: false, error: 'No embedded preview found in RAW/HEIC file' };
         }
       }
 
