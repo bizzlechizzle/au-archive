@@ -182,7 +182,7 @@
   const mapZoom = $derived(getZoomLevel(location.gps, !!location.address?.state));
 </script>
 
-<div class="bg-white rounded-lg shadow">
+<div class="bg-white rounded-lg shadow-md">
   <!-- Header: Location with verification status and edit button (DECISION-013: No border) -->
   <div class="flex items-start justify-between px-8 pt-6 pb-4">
     <h2 class="text-2xl font-semibold text-foreground leading-none">Location</h2>

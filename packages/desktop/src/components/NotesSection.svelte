@@ -129,7 +129,7 @@
   });
 </script>
 
-<div class="bg-white rounded-lg shadow p-6">
+<div class="mt-6 bg-white rounded-lg shadow-md p-6">
   <div class="flex justify-between items-center mb-3">
     <h2 class="text-lg font-semibold text-foreground">Notes</h2>
     {#if !showAddForm}

@@ -82,6 +82,12 @@
     location.akanam ? location.akanam.split(',').map(s => s.trim()).filter(Boolean) : []
   );
 
+  // Hide AKA if only 1 name and it matches Historical Name (duplicate)
+  const shouldShowAka = $derived(
+    hasAkaName &&
+    !(displayAkaNames.length === 1 && displayAkaNames[0] === location.historicalName)
+  );
+
   // Check if we have any info to display at all
   const hasAnyInfo = $derived(
     hasHistoricalName || hasAkaName || hasStatus || hasDocumentation ||
@@ -229,7 +235,7 @@
 <svelte:window onkeydown={showEditModal ? handleKeydown : undefined} />
 
 <!-- DECISION-019: Information Box styled to match LocationMapSection -->
-<div class="bg-white rounded-lg shadow">
+<div class="bg-white rounded-lg shadow-md">
   <!-- Header with edit button -->
   <div class="flex items-start justify-between px-8 pt-6 pb-4">
     <h2 class="text-2xl font-semibold text-foreground leading-none">Information</h2>
@@ -248,8 +254,8 @@
   <!-- Display order: AKA, Status+Type, Built/Abandoned, Documentation, Flags, Historical Name, Author -->
   <div class="px-8 pb-6">
     {#if hasAnyInfo}
-      <!-- AKA Name (show only if exists) -->
-      {#if hasAkaName}
+      <!-- AKA Name (show only if exists and not duplicate of Historical Name) -->
+      {#if shouldShowAka}
         <div class="mb-4">
           <h3 class="section-title mb-1">Also Known As</h3>
           <div class="flex flex-wrap gap-2">

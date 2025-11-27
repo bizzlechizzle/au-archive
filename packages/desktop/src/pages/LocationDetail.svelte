@@ -446,20 +446,20 @@
           </div>
         </div>
 
+        <NotesSection locid={location.locid} {currentUser} />
+
         <LocationImportZone isImporting={$isImporting} {importProgress} {isDragging} {gpsWarnings} {failedFiles}
           onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
           onSelectFiles={handleSelectFiles} onRetryFailed={retryFailedImports}
           onDismissWarning={(i) => gpsWarnings = gpsWarnings.filter((_, idx) => idx !== i)}
           onDismissAllWarnings={() => gpsWarnings = []} />
 
-        <div class="mt-6 bg-white rounded-lg shadow p-6">
+        <div class="mt-6 bg-white rounded-lg shadow-md p-6">
           <LocationGallery {images} heroImgsha={location.hero_imgsha || null}
             onOpenLightbox={(i) => selectedImageIndex = i} onSetHeroImage={setHeroImage} />
           <LocationVideos {videos} onOpenFile={openMediaFile} />
           <LocationDocuments {documents} onOpenFile={openMediaFile} />
         </div>
-
-        <NotesSection locid={location.locid} {currentUser} />
         <LocationBookmarks {bookmarks} onAddBookmark={handleAddBookmark} onDeleteBookmark={handleDeleteBookmark} onOpenBookmark={handleOpenBookmark} />
         <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} />
 

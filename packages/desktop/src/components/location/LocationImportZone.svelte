@@ -28,7 +28,7 @@
 </script>
 
 <div
-  class="mt-6 bg-white rounded-lg shadow p-6"
+  class="mt-6 bg-white rounded-lg shadow-md p-6"
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={onDrop}
@@ -36,7 +36,7 @@
   aria-label="Media import zone"
 >
   <div class="flex items-center justify-between mb-3">
-    <h2 class="text-xl font-semibold text-foreground">Media</h2>
+    <h2 class="text-xl font-semibold text-foreground">Import</h2>
     {#if importProgress}
       <span class="text-sm text-accent">{importProgress}</span>
     {/if}
