@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import sharp from 'sharp';
 import { MediaPathService } from './media-path-service';
 import { ExifToolService } from './exiftool-service';
 
@@ -108,8 +109,11 @@ export class PreviewExtractorService {
       }
 
       if (bestBuffer && bestTag) {
-        await fs.writeFile(previewPath, bestBuffer);
-        console.log(`[PreviewExtractor] Extracted ${bestTag} (${bestBuffer.length} bytes) from ${sourcePath}`);
+        // Apply EXIF rotation to fix sideways DSLR images
+        // sharp.rotate() without arguments auto-rotates based on EXIF orientation tag
+        const rotatedBuffer = await sharp(bestBuffer).rotate().toBuffer();
+        await fs.writeFile(previewPath, rotatedBuffer);
+        console.log(`[PreviewExtractor] Extracted ${bestTag} (${bestBuffer.length} bytes, rotated: ${rotatedBuffer.length} bytes) from ${sourcePath}`);
         return previewPath;
       }
 

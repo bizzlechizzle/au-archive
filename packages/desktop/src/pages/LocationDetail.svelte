@@ -96,6 +96,12 @@
     if (type) { suffixesToStrip.add(type.toLowerCase()); suffixesToStrip.add(type.toLowerCase() + 's'); }
     if (subtype) { suffixesToStrip.add(subtype.toLowerCase()); suffixesToStrip.add(subtype.toLowerCase() + 's'); }
 
+    // Keep "School" when name contains "Union" - "Union School" is meaningful
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('union')) {
+      suffixesToStrip.delete('school');
+    }
+
     const result = [...words];
     while (result.length > 2) {
       const lastWord = result[result.length - 1].toLowerCase();
@@ -475,6 +481,7 @@
           onDismissWarning={(i) => gpsWarnings = gpsWarnings.filter((_, idx) => idx !== i)}
           onDismissAllWarnings={() => gpsWarnings = []} />
 
+        <LocationBookmarks {bookmarks} onAddBookmark={handleAddBookmark} onDeleteBookmark={handleDeleteBookmark} onOpenBookmark={handleOpenBookmark} />
         <LocationOriginalAssets
           {images}
           {videos}
@@ -484,11 +491,24 @@
           onOpenVideoLightbox={(i) => selectedMediaIndex = images.length + i}
           onOpenDocument={openMediaFile}
         />
-        <LocationBookmarks {bookmarks} onAddBookmark={handleAddBookmark} onDeleteBookmark={handleDeleteBookmark} onOpenBookmark={handleOpenBookmark} />
         <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} />
 
+        <!-- Add Media button -->
+        <div class="mt-8">
+          <button
+            onclick={handleSelectFiles}
+            disabled={$isImporting}
+            class="w-full py-3 px-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-accent hover:text-accent transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Media
+          </button>
+        </div>
+
         <!-- Bottom navigation -->
-        <div class="mt-12 pt-6 border-t border-gray-200">
+        <div class="mt-8 pt-6 border-t border-gray-200">
           <button
             onclick={() => router.navigate('/locations')}
             class="text-accent hover:underline"

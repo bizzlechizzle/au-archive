@@ -73,3 +73,9 @@
     color: var(--color-background);
   }
 }
+
+/* Contain Leaflet's internal z-indices within its container */
+/* Prevents map controls/popups from breaking through modals */
+.leaflet-container {
+  isolation: isolate;
+}

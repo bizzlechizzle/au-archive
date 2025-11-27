@@ -166,17 +166,35 @@
   }
 
   // Hero focal point editing
+  let isDraggingFocal = $state(false);
+  let focalPreviewEl: HTMLDivElement | null = $state(null);
+
   function startFocalEdit() {
     pendingFocalX = isCurrentHero ? focalX : 0.5;
     pendingFocalY = isCurrentHero ? focalY : 0.5;
     isEditingFocal = true;
   }
 
-  function handleFocalDrag(e: MouseEvent) {
-    const target = e.currentTarget as HTMLElement;
-    const rect = target.getBoundingClientRect();
+  function updateFocalFromEvent(e: MouseEvent) {
+    if (!focalPreviewEl) return;
+    const rect = focalPreviewEl.getBoundingClientRect();
     pendingFocalX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     pendingFocalY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+  }
+
+  function handleFocalMouseDown(e: MouseEvent) {
+    isDraggingFocal = true;
+    updateFocalFromEvent(e);
+  }
+
+  function handleFocalMouseMove(e: MouseEvent) {
+    if (isDraggingFocal) {
+      updateFocalFromEvent(e);
+    }
+  }
+
+  function handleFocalMouseUp() {
+    isDraggingFocal = false;
   }
 
   function saveFocalEdit() {
@@ -387,14 +405,17 @@
               {#if isEditingFocal}
                 <!-- Focal Point Editor -->
                 <div class="space-y-3">
-                  <p class="text-xs text-gray-500">Click to set the focal point for hero crop</p>
+                  <p class="text-xs text-gray-500">Click or drag to set the focal point for hero crop</p>
 
-                  <!-- Preview with gradient simulation -->
+                  <!-- Preview with gradient simulation - supports drag to adjust -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <div
-                    class="relative w-full aspect-[2.35/1] bg-gray-100 rounded-lg overflow-hidden cursor-crosshair"
-                    role="button"
-                    tabindex="0"
-                    onclick={handleFocalDrag}
+                    bind:this={focalPreviewEl}
+                    class="relative w-full aspect-[2.35/1] bg-gray-100 rounded-lg overflow-hidden cursor-crosshair select-none"
+                    onmousedown={handleFocalMouseDown}
+                    onmousemove={handleFocalMouseMove}
+                    onmouseup={handleFocalMouseUp}
+                    onmouseleave={handleFocalMouseUp}
                   >
                     <img
                       src={imageSrc()}
