@@ -122,6 +122,7 @@ const api = {
     findByLocation: (locid) => ipcRenderer.invoke("media:findByLocation", locid),
     // Media viewing and processing
     openFile: (filePath) => ipcRenderer.invoke("media:openFile", filePath),
+    showInFolder: (filePath) => ipcRenderer.invoke("media:showInFolder", filePath),
     generateThumbnail: (sourcePath, hash) => ipcRenderer.invoke("media:generateThumbnail", sourcePath, hash),
     extractPreview: (sourcePath, hash) => ipcRenderer.invoke("media:extractPreview", sourcePath, hash),
     generatePoster: (sourcePath, hash) => ipcRenderer.invoke("media:generatePoster", sourcePath, hash),
@@ -131,6 +132,8 @@ const api = {
     writeXmp: (mediaPath, data) => ipcRenderer.invoke("media:writeXmp", mediaPath, data),
     regenerateAllThumbnails: () => ipcRenderer.invoke("media:regenerateAllThumbnails"),
     regenerateVideoThumbnails: (options) => ipcRenderer.invoke("media:regenerateVideoThumbnails", options),
+    // Kanye11: Regenerate preview/thumbnails for a single file
+    regenerateSingleFile: (hash, filePath) => ipcRenderer.invoke("media:regenerateSingleFile", hash, filePath),
   },
 
   notes: {

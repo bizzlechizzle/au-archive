@@ -315,6 +315,8 @@ const api = {
     // Media viewing and processing
     openFile: (filePath: string): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('media:openFile', filePath),
+    showInFolder: (filePath: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('media:showInFolder', filePath),
     generateThumbnail: (sourcePath: string, hash: string): Promise<string | null> =>
       ipcRenderer.invoke('media:generateThumbnail', sourcePath, hash),
     extractPreview: (sourcePath: string, hash: string): Promise<string | null> =>

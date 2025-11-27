@@ -93,9 +93,9 @@
     imageError = true;
   }
 
-  async function openInSystemViewer() {
+  async function showInFinder() {
     if (currentMedia) {
-      await window.electronAPI?.media?.openFile(currentMedia.path);
+      await window.electronAPI?.media?.showInFolder(currentMedia.path);
     }
   }
 
@@ -144,14 +144,14 @@
 <svelte:window on:keydown={handleKeydown} />
 
 <div
-  class="fixed inset-0 bg-black bg-opacity-95 z-50 flex items-center justify-center"
+  class="fixed inset-0 bg-background/95 z-50 flex items-center justify-center"
   role="dialog"
   aria-modal="true"
 >
   <!-- Close button -->
   <button
     onclick={onClose}
-    class="absolute top-4 right-4 text-white hover:text-gray-300 transition z-10"
+    class="absolute top-4 right-4 text-foreground hover:text-gray-600 transition z-10"
     aria-label="Close viewer"
   >
     <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,28 +159,11 @@
     </svg>
   </button>
 
-  <!-- Open in system viewer button -->
-  <button
-    onclick={openInSystemViewer}
-    class="absolute top-4 left-4 px-4 py-2 bg-white bg-opacity-20 text-white rounded hover:bg-opacity-30 transition text-sm z-10"
-  >
-    Open in System Viewer
-  </button>
-
-  <!-- Toggle EXIF button -->
-  <button
-    onclick={() => showExif = !showExif}
-    class="absolute top-4 left-48 px-4 py-2 bg-white bg-opacity-20 text-white rounded hover:bg-opacity-30 transition text-sm z-10"
-    aria-pressed={showExif}
-  >
-    {showExif ? 'Hide' : 'Show'} Info (i)
-  </button>
-
   <!-- Navigation buttons -->
   {#if currentIndex > 0}
     <button
       onclick={goToPrevious}
-      class="absolute left-4 top-1/2 -translate-y-1/2 text-white hover:text-gray-300 transition p-2"
+      class="absolute left-4 top-1/2 -translate-y-1/2 text-foreground hover:text-gray-600 transition p-2"
       aria-label="Previous image"
     >
       <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -192,7 +175,7 @@
   {#if currentIndex < mediaList.length - 1}
     <button
       onclick={goToNext}
-      class="absolute right-4 top-1/2 -translate-y-1/2 text-white hover:text-gray-300 transition p-2"
+      class="absolute right-4 top-1/2 -translate-y-1/2 text-foreground hover:text-gray-600 transition p-2"
       aria-label="Next image"
     >
       <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -214,35 +197,28 @@
           <track kind="captions" />
         </video>
       {:else if imageError}
-        <!-- Error state - show open in viewer prompt -->
-        <div class="text-center text-white">
-          <p class="text-xl mb-4">Cannot display this file format in browser</p>
-          <p class="text-gray-400 mb-4">{currentMedia.name || currentMedia.path}</p>
+        <!-- Error state - show extract preview prompt -->
+        <div class="text-center text-foreground">
+          <p class="text-xl mb-4">Cannot display this file format</p>
+          <p class="text-gray-500 mb-4">{currentMedia.name || currentMedia.path}</p>
 
           {#if regenerateError}
-            <p class="text-red-400 mb-4">{regenerateError}</p>
+            <p class="text-red-500 mb-4">{regenerateError}</p>
           {/if}
 
           <div class="flex gap-4 justify-center">
-            <button
-              onclick={openInSystemViewer}
-              class="px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
-            >
-              Open in System Viewer
-            </button>
-
             <!-- Kanye11: Regenerate preview button for RAW files -->
             <button
               onclick={regeneratePreview}
               disabled={regenerating}
-              class="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              class="px-6 py-3 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {regenerating ? 'Extracting Preview...' : 'Extract Preview'}
             </button>
           </div>
 
           <p class="text-gray-500 text-sm mt-4">
-            RAW files require preview extraction to display in browser
+            RAW files require preview extraction to display
           </p>
         </div>
       {:else}
@@ -260,46 +236,46 @@
 
   <!-- EXIF Panel -->
   {#if showExif && currentMedia}
-    <div class="absolute right-0 top-16 bottom-0 w-80 bg-black bg-opacity-80 text-white p-4 overflow-y-auto">
-      <h3 class="text-lg font-semibold mb-4">Image Info</h3>
+    <div class="absolute right-0 top-16 bottom-0 w-80 bg-white/95 text-foreground p-4 overflow-y-auto shadow-lg border-l border-gray-200">
+      <h3 class="text-lg font-semibold mb-4">Info</h3>
 
       <div class="space-y-2 text-sm">
         {#if currentMedia.name}
           <div>
-            <span class="text-gray-400">Name:</span>
+            <span class="text-gray-500">Name:</span>
             <span class="ml-2">{currentMedia.name}</span>
           </div>
         {/if}
 
         {#if currentMedia.width && currentMedia.height}
           <div>
-            <span class="text-gray-400">Dimensions:</span>
+            <span class="text-gray-500">Dimensions:</span>
             <span class="ml-2">{currentMedia.width} × {currentMedia.height}</span>
           </div>
         {/if}
 
         {#if currentMedia.dateTaken}
           <div>
-            <span class="text-gray-400">Date Taken:</span>
+            <span class="text-gray-500">Date Taken:</span>
             <span class="ml-2">{new Date(currentMedia.dateTaken).toLocaleString()}</span>
           </div>
         {/if}
 
         {#if currentMedia.cameraMake || currentMedia.cameraModel}
           <div>
-            <span class="text-gray-400">Camera:</span>
+            <span class="text-gray-500">Camera:</span>
             <span class="ml-2">{[currentMedia.cameraMake, currentMedia.cameraModel].filter(Boolean).join(' ')}</span>
           </div>
         {/if}
 
         {#if currentMedia.gpsLat && currentMedia.gpsLng}
           <div>
-            <span class="text-gray-400">GPS:</span>
+            <span class="text-gray-500">GPS:</span>
             <a
               href={`https://www.openstreetmap.org/?mlat=${currentMedia.gpsLat}&mlon=${currentMedia.gpsLng}&zoom=15`}
               target="_blank"
               rel="noopener noreferrer"
-              class="ml-2 text-blue-400 hover:underline"
+              class="ml-2 text-accent hover:underline"
             >
               {currentMedia.gpsLat.toFixed(6)}, {currentMedia.gpsLng.toFixed(6)}
             </a>
@@ -310,7 +286,24 @@
   {/if}
 
   <!-- Counter -->
-  <div class="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-sm bg-black bg-opacity-50 px-4 py-2 rounded">
+  <div class="absolute bottom-6 left-1/2 -translate-x-1/2 text-foreground text-sm bg-white/80 px-4 py-2 rounded shadow">
     {currentIndex + 1} / {mediaList.length}
+  </div>
+
+  <!-- Bottom-right action buttons -->
+  <div class="absolute bottom-6 right-6 flex flex-col gap-2 z-10">
+    <button
+      onclick={() => showExif = !showExif}
+      class="px-4 py-2 bg-white text-foreground rounded shadow hover:bg-gray-50 transition text-sm"
+      aria-pressed={showExif}
+    >
+      {showExif ? 'Hide Info' : 'Show Info'}
+    </button>
+    <button
+      onclick={showInFinder}
+      class="px-4 py-2 bg-white text-foreground rounded shadow hover:bg-gray-50 transition text-sm"
+    >
+      Show in Finder
+    </button>
   </div>
 </div>

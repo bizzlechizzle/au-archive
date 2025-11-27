@@ -71,6 +71,32 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // Show file in Finder (Mac) / Files (Linux)
+  ipcMain.handle('media:showInFolder', async (_event, filePath: unknown) => {
+    try {
+      const validatedPath = z.string().min(1).max(4096).parse(filePath);
+      const archivePath = await db.selectFrom('settings').select('value').where('key', '=', 'archive_folder').executeTakeFirst();
+
+      if (!archivePath?.value) throw new Error('Archive folder not configured');
+
+      const normalizedFilePath = path.resolve(validatedPath);
+      const normalizedArchivePath = path.resolve(archivePath.value);
+
+      if (!normalizedFilePath.startsWith(normalizedArchivePath + path.sep)) {
+        throw new Error('Access denied: file is outside the archive folder');
+      }
+
+      shell.showItemInFolder(validatedPath);
+      return { success: true };
+    } catch (error) {
+      console.error('Error showing file in folder:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
   ipcMain.handle('media:generateThumbnail', async (_event, sourcePath: unknown, hash: unknown) => {
     try {
       const validPath = z.string().min(1).parse(sourcePath);
