@@ -151,6 +151,16 @@
     try {
       isProcessing = true;
 
+      // Delete legacy "default" user from old migrations if it exists
+      try {
+        const defaultUser = await window.electronAPI.users.findByUsername('default');
+        if (defaultUser) {
+          await window.electronAPI.users.delete(defaultUser.user_id);
+        }
+      } catch {
+        // Ignore if default user doesn't exist
+      }
+
       // Create primary user record in database (PIN is required)
       const user = await window.electronAPI.users.create({
         username: username.trim(),
