@@ -7,6 +7,16 @@
   import type { Location, LocationInput } from '@au-archive/core';
   import { ACCESS_OPTIONS } from '../../constants/location-enums';
   import { onMount } from 'svelte';
+  import { router } from '../../stores/router';
+
+  // Author from location_authors table
+  interface LocationAuthor {
+    user_id: string;
+    username: string;
+    display_name: string | null;
+    role: 'creator' | 'documenter' | 'contributor';
+    added_at: string;
+  }
 
   interface Props {
     location: Location;
@@ -24,11 +34,20 @@
   let typeOptions = $state<string[]>([]);
   let stypeOptions = $state<string[]>([]);
 
-  // Load autocomplete options on mount
+  // Authors from location_authors table
+  let authors = $state<LocationAuthor[]>([]);
+
+  // Load autocomplete options and authors on mount
   onMount(async () => {
     try {
-      typeOptions = await window.electronAPI?.locations?.getDistinctTypes?.() || [];
-      stypeOptions = await window.electronAPI?.locations?.getDistinctSubTypes?.() || [];
+      const [types, stypes, locationAuthors] = await Promise.all([
+        window.electronAPI?.locations?.getDistinctTypes?.() || [],
+        window.electronAPI?.locations?.getDistinctSubTypes?.() || [],
+        window.electronAPI?.locationAuthors?.findByLocation?.(location.locid) || [],
+      ]);
+      typeOptions = types;
+      stypeOptions = stypes;
+      authors = locationAuthors;
     } catch (err) {
       console.error('Error loading type options:', err);
     }
@@ -75,7 +94,14 @@
   const hasBuiltOrAbandoned = $derived(!!location.builtYear || !!location.abandonedYear);
   const hasType = $derived(!!location.type);
   const hasFlags = $derived(location.historic || location.favorite || location.project);
-  const hasAuthor = $derived(!!location.auth_imp);
+  const hasAuthors = $derived(authors.length > 0);
+
+  // Role display labels
+  const roleLabels: Record<string, string> = {
+    creator: 'Creator',
+    documenter: 'Documenter',
+    contributor: 'Contributor',
+  };
 
   // Parse AKA names for display (split by comma)
   const displayAkaNames = $derived(
@@ -91,7 +117,7 @@
   // Check if we have any info to display at all
   const hasAnyInfo = $derived(
     hasHistoricalName || hasAkaName || hasStatus || hasDocumentation ||
-    hasBuiltOrAbandoned || hasType || hasFlags || hasAuthor
+    hasBuiltOrAbandoned || hasType || hasFlags || hasAuthors
   );
 
   // Documentation labels for display
@@ -392,11 +418,22 @@
         </div>
       {/if}
 
-      <!-- Author -->
-      {#if hasAuthor}
+      <!-- Authors (from location_authors table) -->
+      {#if hasAuthors}
         <div>
-          <h3 class="section-title mb-1">Author</h3>
-          <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{location.auth_imp}</span>
+          <h3 class="section-title mb-1">Authors</h3>
+          <div class="flex flex-wrap gap-2">
+            {#each authors as author}
+              <button
+                onclick={() => router.navigate('/locations', undefined, { authorId: author.user_id })}
+                class="inline-flex items-center gap-1.5 px-2 py-0.5 bg-accent/10 text-accent rounded text-sm hover:bg-accent/20 transition"
+                title="View all locations by {author.display_name || author.username}"
+              >
+                <span>{author.display_name || author.username}</span>
+                <span class="text-xs text-accent/60">({roleLabels[author.role] || author.role})</span>
+              </button>
+            {/each}
+          </div>
         </div>
       {/if}
     {:else}

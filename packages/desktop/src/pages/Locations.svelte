@@ -15,6 +15,9 @@
   let filterDocumentation = $state('');
   let filterAccess = $state('');
   let filterAuthor = $state('');
+  let filterAuthorId = $state('');  // Filter by user_id from location_authors
+  let authorLocIds = $state<Set<string>>(new Set());  // Location IDs for the filtered author
+  let authorDisplayName = $state('');  // Display name for the filtered author
   // DECISION-012: Census region filters
   let filterCensusRegion = $state('');
   let filterCensusDivision = $state('');
@@ -42,6 +45,15 @@
     if (q.documentation) filterDocumentation = q.documentation;
     if (q.access) filterAccess = q.access;
     if (q.author) filterAuthor = q.author;
+    // Author ID filter (from location_authors table)
+    if (q.authorId && q.authorId !== filterAuthorId) {
+      filterAuthorId = q.authorId;
+      loadAuthorLocations(q.authorId);
+    } else if (!q.authorId && filterAuthorId) {
+      filterAuthorId = '';
+      authorLocIds = new Set();
+      authorDisplayName = '';
+    }
     // DECISION-012: Census region query params
     if (q.censusRegion) filterCensusRegion = q.censusRegion;
     if (q.censusDivision) filterCensusDivision = q.censusDivision;
@@ -52,10 +64,29 @@
     activeFilterCount = [
       filterState, filterType, filterStype, filterCondition, filterStatus,
       filterCity, filterCounty, filterDocumentation, filterAccess, filterAuthor,
-      filterCensusRegion, filterCensusDivision, filterCulturalRegion, filterStateDirection,
-      specialFilter
+      filterAuthorId, filterCensusRegion, filterCensusDivision, filterCulturalRegion,
+      filterStateDirection, specialFilter
     ].filter(Boolean).length;
   });
+
+  // Load locations for a specific author from location_authors table
+  async function loadAuthorLocations(userId: string) {
+    try {
+      const authorLocs = await window.electronAPI?.locationAuthors?.findByUser?.(userId);
+      if (authorLocs && authorLocs.length > 0) {
+        authorLocIds = new Set(authorLocs.map((l: { locid: string }) => l.locid));
+        // Get author display name from users
+        const user = await window.electronAPI?.users?.findById?.(userId);
+        authorDisplayName = user?.display_name || user?.username || userId;
+      } else {
+        authorLocIds = new Set();
+        authorDisplayName = '';
+      }
+    } catch (err) {
+      console.error('Error loading author locations:', err);
+      authorLocIds = new Set();
+    }
+  }
 
   let filteredLocations = $derived(() => {
     return locations.filter((loc) => {
@@ -72,6 +103,7 @@
       const matchesDocumentation = !filterDocumentation || loc.documentation === filterDocumentation;
       const matchesAccess = !filterAccess || loc.access === filterAccess;
       const matchesAuthor = !filterAuthor || loc.auth_imp === filterAuthor;
+      const matchesAuthorId = !filterAuthorId || authorLocIds.has(loc.locid);
       // DECISION-012: Census region filters
       const locAny = loc as any;
       const matchesCensusRegion = !filterCensusRegion || locAny.censusRegion === filterCensusRegion;
@@ -91,7 +123,7 @@
 
       return matchesSearch && matchesState && matchesType && matchesStype &&
         matchesCondition && matchesStatus && matchesCity && matchesCounty &&
-        matchesDocumentation && matchesAccess && matchesAuthor &&
+        matchesDocumentation && matchesAccess && matchesAuthor && matchesAuthorId &&
         matchesCensusRegion && matchesCensusDivision && matchesCulturalRegion &&
         matchesStateDirection && matchesSpecial;
     });
@@ -135,6 +167,9 @@
     filterDocumentation = '';
     filterAccess = '';
     filterAuthor = '';
+    filterAuthorId = '';
+    authorLocIds = new Set();
+    authorDisplayName = '';
     // DECISION-012: Census region filters
     filterCensusRegion = '';
     filterCensusDivision = '';
@@ -156,6 +191,7 @@
       case 'documentation': filterDocumentation = ''; break;
       case 'access': filterAccess = ''; break;
       case 'author': filterAuthor = ''; break;
+      case 'authorId': filterAuthorId = ''; authorLocIds = new Set(); authorDisplayName = ''; break;
       // DECISION-012: Census region filters
       case 'censusRegion': filterCensusRegion = ''; break;
       case 'censusDivision': filterCensusDivision = ''; break;
@@ -175,6 +211,7 @@
     if (filterDocumentation) newQuery.documentation = filterDocumentation;
     if (filterAccess) newQuery.access = filterAccess;
     if (filterAuthor) newQuery.author = filterAuthor;
+    if (filterAuthorId) newQuery.authorId = filterAuthorId;
     // DECISION-012: Census region query params
     if (filterCensusRegion) newQuery.censusRegion = filterCensusRegion;
     if (filterCensusDivision) newQuery.censusDivision = filterCensusDivision;
@@ -197,6 +234,7 @@
     if (filterDocumentation) filters.push({ key: 'documentation', label: 'Documentation', value: filterDocumentation });
     if (filterAccess) filters.push({ key: 'access', label: 'Access', value: filterAccess });
     if (filterAuthor) filters.push({ key: 'author', label: 'Author', value: filterAuthor });
+    if (filterAuthorId) filters.push({ key: 'authorId', label: 'Contributor', value: authorDisplayName || filterAuthorId });
     // DECISION-012: Census region filters
     if (filterCensusRegion) filters.push({ key: 'censusRegion', label: 'Region', value: filterCensusRegion });
     if (filterCensusDivision) filters.push({ key: 'censusDivision', label: 'Division', value: filterCensusDivision });
