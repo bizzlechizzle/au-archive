@@ -256,6 +256,106 @@ export interface ElectronAPI {
     countByLocation: (locid: string) => Promise<number>;
   };
 
+  // Migration 28: Sub-location API
+  sublocations: {
+    create: (input: {
+      locid: string;
+      subnam: string;
+      ssubname?: string | null;
+      type?: string | null;
+      status?: string | null;
+      is_primary?: boolean;
+      created_by?: string | null;
+    }) => Promise<{
+      subid: string;
+      sub12: string;
+      locid: string;
+      subnam: string;
+      ssubname: string | null;
+      type: string | null;
+      status: string | null;
+      hero_imgsha: string | null;
+      is_primary: boolean;
+      created_date: string;
+      created_by: string | null;
+      modified_date: string | null;
+      modified_by: string | null;
+    }>;
+    findById: (subid: string) => Promise<{
+      subid: string;
+      sub12: string;
+      locid: string;
+      subnam: string;
+      ssubname: string | null;
+      type: string | null;
+      status: string | null;
+      hero_imgsha: string | null;
+      is_primary: boolean;
+      created_date: string;
+      created_by: string | null;
+      modified_date: string | null;
+      modified_by: string | null;
+    } | null>;
+    findByLocation: (locid: string) => Promise<Array<{
+      subid: string;
+      sub12: string;
+      locid: string;
+      subnam: string;
+      ssubname: string | null;
+      type: string | null;
+      status: string | null;
+      hero_imgsha: string | null;
+      is_primary: boolean;
+      created_date: string;
+      created_by: string | null;
+      modified_date: string | null;
+      modified_by: string | null;
+    }>>;
+    findWithHeroImages: (locid: string) => Promise<Array<{
+      subid: string;
+      sub12: string;
+      locid: string;
+      subnam: string;
+      ssubname: string | null;
+      type: string | null;
+      status: string | null;
+      hero_imgsha: string | null;
+      is_primary: boolean;
+      created_date: string;
+      created_by: string | null;
+      modified_date: string | null;
+      modified_by: string | null;
+      hero_thumb_path?: string;
+    }>>;
+    update: (subid: string, updates: {
+      subnam?: string;
+      ssubname?: string | null;
+      type?: string | null;
+      status?: string | null;
+      hero_imgsha?: string | null;
+      is_primary?: boolean;
+      modified_by?: string | null;
+    }) => Promise<{
+      subid: string;
+      sub12: string;
+      locid: string;
+      subnam: string;
+      ssubname: string | null;
+      type: string | null;
+      status: string | null;
+      hero_imgsha: string | null;
+      is_primary: boolean;
+      created_date: string;
+      created_by: string | null;
+      modified_date: string | null;
+      modified_by: string | null;
+    } | null>;
+    delete: (subid: string) => Promise<void>;
+    setPrimary: (locid: string, subid: string) => Promise<void>;
+    checkName: (locid: string, subnam: string, excludeSubid?: string) => Promise<boolean>;
+    count: (locid: string) => Promise<number>;
+  };
+
   projects: {
     create: (input: {
       project_name: string;

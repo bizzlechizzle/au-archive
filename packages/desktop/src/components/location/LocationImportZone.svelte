@@ -11,6 +11,7 @@
     isDragging: boolean;
     gpsWarnings: GpsWarning[];
     failedFiles: FailedFile[];
+    scopeLabel?: string | null; // e.g., "Campus-Level" for host locations
     onDragOver: (e: DragEvent) => void;
     onDragLeave: () => void;
     onDrop: (e: DragEvent) => void;
@@ -22,6 +23,7 @@
 
   let {
     isImporting, importProgress, isDragging, gpsWarnings, failedFiles,
+    scopeLabel = null,
     onDragOver, onDragLeave, onDrop, onSelectFiles, onRetryFailed,
     onDismissWarning, onDismissAllWarnings
   }: Props = $props();
@@ -36,18 +38,27 @@
   aria-label="Media import zone"
 >
   <div class="flex items-center justify-between mb-3">
-    <h2 class="text-xl font-semibold text-foreground">Import</h2>
-    {#if importProgress}
-      <span class="text-sm text-accent">{importProgress}</span>
-    {/if}
-    {#if failedFiles.length > 0}
-      <button
-        onclick={onRetryFailed}
-        class="ml-2 text-sm text-red-600 hover:text-red-800 hover:underline"
-      >
-        Retry {failedFiles.length} failed
-      </button>
-    {/if}
+    <div class="flex items-center gap-2">
+      <h2 class="text-xl font-semibold text-foreground">Import</h2>
+      {#if scopeLabel}
+        <span class="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+          {scopeLabel}
+        </span>
+      {/if}
+    </div>
+    <div class="flex items-center gap-2">
+      {#if importProgress}
+        <span class="text-sm text-accent">{importProgress}</span>
+      {/if}
+      {#if failedFiles.length > 0}
+        <button
+          onclick={onRetryFailed}
+          class="text-sm text-red-600 hover:text-red-800 hover:underline"
+        >
+          Retry {failedFiles.length} failed
+        </button>
+      {/if}
+    </div>
   </div>
 
   <!-- GPS Mismatch Warnings -->

@@ -55,9 +55,7 @@ CREATE TABLE IF NOT EXISTS locs (
 
   -- Regions
   regions TEXT,
-  state TEXT,
-
-  UNIQUE(slocnam)
+  state TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_locs_state ON locs(address_state);

@@ -37,6 +37,16 @@ function createRouter() {
       });
     }
 
+    // Sub-location route: /location/:locid/sub/:subid
+    const subLocationMatch = path.match(/^\/location\/([^/]+)\/sub\/([^/]+)$/);
+    if (subLocationMatch) {
+      return {
+        path: '/location/:locid/sub/:subid',
+        params: { locid: subLocationMatch[1], subid: subLocationMatch[2] },
+        query
+      };
+    }
+
     const locationMatch = path.match(/^\/location\/([^/]+)$/);
     if (locationMatch) {
       return {

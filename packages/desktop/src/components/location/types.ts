@@ -7,6 +7,8 @@ export interface MediaImage {
   imgsha: string;
   imgnam: string;
   imgloc: string;
+  locid: string | null;
+  subid: string | null;  // Migration 28: Sub-location link
   meta_width: number | null;
   meta_height: number | null;
   meta_date_taken: string | null;
@@ -22,12 +24,19 @@ export interface MediaImage {
   hidden?: number;
   hidden_reason?: string | null;
   is_live_photo?: number;
+  // Author tracking (Migration 25/26)
+  auth_imp?: string | null;
+  imported_by?: string | null;
+  is_contributed?: number;
+  contribution_source?: string | null;
 }
 
 export interface MediaVideo {
   vidsha: string;
   vidnam: string;
   vidloc: string;
+  locid: string | null;
+  subid: string | null;  // Migration 28: Sub-location link
   meta_duration: number | null;
   meta_width: number | null;
   meta_height: number | null;
@@ -42,12 +51,19 @@ export interface MediaVideo {
   hidden?: number;
   hidden_reason?: string | null;
   is_live_photo?: number;
+  // Author tracking (Migration 25/26)
+  auth_imp?: string | null;
+  imported_by?: string | null;
+  is_contributed?: number;
+  contribution_source?: string | null;
 }
 
 export interface MediaDocument {
   docsha: string;
   docnam: string;
   docloc: string;
+  locid: string | null;
+  subid: string | null;  // Migration 28: Sub-location link
   // Hidden status (Migration 23)
   hidden?: number;
   hidden_reason?: string | null;

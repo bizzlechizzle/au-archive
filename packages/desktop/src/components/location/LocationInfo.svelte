@@ -33,13 +33,27 @@
     documents?: MediaWithAuthor[];
     onNavigateFilter: (type: string, value: string) => void;
     onSave?: (updates: Partial<LocationInput>) => Promise<void>;
+    // Host/Sub-location support
+    sublocationCount?: number;
+    parentLocation?: { locid: string; locnam: string } | null;
+    isHostLocation?: boolean;
+    onConvertToHost?: () => Promise<void>;
   }
 
-  let { location, images = [], videos = [], documents = [], onNavigateFilter, onSave }: Props = $props();
+  let {
+    location, images = [], videos = [], documents = [], onNavigateFilter, onSave,
+    sublocationCount = 0, parentLocation = null, isHostLocation = false, onConvertToHost
+  }: Props = $props();
 
   // Edit modal state
   let showEditModal = $state(false);
   let saving = $state(false);
+
+  // Convert to Host modal state (PIN protected)
+  let showConvertModal = $state(false);
+  let convertPin = $state('');
+  let convertError = $state('');
+  let converting = $state(false);
 
   // Autocomplete options for Type/Sub-Type
   let typeOptions = $state<string[]>([]);
@@ -108,6 +122,11 @@
   const hasAuthor = $derived(!!location.auth_imp);  // Original author field
   const hasAuthors = $derived(authors.length > 0);  // Tracked contributors from location_authors
 
+  // Host/Sub-location display flags
+  const hasSublocations = $derived(isHostLocation && sublocationCount > 0);
+  const hasParentLocation = $derived(!!parentLocation);
+  const canConvertToHost = $derived(!isHostLocation && !parentLocation && !!onConvertToHost);
+
   // Role display labels
   const roleLabels: Record<string, string> = {
     creator: 'Creator',
@@ -162,7 +181,7 @@
   const hasAnyInfo = $derived(
     hasHistoricalName || hasAkaName || hasStatus || hasDocumentation ||
     hasBuiltOrAbandoned || hasType || hasFlags || hasAuthor || hasAuthors ||
-    hasMediaAuthors || hasExternalContributors
+    hasMediaAuthors || hasExternalContributors || hasSublocations || hasParentLocation
   );
 
   // Documentation labels for display
@@ -299,7 +318,52 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') showEditModal = false;
+    if (e.key === 'Escape') {
+      showEditModal = false;
+      showConvertModal = false;
+    }
+  }
+
+  // Convert to Host Location with PIN verification
+  async function handleConvertToHost() {
+    if (!onConvertToHost) return;
+
+    convertError = '';
+    converting = true;
+
+    try {
+      // Verify PIN using the users API
+      const users = await window.electronAPI?.users?.findAll?.() || [];
+      const currentUser = users[0]; // Get first user (typically the owner)
+
+      if (currentUser) {
+        const hasPin = await window.electronAPI?.users?.hasPin?.(currentUser.user_id);
+        if (hasPin) {
+          const isValid = await window.electronAPI?.users?.verifyPin?.(currentUser.user_id, convertPin);
+          if (!isValid) {
+            convertError = 'Invalid PIN. Please try again.';
+            converting = false;
+            return;
+          }
+        }
+      }
+
+      // PIN verified (or no PIN required), proceed with conversion
+      await onConvertToHost();
+      showConvertModal = false;
+      convertPin = '';
+    } catch (err) {
+      console.error('Error converting to host location:', err);
+      convertError = 'Failed to convert. Please try again.';
+    } finally {
+      converting = false;
+    }
+  }
+
+  function openConvertModal() {
+    convertPin = '';
+    convertError = '';
+    showConvertModal = true;
   }
 </script>
 
@@ -310,15 +374,26 @@
   <!-- Header with edit button -->
   <div class="flex items-start justify-between px-8 pt-6 pb-4">
     <h2 class="text-2xl font-semibold text-foreground leading-none">Information</h2>
-    {#if onSave}
-      <button
-        onclick={openEditModal}
-        class="text-sm text-accent hover:underline leading-none mt-1"
-        title="Edit information"
-      >
-        edit
-      </button>
-    {/if}
+    <div class="flex items-center gap-3">
+      {#if canConvertToHost}
+        <button
+          onclick={openConvertModal}
+          class="text-sm text-gray-500 hover:text-accent hover:underline leading-none mt-1"
+          title="Enable sub-locations for this location"
+        >
+          convert to host
+        </button>
+      {/if}
+      {#if onSave}
+        <button
+          onclick={openEditModal}
+          class="text-sm text-accent hover:underline leading-none mt-1"
+          title="Edit information"
+        >
+          edit
+        </button>
+      {/if}
+    </div>
   </div>
 
   <!-- Content sections - PUEA: Only show sections that have data -->
@@ -334,6 +409,28 @@
               <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{name}</span>
             {/each}
           </div>
+        </div>
+      {/if}
+
+      <!-- Parent Location (for sub-locations) -->
+      {#if hasParentLocation}
+        <div class="mb-4">
+          <h3 class="section-title mb-1">Part of</h3>
+          <button
+            onclick={() => router.navigate(`/locations/${parentLocation!.locid}`)}
+            class="text-base text-accent hover:underline"
+            title="View host location"
+          >
+            {parentLocation!.locnam}
+          </button>
+        </div>
+      {/if}
+
+      <!-- Sub-Locations count (for host locations) -->
+      {#if hasSublocations}
+        <div class="mb-4">
+          <h3 class="section-title mb-1">Buildings</h3>
+          <span class="text-base">{sublocationCount} {sublocationCount === 1 ? 'building' : 'buildings'}</span>
         </div>
       {/if}
 
@@ -823,6 +920,81 @@
           class="px-4 py-2 text-sm font-medium text-white bg-accent rounded hover:opacity-90 transition disabled:opacity-50"
         >
           {saving ? 'Saving...' : 'Save Changes'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Convert to Host Location Modal (PIN Protected) -->
+{#if showConvertModal}
+  <div
+    class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50"
+    onclick={() => showConvertModal = false}
+    role="button"
+    tabindex="-1"
+  >
+    <div
+      class="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden relative z-[100000]"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog"
+    >
+      <!-- Header -->
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <h2 class="text-lg font-semibold text-foreground">Convert to Host Location</h2>
+        <button
+          onclick={() => showConvertModal = false}
+          class="p-1 text-gray-400 hover:text-gray-600 transition"
+          aria-label="Close"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="p-6 space-y-4">
+        <p class="text-sm text-gray-600">
+          Converting this location to a host location enables you to add buildings (sub-locations) to it.
+          This action requires PIN verification.
+        </p>
+
+        {#if convertError}
+          <div class="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+            {convertError}
+          </div>
+        {/if}
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Enter PIN</label>
+          <input
+            type="password"
+            bind:value={convertPin}
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-center text-lg tracking-widest"
+            placeholder="****"
+            maxlength="6"
+            onkeydown={(e) => e.key === 'Enter' && handleConvertToHost()}
+          />
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+        <button
+          type="button"
+          onclick={() => showConvertModal = false}
+          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onclick={handleConvertToHost}
+          disabled={converting}
+          class="px-4 py-2 text-sm font-medium text-white bg-accent rounded hover:opacity-90 transition disabled:opacity-50"
+        >
+          {converting ? 'Converting...' : 'Convert'}
         </button>
       </div>
     </div>

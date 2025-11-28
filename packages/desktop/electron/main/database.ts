@@ -68,9 +68,7 @@ CREATE TABLE IF NOT EXISTS locs (
 
   -- Regions
   regions TEXT,
-  state TEXT,
-
-  UNIQUE(slocnam)
+  state TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_locs_state ON locs(address_state);
@@ -973,6 +971,101 @@ function runMigrations(sqlite: Database.Database): void {
       `);
 
       console.log('Migration 27 completed: docs contributor tracking columns added');
+    }
+
+    // Migration 28: Enhanced sub-location fields
+    // Add type, status, hero image, primary flag, and activity tracking to slocs table
+    const slocsColumns = sqlite.prepare('PRAGMA table_info(slocs)').all() as Array<{ name: string }>;
+    const slocsHasType = slocsColumns.some(col => col.name === 'type');
+
+    if (!slocsHasType) {
+      console.log('Running migration 28: Adding enhanced sub-location fields to slocs');
+
+      sqlite.exec(`
+        ALTER TABLE slocs ADD COLUMN type TEXT;
+        ALTER TABLE slocs ADD COLUMN status TEXT;
+        ALTER TABLE slocs ADD COLUMN hero_imgsha TEXT REFERENCES imgs(imgsha);
+        ALTER TABLE slocs ADD COLUMN is_primary INTEGER DEFAULT 0;
+        ALTER TABLE slocs ADD COLUMN created_date TEXT;
+        ALTER TABLE slocs ADD COLUMN created_by TEXT;
+        ALTER TABLE slocs ADD COLUMN modified_date TEXT;
+        ALTER TABLE slocs ADD COLUMN modified_by TEXT;
+      `);
+
+      // Create index for finding primary sub-locations
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_slocs_is_primary ON slocs(is_primary) WHERE is_primary = 1;
+        CREATE INDEX IF NOT EXISTS idx_slocs_type ON slocs(type) WHERE type IS NOT NULL;
+      `);
+
+      console.log('Migration 28 completed: enhanced sub-location fields added');
+    }
+
+    // Migration 29: Remove UNIQUE constraint on slocnam
+    // The slocnam (short location name) was incorrectly marked UNIQUE in the original schema.
+    // Multiple locations can legitimately have the same abbreviation (e.g., "Hospital").
+    // SQLite requires table rebuild to drop constraints.
+    // Check if migration needed by testing if we can insert duplicate slocnam
+    const migration29Check = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='index' AND sql LIKE '%slocnam%' AND sql LIKE '%UNIQUE%'").get();
+    const tableInfoForSlocnam = sqlite.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='locs'").get() as { sql: string } | undefined;
+    const hasSlocnamUnique = tableInfoForSlocnam?.sql?.includes('UNIQUE(slocnam)');
+
+    if (hasSlocnamUnique || migration29Check) {
+      console.log('Running migration 29: Removing UNIQUE constraint on slocnam');
+
+      // Disable foreign keys during table rebuild
+      sqlite.exec(`PRAGMA foreign_keys = OFF`);
+
+      // Clean up any leftover locs_new from interrupted migration
+      sqlite.exec(`DROP TABLE IF EXISTS locs_new`);
+
+      // Get all column names from locs table
+      const locsTableInfo = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string; type: string; notnull: number; dflt_value: string | null; pk: number }>;
+      const columnDefs = locsTableInfo.map(col => {
+        let def = `${col.name} ${col.type || 'TEXT'}`;
+        if (col.pk) def += ' PRIMARY KEY';
+        if (col.notnull && !col.pk) def += ' NOT NULL';
+        if (col.dflt_value !== null) def += ` DEFAULT ${col.dflt_value}`;
+        return def;
+      }).join(',\n  ');
+
+      // Create new table without UNIQUE(slocnam) constraint
+      // Keep UNIQUE on loc12 and CHECK on address_state
+      sqlite.exec(`
+        CREATE TABLE locs_new (
+          ${columnDefs},
+          UNIQUE(loc12),
+          CHECK(address_state IS NULL OR length(address_state) = 2)
+        )
+      `);
+
+      sqlite.exec(`INSERT INTO locs_new SELECT * FROM locs`);
+      sqlite.exec(`DROP TABLE locs`);
+      sqlite.exec(`ALTER TABLE locs_new RENAME TO locs`);
+
+      // Recreate indexes
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_locs_state ON locs(address_state);
+        CREATE INDEX IF NOT EXISTS idx_locs_type ON locs(type);
+        CREATE INDEX IF NOT EXISTS idx_locs_gps ON locs(gps_lat, gps_lng) WHERE gps_lat IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_loc12 ON locs(loc12);
+        CREATE INDEX IF NOT EXISTS idx_locs_favorite ON locs(favorite) WHERE favorite = 1;
+        CREATE INDEX IF NOT EXISTS idx_locs_verified ON locs(location_verified) WHERE location_verified = 1;
+        CREATE INDEX IF NOT EXISTS idx_locs_address_verified ON locs(address_verified) WHERE address_verified = 1;
+        CREATE INDEX IF NOT EXISTS idx_locs_census_region ON locs(census_region) WHERE census_region IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_census_division ON locs(census_division) WHERE census_division IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_cultural_region ON locs(cultural_region) WHERE cultural_region IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_country_cultural_region ON locs(country_cultural_region) WHERE country_cultural_region IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_project ON locs(project) WHERE project = 1;
+        CREATE INDEX IF NOT EXISTS idx_locs_hero_imgsha ON locs(hero_imgsha) WHERE hero_imgsha IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_created_by_id ON locs(created_by_id) WHERE created_by_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_modified_by_id ON locs(modified_by_id) WHERE modified_by_id IS NOT NULL
+      `);
+
+      // Re-enable foreign keys
+      sqlite.exec(`PRAGMA foreign_keys = ON`);
+
+      console.log('Migration 29 completed: UNIQUE constraint on slocnam removed');
     }
   } catch (error) {
     console.error('Error running migrations:', error);

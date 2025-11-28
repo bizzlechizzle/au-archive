@@ -156,6 +156,18 @@ export interface SlocsTable {
 
   subnam: string;
   ssubname: string | null;
+
+  // Migration 28: Enhanced sub-location fields
+  type: string | null;
+  status: string | null;
+  hero_imgsha: string | null;
+  is_primary: number;  // 0 or 1
+
+  // Activity tracking
+  created_date: string | null;
+  created_by: string | null;
+  modified_date: string | null;
+  modified_by: string | null;
 }
 
 // Images table

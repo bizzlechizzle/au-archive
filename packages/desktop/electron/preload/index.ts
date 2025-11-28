@@ -420,6 +420,114 @@ const api = {
       ipcRenderer.invoke('notes:countByLocation', locid),
   },
 
+  sublocations: {
+    create: (input: {
+      locid: string;
+      subnam: string;
+      ssubname?: string | null;
+      type?: string | null;
+      status?: string | null;
+      is_primary?: boolean;
+      created_by?: string | null;
+    }): Promise<{
+      subid: string;
+      sub12: string;
+      locid: string;
+      subnam: string;
+      ssubname: string | null;
+      type: string | null;
+      status: string | null;
+      hero_imgsha: string | null;
+      is_primary: boolean;
+      created_date: string;
+      created_by: string | null;
+      modified_date: string | null;
+      modified_by: string | null;
+    }> =>
+      ipcRenderer.invoke('sublocation:create', input),
+    findById: (subid: string): Promise<{
+      subid: string;
+      sub12: string;
+      locid: string;
+      subnam: string;
+      ssubname: string | null;
+      type: string | null;
+      status: string | null;
+      hero_imgsha: string | null;
+      is_primary: boolean;
+      created_date: string;
+      created_by: string | null;
+      modified_date: string | null;
+      modified_by: string | null;
+    } | null> =>
+      ipcRenderer.invoke('sublocation:findById', subid),
+    findByLocation: (locid: string): Promise<Array<{
+      subid: string;
+      sub12: string;
+      locid: string;
+      subnam: string;
+      ssubname: string | null;
+      type: string | null;
+      status: string | null;
+      hero_imgsha: string | null;
+      is_primary: boolean;
+      created_date: string;
+      created_by: string | null;
+      modified_date: string | null;
+      modified_by: string | null;
+    }>> =>
+      ipcRenderer.invoke('sublocation:findByLocation', locid),
+    findWithHeroImages: (locid: string): Promise<Array<{
+      subid: string;
+      sub12: string;
+      locid: string;
+      subnam: string;
+      ssubname: string | null;
+      type: string | null;
+      status: string | null;
+      hero_imgsha: string | null;
+      is_primary: boolean;
+      created_date: string;
+      created_by: string | null;
+      modified_date: string | null;
+      modified_by: string | null;
+      hero_thumb_path?: string;
+    }>> =>
+      ipcRenderer.invoke('sublocation:findWithHeroImages', locid),
+    update: (subid: string, updates: {
+      subnam?: string;
+      ssubname?: string | null;
+      type?: string | null;
+      status?: string | null;
+      hero_imgsha?: string | null;
+      is_primary?: boolean;
+      modified_by?: string | null;
+    }): Promise<{
+      subid: string;
+      sub12: string;
+      locid: string;
+      subnam: string;
+      ssubname: string | null;
+      type: string | null;
+      status: string | null;
+      hero_imgsha: string | null;
+      is_primary: boolean;
+      created_date: string;
+      created_by: string | null;
+      modified_date: string | null;
+      modified_by: string | null;
+    } | null> =>
+      ipcRenderer.invoke('sublocation:update', subid, updates),
+    delete: (subid: string): Promise<void> =>
+      ipcRenderer.invoke('sublocation:delete', subid),
+    setPrimary: (locid: string, subid: string): Promise<void> =>
+      ipcRenderer.invoke('sublocation:setPrimary', locid, subid),
+    checkName: (locid: string, subnam: string, excludeSubid?: string): Promise<boolean> =>
+      ipcRenderer.invoke('sublocation:checkName', locid, subnam, excludeSubid),
+    count: (locid: string): Promise<number> =>
+      ipcRenderer.invoke('sublocation:count', locid),
+  },
+
   projects: {
     create: (input: {
       project_name: string;

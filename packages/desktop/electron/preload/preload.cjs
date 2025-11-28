@@ -150,6 +150,19 @@ const api = {
     countByLocation: (locid) => ipcRenderer.invoke("notes:countByLocation", locid),
   },
 
+  // Migration 28: Sub-location API
+  sublocations: {
+    create: (input) => ipcRenderer.invoke("sublocation:create", input),
+    findById: (subid) => ipcRenderer.invoke("sublocation:findById", subid),
+    findByLocation: (locid) => ipcRenderer.invoke("sublocation:findByLocation", locid),
+    findWithHeroImages: (locid) => ipcRenderer.invoke("sublocation:findWithHeroImages", locid),
+    update: (subid, updates) => ipcRenderer.invoke("sublocation:update", subid, updates),
+    delete: (subid) => ipcRenderer.invoke("sublocation:delete", subid),
+    setPrimary: (locid, subid) => ipcRenderer.invoke("sublocation:setPrimary", locid, subid),
+    checkName: (locid, subnam, excludeSubid) => ipcRenderer.invoke("sublocation:checkName", locid, subnam, excludeSubid),
+    count: (locid) => ipcRenderer.invoke("sublocation:count", locid),
+  },
+
   projects: {
     create: (input) => ipcRenderer.invoke("projects:create", input),
     findById: (projectId) => ipcRenderer.invoke("projects:findById", projectId),

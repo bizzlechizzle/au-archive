@@ -31,6 +31,7 @@
   import Search from './pages/Search.svelte';
   import WebBrowser from './pages/WebBrowser.svelte';
   import LocationDetail from './pages/LocationDetail.svelte';
+  // SubLocationDetail merged into LocationDetail (Phase 3)
   import Setup from './pages/Setup.svelte';
   // Migration 24: Login page
   import Login from './pages/Login.svelte';
@@ -231,6 +232,9 @@
         <Settings />
       {:else if currentRoute.path === '/location/:id'}
         <LocationDetail locationId={currentRoute.params?.id || ''} />
+      {:else if currentRoute.path === '/location/:locid/sub/:subid'}
+        <!-- Unified: LocationDetail handles both location and sub-location views -->
+        <LocationDetail locationId={currentRoute.params?.locid || ''} subId={currentRoute.params?.subid || ''} />
       {:else}
         <Dashboard />
       {/if}

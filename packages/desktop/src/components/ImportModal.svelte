@@ -3,7 +3,12 @@
    * ImportModal.svelte
    * P1: Global pop-up import form for creating new locations
    * Per v010steps.md - accessible anywhere, replaces /imports page
-   * Refactored: Uses shared constants and AutocompleteInput for state
+   *
+   * Migration 28: Added sub-location support with 2-column premium layout
+   * - Row 1: Location Name | Sub-Location checkbox
+   * - Row 2: Sub-Location Name | Primary Building (when sub-location checked)
+   * - Row 3: Type | Sub-Type
+   * - Row 4: Author | Status
    */
   import { onMount } from 'svelte';
   import type { Location } from '@au-archive/core';
@@ -17,10 +22,18 @@
   // Form state
   let name = $state('');
   let type = $state('');
-  let subType = $state('');  // DECISION-015: Add Sub-Type field
+  let subType = $state('');
   let selectedState = $state('');
   let author = $state('');
   let access = $state('');
+
+  // Host location & sub-location state (Migration 28)
+  let isHostLocation = $state(false);  // This is a campus with multiple buildings
+  let addFirstBuilding = $state(false); // Add the first building now
+  let subLocationName = $state('');
+  let isPrimaryBuilding = $state(true); // Default to primary for first sub-location
+  let subLocNameDuplicate = $state(false);
+  let subLocNameChecking = $state(false);
 
   // P2: Database-driven lists
   let allLocations = $state<Location[]>([]);
@@ -33,6 +46,13 @@
   // UI state
   let saving = $state(false);
   let error = $state('');
+
+  // Auto-fill sub-location name when location name changes (if adding first building)
+  $effect(() => {
+    if (addFirstBuilding && name && !subLocationName) {
+      subLocationName = name;
+    }
+  });
 
   // Generate state suggestions (all US states formatted)
   function getStateSuggestions(): string[] {
@@ -193,7 +213,7 @@
 
   function validateForm(): boolean {
     if (!name.trim()) {
-      error = 'Name is required';
+      error = 'Location name is required';
       return false;
     }
     if (!selectedState) {
@@ -207,6 +227,17 @@
     if (!type) {
       error = 'Type is required';
       return false;
+    }
+    // Validate sub-location name if adding first building
+    if (addFirstBuilding) {
+      if (!subLocationName.trim()) {
+        error = 'Building name is required when adding first building';
+        return false;
+      }
+      if (subLocNameDuplicate) {
+        error = 'A building with this name already exists';
+        return false;
+      }
     }
     return true;
   }
@@ -243,9 +274,28 @@
       saving = true;
       error = '';
 
+      // Create the location
       const newLocation = await window.electronAPI.locations.create(buildLocationData());
+
+      // If adding first building, create the sub-location inside the new host location
+      if (addFirstBuilding && newLocation?.locid) {
+        await window.electronAPI.sublocations.create({
+          locid: newLocation.locid,
+          subnam: subLocationName.trim(),
+          type: type || null,
+          status: access || null,
+          is_primary: isPrimaryBuilding,
+          created_by: author.trim() || null,
+        });
+      }
+
       closeImportModal();
-      toasts.success('Location created successfully');
+      const successMsg = addFirstBuilding
+        ? 'Host location and first building created'
+        : isHostLocation
+          ? 'Host location created - add buildings from the location page'
+          : 'Location created successfully';
+      toasts.success(successMsg);
 
       if (newLocation?.locid) {
         router.navigate(`/location/${newLocation.locid}`);
@@ -268,11 +318,31 @@
       error = '';
 
       const newLocation = await window.electronAPI.locations.create(buildLocationData());
+
+      // If adding first building, create the sub-location
+      let createdSubId: string | undefined;
+      if (addFirstBuilding && newLocation?.locid) {
+        const subloc = await window.electronAPI.sublocations.create({
+          locid: newLocation.locid,
+          subnam: subLocationName.trim(),
+          type: type || null,
+          status: access || null,
+          is_primary: isPrimaryBuilding,
+          created_by: author.trim() || null,
+        });
+        createdSubId = subloc.subid;
+      }
+
       closeImportModal();
       toasts.success('Location created - select media to import');
 
       if (newLocation?.locid) {
-        router.navigate(`/location/${newLocation.locid}?autoImport=true`);
+        // Navigate to the sub-location if created, otherwise to the location
+        if (createdSubId) {
+          router.navigate(`/location/${newLocation.locid}/sub/${createdSubId}?autoImport=true`);
+        } else {
+          router.navigate(`/location/${newLocation.locid}?autoImport=true`);
+        }
       }
 
       resetForm();
@@ -287,10 +357,15 @@
   function resetForm() {
     name = '';
     type = '';
-    subType = '';  // DECISION-015: Reset sub-type
+    subType = '';
     selectedState = '';
     author = '';
     access = '';
+    isHostLocation = false;
+    addFirstBuilding = false;
+    subLocationName = '';
+    isPrimaryBuilding = true;
+    subLocNameDuplicate = false;
     error = '';
   }
 
@@ -302,6 +377,31 @@
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       handleCancel();
+    }
+  }
+
+  // Handle host location checkbox toggle
+  function handleHostLocationToggle() {
+    isHostLocation = !isHostLocation;
+    if (!isHostLocation) {
+      // Reset building fields when unchecking host location
+      addFirstBuilding = false;
+      subLocationName = '';
+      isPrimaryBuilding = true;
+      subLocNameDuplicate = false;
+    }
+  }
+
+  // Handle add first building checkbox toggle
+  function handleAddBuildingToggle() {
+    addFirstBuilding = !addFirstBuilding;
+    if (addFirstBuilding && name && !subLocationName) {
+      subLocationName = name;
+    }
+    if (!addFirstBuilding) {
+      subLocationName = '';
+      isPrimaryBuilding = true;
+      subLocNameDuplicate = false;
     }
   }
 
@@ -321,19 +421,22 @@
     aria-modal="true"
     aria-labelledby="modal-title"
   >
-    <!-- Modal -->
+    <!-- Modal - wider for 2-column layout -->
     <div
-      class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto relative z-[100000]"
+      class="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative z-[100000]"
       onclick={(e) => e.stopPropagation()}
     >
       <!-- Header -->
-      <div class="p-4 border-b flex justify-between items-center">
-        <h2 id="modal-title" class="text-xl font-semibold text-foreground">
-          New Location
-        </h2>
+      <div class="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+        <div>
+          <h2 id="modal-title" class="text-xl font-semibold text-foreground">
+            New Location
+          </h2>
+          <p class="text-sm text-gray-500 mt-0.5">Add a new location to your archive</p>
+        </div>
         <button
           onclick={handleCancel}
-          class="text-gray-400 hover:text-gray-600 transition"
+          class="text-gray-400 hover:text-gray-600 transition p-1 rounded hover:bg-gray-200"
           aria-label="Close"
         >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -343,32 +446,92 @@
       </div>
 
       <!-- Content -->
-      <div class="p-4 space-y-4">
+      <div class="p-5 space-y-5">
         {#if error}
-          <div class="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+          <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
+            <svg class="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+            </svg>
             {error}
           </div>
         {/if}
 
-        <!-- Name (required) -->
-        <div>
-          <label for="loc-name" class="block text-sm font-medium text-gray-700 mb-1">
-            Name
-          </label>
-          <input
-            id="loc-name"
-            type="text"
-            bind:value={name}
-            disabled={saving}
-            placeholder="Enter location name"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-          />
+        <!-- Row 1: Location Name + Checkboxes (Host / Sub-Location) -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label for="loc-name" class="block text-sm font-medium text-gray-700 mb-1.5">
+              Location Name <span class="text-red-500">*</span>
+            </label>
+            <input
+              id="loc-name"
+              type="text"
+              bind:value={name}
+              disabled={saving}
+              placeholder="Enter location name"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+            />
+          </div>
+          <div class="flex items-end pb-2 gap-4">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isHostLocation}
+                onchange={handleHostLocationToggle}
+                disabled={saving}
+                class="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer"
+              />
+              <span class="text-sm font-medium text-gray-700">Host</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={addFirstBuilding}
+                onchange={handleAddBuildingToggle}
+                disabled={saving || !isHostLocation}
+                class="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer disabled:opacity-40"
+              />
+              <span class="text-sm font-medium text-gray-700 {!isHostLocation ? 'opacity-40' : ''}">Sub-Location</span>
+            </label>
+          </div>
         </div>
 
-        <!-- State (required) - Now with AutocompleteInput -->
+        <!-- Row 2: Sub-Location Name + Primary (conditional) -->
+        {#if addFirstBuilding}
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label for="subloc-name" class="block text-sm font-medium text-gray-700 mb-1.5">
+                Sub-Location Name <span class="text-red-500">*</span>
+              </label>
+              <input
+                id="subloc-name"
+                type="text"
+                bind:value={subLocationName}
+                disabled={saving}
+                placeholder="e.g., Main Building, Powerhouse"
+                class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+              />
+              {#if subLocNameDuplicate}
+                <p class="text-xs text-red-600 mt-1">Name already exists</p>
+              {/if}
+            </div>
+            <div class="flex items-end pb-2">
+              <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  bind:checked={isPrimaryBuilding}
+                  disabled={saving}
+                  class="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer"
+                />
+                <span class="text-sm font-medium text-gray-700">Primary</span>
+              </label>
+            </div>
+          </div>
+        {/if}
+
+        <!-- State (required) -->
         <div>
-          <label for="loc-state" class="block text-sm font-medium text-gray-700 mb-1">
-            State
+          <label for="loc-state" class="block text-sm font-medium text-gray-700 mb-1.5">
+            State <span class="text-red-500">*</span>
           </label>
           <AutocompleteInput
             value={selectedState}
@@ -376,118 +539,123 @@
             suggestions={getStateSuggestions()}
             id="loc-state"
             placeholder="NY or New York"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 uppercase"
+            class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition uppercase"
           />
           <p class="text-xs text-gray-500 mt-1">Type 2-letter code or full state name</p>
         </div>
 
-        <!-- Type (required) - AutocompleteInput with suggestions from database -->
-        <div>
-          <label for="loc-type" class="block text-sm font-medium text-gray-700 mb-1">
-            Type
-          </label>
-          <AutocompleteInput
-            value={type}
-            onchange={(val) => type = val}
-            suggestions={availableTypes}
-            id="loc-type"
-            placeholder="e.g., Factory, Hospital, School"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-          />
-          {#if selectedState && availableTypes.length > 0}
-            <p class="text-xs text-gray-500 mt-1">Showing types in {selectedState} (or type new)</p>
-          {:else if selectedState}
-            <p class="text-xs text-gray-500 mt-1">No existing types in {selectedState} - enter a new one</p>
-          {:else}
-            <p class="text-xs text-gray-500 mt-1">Select a state to see existing types</p>
-          {/if}
+        <!-- Row 3: Type + Sub-Type -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label for="loc-type" class="block text-sm font-medium text-gray-700 mb-1.5">
+              Type <span class="text-red-500">*</span>
+            </label>
+            <AutocompleteInput
+              value={type}
+              onchange={(val) => type = val}
+              suggestions={availableTypes}
+              id="loc-type"
+              placeholder="e.g., Factory, Hospital"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+            />
+            {#if selectedState && availableTypes.length > 0}
+              <p class="text-xs text-gray-500 mt-1">Types in {selectedState}</p>
+            {/if}
+          </div>
+          <div>
+            <label for="loc-subtype" class="block text-sm font-medium text-gray-700 mb-1.5">
+              Sub-Type
+            </label>
+            <AutocompleteInput
+              value={subType}
+              onchange={(val) => subType = val}
+              suggestions={getSubTypeSuggestions()}
+              id="loc-subtype"
+              placeholder="e.g., Textile Mill, Asylum"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+            />
+            <p class="text-xs text-gray-500 mt-1">Optional sub-category</p>
+          </div>
         </div>
 
-        <!-- DECISION-015: Sub-Type (optional) -->
-        <div>
-          <label for="loc-subtype" class="block text-sm font-medium text-gray-700 mb-1">
-            Sub-Type
-          </label>
-          <AutocompleteInput
-            value={subType}
-            onchange={(val) => subType = val}
-            suggestions={getSubTypeSuggestions()}
-            id="loc-subtype"
-            placeholder="e.g., Textile Mill, Asylum, Elementary"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-          />
-          <p class="text-xs text-gray-500 mt-1">Optional sub-category within Type</p>
+        <!-- Row 4: Author + Status -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label for="loc-author" class="block text-sm font-medium text-gray-700 mb-1.5">
+              Author
+            </label>
+            <select
+              id="loc-author"
+              bind:value={author}
+              disabled={saving}
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition bg-white"
+            >
+              {#each users as user}
+                <option value={user.username}>
+                  {user.display_name || user.username}
+                </option>
+              {/each}
+            </select>
+          </div>
+          <div>
+            <label for="loc-access" class="block text-sm font-medium text-gray-700 mb-1.5">
+              Status
+            </label>
+            <select
+              id="loc-access"
+              bind:value={access}
+              disabled={saving}
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition bg-white"
+            >
+              <option value="">Select...</option>
+              {#each ACCESS_OPTIONS as opt}
+                <option value={opt}>{opt}</option>
+              {/each}
+            </select>
+          </div>
         </div>
 
-        <!-- Author - Dropdown of registered users -->
-        <div>
-          <label for="loc-author" class="block text-sm font-medium text-gray-700 mb-1">
-            Author
-          </label>
-          <select
-            id="loc-author"
-            bind:value={author}
-            disabled={saving}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-          >
-            {#each users as user}
-              <option value={user.username}>
-                {user.display_name || user.username}
-              </option>
-            {/each}
-          </select>
-        </div>
-
-        <!-- Status -->
-        <div>
-          <label for="loc-access" class="block text-sm font-medium text-gray-700 mb-1">
-            Status
-          </label>
-          <select
-            id="loc-access"
-            bind:value={access}
-            disabled={saving}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-          >
-            <option value="">Select...</option>
-            {#each ACCESS_OPTIONS as opt}
-              <option value={opt}>{opt}</option>
-            {/each}
-          </select>
-        </div>
-
+        <!-- GPS Pre-fill indicator -->
         {#if $importModal.prefilledData?.gps_lat && $importModal.prefilledData?.gps_lng}
-          <div class="p-3 bg-green-50 border border-green-200 rounded">
+          <div class="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+            <svg class="w-5 h-5 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" />
+            </svg>
             <p class="text-sm text-green-700">
-              GPS pre-filled from map: {$importModal.prefilledData.gps_lat.toFixed(6)}, {$importModal.prefilledData.gps_lng.toFixed(6)}
+              GPS coordinates pre-filled: {$importModal.prefilledData.gps_lat.toFixed(6)}, {$importModal.prefilledData.gps_lng.toFixed(6)}
             </p>
           </div>
         {/if}
       </div>
 
       <!-- Footer -->
-      <div class="p-4 border-t flex justify-end gap-2">
-        <button
-          onclick={handleCancel}
-          disabled={saving}
-          class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200 transition disabled:opacity-50"
-        >
-          Cancel
-        </button>
-        <button
-          onclick={handleCreate}
-          disabled={saving}
-          class="px-4 py-2 border-2 border-accent bg-accent text-white rounded hover:bg-transparent hover:text-accent transition disabled:opacity-50"
-        >
-          {saving ? 'Creating...' : 'Create'}
-        </button>
-        <button
-          onclick={handleCreateAndAddMedia}
-          disabled={saving}
-          class="px-4 py-2 border-2 border-accent text-accent bg-transparent rounded hover:bg-accent hover:text-white transition disabled:opacity-50"
-        >
-          {saving ? 'Creating...' : 'Add Media'}
-        </button>
+      <div class="p-5 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
+        <div class="text-xs text-gray-500">
+          <span class="text-red-500">*</span> Required fields
+        </div>
+        <div class="flex gap-3">
+          <button
+            onclick={handleCancel}
+            disabled={saving}
+            class="px-4 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onclick={handleCreate}
+            disabled={saving}
+            class="px-5 py-2.5 bg-accent text-white rounded-lg hover:bg-accent/90 transition disabled:opacity-50 font-medium shadow-sm"
+          >
+            {saving ? 'Creating...' : 'Create'}
+          </button>
+          <button
+            onclick={handleCreateAndAddMedia}
+            disabled={saving}
+            class="px-5 py-2.5 border-2 border-accent text-accent bg-white rounded-lg hover:bg-accent hover:text-white transition disabled:opacity-50 font-medium"
+          >
+            {saving ? 'Creating...' : 'Create + Add Media'}
+          </button>
+        </div>
       </div>
     </div>
   </div>

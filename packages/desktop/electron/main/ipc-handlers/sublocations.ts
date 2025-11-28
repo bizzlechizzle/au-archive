@@ -1,0 +1,154 @@
+/**
+ * Sub-Location IPC Handlers
+ * Handles sublocation:* IPC channels
+ */
+import { ipcMain } from 'electron';
+import { z } from 'zod';
+import type { Kysely } from 'kysely';
+import type { Database } from '../database';
+import { SQLiteSubLocationRepository } from '../../repositories/sqlite-sublocation-repository';
+
+export function registerSubLocationHandlers(db: Kysely<Database>) {
+  const sublocRepo = new SQLiteSubLocationRepository(db);
+
+  ipcMain.handle('sublocation:create', async (_event, input: unknown) => {
+    try {
+      const CreateSchema = z.object({
+        locid: z.string().uuid(),
+        subnam: z.string().min(1),
+        ssubname: z.string().nullable().optional(),
+        type: z.string().nullable().optional(),
+        status: z.string().nullable().optional(),
+        is_primary: z.boolean().optional(),
+        created_by: z.string().nullable().optional(),
+      });
+      const validatedInput = CreateSchema.parse(input);
+      return await sublocRepo.create(validatedInput);
+    } catch (error) {
+      console.error('Error creating sub-location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('sublocation:findById', async (_event, subid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(subid);
+      return await sublocRepo.findById(validatedId);
+    } catch (error) {
+      console.error('Error finding sub-location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('sublocation:findByLocation', async (_event, locid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(locid);
+      return await sublocRepo.findByLocationId(validatedId);
+    } catch (error) {
+      console.error('Error finding sub-locations by location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('sublocation:findWithHeroImages', async (_event, locid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(locid);
+      return await sublocRepo.findWithHeroImages(validatedId);
+    } catch (error) {
+      console.error('Error finding sub-locations with hero images:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('sublocation:update', async (_event, subid: unknown, updates: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(subid);
+      const UpdateSchema = z.object({
+        subnam: z.string().min(1).optional(),
+        ssubname: z.string().nullable().optional(),
+        type: z.string().nullable().optional(),
+        status: z.string().nullable().optional(),
+        hero_imgsha: z.string().nullable().optional(),
+        is_primary: z.boolean().optional(),
+        modified_by: z.string().nullable().optional(),
+      });
+      const validatedUpdates = UpdateSchema.parse(updates);
+      return await sublocRepo.update(validatedId, validatedUpdates);
+    } catch (error) {
+      console.error('Error updating sub-location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('sublocation:delete', async (_event, subid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(subid);
+      await sublocRepo.delete(validatedId);
+    } catch (error) {
+      console.error('Error deleting sub-location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('sublocation:setPrimary', async (_event, locid: unknown, subid: unknown) => {
+    try {
+      const validatedLocid = z.string().uuid().parse(locid);
+      const validatedSubid = z.string().uuid().parse(subid);
+      await sublocRepo.setPrimary(validatedLocid, validatedSubid);
+    } catch (error) {
+      console.error('Error setting primary sub-location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('sublocation:checkName', async (_event, locid: unknown, subnam: unknown, excludeSubid?: unknown) => {
+    try {
+      const validatedLocid = z.string().uuid().parse(locid);
+      const validatedSubnam = z.string().min(1).parse(subnam);
+      const validatedExclude = excludeSubid ? z.string().uuid().parse(excludeSubid) : undefined;
+      return await sublocRepo.checkNameExists(validatedLocid, validatedSubnam, validatedExclude);
+    } catch (error) {
+      console.error('Error checking sub-location name:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('sublocation:count', async (_event, locid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(locid);
+      return await sublocRepo.countByLocationId(validatedId);
+    } catch (error) {
+      console.error('Error counting sub-locations:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  return sublocRepo;
+}

@@ -17,16 +17,36 @@
     LocationHero, LocationInfo,
     LocationMapSection, LocationOriginalAssets,
     LocationImportZone, LocationBookmarks, LocationNerdStats,
+    SubLocationGrid,
     type MediaImage, type MediaVideo, type MediaDocument, type Bookmark,
     type GpsWarning, type FailedFile
   } from '../components/location';
   import type { Location, LocationInput } from '@au-archive/core';
 
-  interface Props { locationId: string; }
-  let { locationId }: Props = $props();
+  interface Props {
+    locationId: string;
+    subId?: string | null; // If provided, viewing a sub-location
+  }
+  let { locationId, subId = null }: Props = $props();
+
+  // Sub-location type (Migration 28)
+  interface SubLocation {
+    subid: string;
+    sub12: string;
+    locid: string;
+    subnam: string;
+    ssubname: string | null;
+    type: string | null;
+    status: string | null;
+    hero_imgsha: string | null;
+    is_primary: boolean;
+    hero_thumb_path?: string;
+  }
 
   // State
   let location = $state<Location | null>(null);
+  let sublocations = $state<SubLocation[]>([]);
+  let currentSubLocation = $state<SubLocation | null>(null); // When viewing a sub-location
   let images = $state<MediaImage[]>([]);
   let videos = $state<MediaVideo[]>([]);
   let documents = $state<MediaDocument[]>([]);
@@ -43,6 +63,9 @@
   let verifyingGps = $state(false);
   let togglingFavorite = $state(false);
 
+  // Derived: Are we viewing a sub-location?
+  const isViewingSubLocation = $derived(!!subId && !!currentSubLocation);
+
   // Migration 26: Import attribution modal
   let showAttributionModal = $state(false);
   let pendingImportPaths = $state<string[]>([]);
@@ -50,6 +73,12 @@
   let selectedAuthor = $state(''); // username of selected author (or 'external')
   let contributionSource = $state(''); // for external contributors
   let users = $state<Array<{user_id: string, username: string, display_name: string | null}>>([]);
+
+  // Migration 28: Add Building modal
+  let showAddBuildingModal = $state(false);
+  let newBuildingName = $state('');
+  let newBuildingIsPrimary = $state(false);
+  let addingBuilding = $state(false);
 
   // Hero title text fitting - premium single-line scaling
   let titleContainer: HTMLDivElement | undefined = $state();
@@ -138,6 +167,8 @@
   }
 
   const heroDisplayName = $derived.by(() => {
+    // For sub-locations, show the sub-location name
+    if (currentSubLocation) return currentSubLocation.subnam;
     if (!location) return '';
     // Priority: custom short name > auto-generated
     const baseName = location.locnamShort || generateHeroName(location.locnam, location.type, location.stype);
@@ -174,19 +205,51 @@
   });
 
   // Load functions
+  // Migration 28: Check if this is a host location (has sub-locations)
+  const isHostLocation = $derived(sublocations.length > 0);
+
   async function loadLocation() {
     try {
       loading = true; error = null;
-      const [loc, media] = await Promise.all([
+      const [loc, media, sublocs] = await Promise.all([
         window.electronAPI.locations.findById(locationId),
         window.electronAPI.media.findByLocation(locationId),
+        window.electronAPI.sublocations.findWithHeroImages(locationId),
       ]);
       location = loc;
       if (!location) { error = 'Location not found'; return; }
+
+      // Migration 28: Load sub-locations
+      sublocations = sublocs || [];
+
+      // If subId is provided, load the specific sub-location
+      if (subId) {
+        currentSubLocation = await window.electronAPI.sublocations.findById(subId);
+        if (!currentSubLocation) {
+          error = 'Sub-location not found';
+          return;
+        }
+      } else {
+        currentSubLocation = null;
+      }
+
       if (media) {
-        images = (media.images as MediaImage[]) || [];
-        videos = (media.videos as MediaVideo[]) || [];
-        documents = (media.documents as MediaDocument[]) || [];
+        if (subId) {
+          // Viewing a sub-location: filter to only media linked to this sub-location
+          images = ((media.images as MediaImage[]) || []).filter(img => img.subid === subId);
+          videos = ((media.videos as MediaVideo[]) || []).filter(vid => vid.subid === subId);
+          documents = ((media.documents as MediaDocument[]) || []).filter(doc => doc.subid === subId);
+        } else if (sublocations.length > 0) {
+          // Host location: only show media NOT linked to sub-locations (campus-level)
+          images = ((media.images as MediaImage[]) || []).filter(img => !img.subid);
+          videos = ((media.videos as MediaVideo[]) || []).filter(vid => !vid.subid);
+          documents = ((media.documents as MediaDocument[]) || []).filter(doc => !doc.subid);
+        } else {
+          // Regular location: show all media
+          images = (media.images as MediaImage[]) || [];
+          videos = (media.videos as MediaVideo[]) || [];
+          documents = (media.documents as MediaDocument[]) || [];
+        }
       }
     } catch (err) {
       console.error('Error loading location:', err);
@@ -463,12 +526,18 @@
   async function importFilePaths(filePaths: string[], author: string, contributed: number = 0, source: string = '') {
     if (!location || $isImporting) return;
     const filesForImport = filePaths.map(fp => ({ filePath: fp, originalName: fp.split(/[\\/]/).pop()! }));
-    importStore.startJob(location.locid, location.locnam, filePaths.length);
+
+    // Import job label varies based on whether viewing sub-location
+    const jobLabel = currentSubLocation
+      ? `${location.locnam} / ${currentSubLocation.subnam}`
+      : location.locnam;
+    importStore.startJob(location.locid, jobLabel, filePaths.length);
     importProgress = `Import started (${filePaths.length} files)`;
 
     window.electronAPI.media.import({
       files: filesForImport,
       locid: location.locid,
+      subid: subId || null, // Link to sub-location when viewing one
       auth_imp: author,
       deleteOriginals: false,
       is_contributed: contributed,
@@ -511,6 +580,52 @@
   }
 
   // Bookmark handlers
+  // Migration 28: Add Building handlers
+  function openAddBuildingModal() {
+    newBuildingName = '';
+    newBuildingIsPrimary = sublocations.length === 0; // First building is primary by default
+    showAddBuildingModal = true;
+  }
+
+  // Convert to Host Location - opens Add Building modal (adding first building makes it a host)
+  async function handleConvertToHost() {
+    openAddBuildingModal();
+  }
+
+  function closeAddBuildingModal() {
+    showAddBuildingModal = false;
+    newBuildingName = '';
+    newBuildingIsPrimary = false;
+    addingBuilding = false;
+  }
+
+  async function handleAddBuilding() {
+    if (!newBuildingName.trim() || !location) return;
+
+    try {
+      addingBuilding = true;
+      await window.electronAPI.sublocations.create({
+        locid: location.locid,
+        subnam: newBuildingName.trim(),
+        type: location.type || null,
+        status: null,
+        is_primary: newBuildingIsPrimary,
+        created_by: currentUser || null,
+      });
+
+      closeAddBuildingModal();
+      toasts.success(`Building "${newBuildingName.trim()}" added`);
+
+      // Reload sub-locations
+      sublocations = await window.electronAPI.sublocations.findWithHeroImages(location.locid);
+    } catch (err) {
+      console.error('Error adding building:', err);
+      toasts.error('Failed to add building');
+    } finally {
+      addingBuilding = false;
+    }
+  }
+
   async function handleAddBookmark(data: { url: string; title: string; description: string; type: string }) {
     if (!window.electronAPI?.bookmarks) return;
     await window.electronAPI.bookmarks.create({ locid: locationId, url: data.url, url_title: data.title || null, url_description: data.description || null, url_type: data.type || null, auth_imp: currentUser });
@@ -567,13 +682,26 @@
     <!-- Hero outside max-w container for full-width stretch -->
     <LocationHero
       {images}
-      heroImgsha={location.hero_imgsha || null}
-      focalX={location.hero_focal_x ?? 0.5}
-      focalY={location.hero_focal_y ?? 0.5}
+      heroImgsha={currentSubLocation?.hero_imgsha || location.hero_imgsha || null}
+      focalX={currentSubLocation ? 0.5 : (location.hero_focal_x ?? 0.5)}
+      focalY={currentSubLocation ? 0.5 : (location.hero_focal_y ?? 0.5)}
     />
 
     <!-- Title below hero: left-anchored, premium text fitting - always one line -->
     <div class="max-w-6xl mx-auto px-8 pt-2 pb-2">
+      {#if isViewingSubLocation}
+        <!-- Parent location tagline (for sub-locations) -->
+        <button
+          onclick={() => router.navigate(`/location/${locationId}`)}
+          class="text-sm text-accent hover:underline flex items-center gap-1 mb-1"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+          {location.locnam}
+        </button>
+      {/if}
+
       <div
         bind:this={titleContainer}
         class="w-full lg:w-[70%] text-left"
@@ -582,11 +710,32 @@
           bind:this={titleElement}
           class="font-bold leading-tight whitespace-nowrap text-left"
           style="color: #454545; font-size: {titleFontSize}px;"
-          title={location.locnam}
+          title={isViewingSubLocation ? currentSubLocation?.subnam : location.locnam}
         >
           {heroDisplayName}
         </h1>
       </div>
+
+      {#if isViewingSubLocation && currentSubLocation}
+        <!-- Sub-location info chips -->
+        <div class="flex flex-wrap gap-2 mt-3">
+          {#if currentSubLocation.type}
+            <span class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
+              {currentSubLocation.type}
+            </span>
+          {/if}
+          {#if currentSubLocation.status}
+            <span class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
+              {currentSubLocation.status}
+            </span>
+          {/if}
+          {#if currentSubLocation.is_primary}
+            <span class="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm font-medium">
+              Primary Building
+            </span>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <div class="max-w-6xl mx-auto px-8 pb-8">
@@ -595,20 +744,52 @@
         <LocationEditForm {location} onSave={handleSave} onCancel={() => isEditing = false} />
       {:else}
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <LocationInfo {location} {images} {videos} {documents} onNavigateFilter={navigateToFilter} onSave={handleSave} />
+          <LocationInfo
+            {location}
+            {images}
+            {videos}
+            {documents}
+            onNavigateFilter={navigateToFilter}
+            onSave={isViewingSubLocation ? undefined : handleSave}
+            sublocationCount={sublocations.length}
+            isHostLocation={isHostLocation && !isViewingSubLocation}
+            onConvertToHost={isViewingSubLocation ? undefined : handleConvertToHost}
+            parentLocation={isViewingSubLocation ? { locid: locationId, locnam: location.locnam } : null}
+          />
           <div class="location-map-section">
             <!-- DECISION-011: Unified location box with verification checkmarks, edit modal -->
             <LocationMapSection {location} onSave={handleLocationSave} onNavigateFilter={navigateToFilter} />
           </div>
         </div>
 
-        <NotesSection locid={location.locid} {currentUser} />
+        <!-- Notes scoped to sub-location when viewing one -->
+        <NotesSection locid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : location.locid} {currentUser} />
 
-        <LocationImportZone isImporting={$isImporting} {importProgress} {isDragging} {gpsWarnings} {failedFiles}
-          onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-          onSelectFiles={handleSelectFiles} onRetryFailed={retryFailedImports}
+        <!-- Migration 28: Sub-Location Grid (hide when viewing a sub-location) -->
+        {#if !isViewingSubLocation}
+          <SubLocationGrid
+            locid={location.locid}
+            {sublocations}
+            onAddSubLocation={openAddBuildingModal}
+          />
+        {/if}
+
+        <!-- Import zone - host locations get campus-level media, buildings get building media -->
+        <LocationImportZone
+          isImporting={$isImporting}
+          {importProgress}
+          {isDragging}
+          {gpsWarnings}
+          {failedFiles}
+          scopeLabel={isViewingSubLocation ? currentSubLocation?.subnam : (isHostLocation ? 'Campus-Level' : null)}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onSelectFiles={handleSelectFiles}
+          onRetryFailed={retryFailedImports}
           onDismissWarning={(i) => gpsWarnings = gpsWarnings.filter((_, idx) => idx !== i)}
-          onDismissAllWarnings={() => gpsWarnings = []} />
+          onDismissAllWarnings={() => gpsWarnings = []}
+        />
 
         <LocationBookmarks {bookmarks} onAddBookmark={handleAddBookmark} onDeleteBookmark={handleDeleteBookmark} onOpenBookmark={handleOpenBookmark} />
         <div id="media-gallery">
@@ -616,7 +797,7 @@
             {images}
             {videos}
             {documents}
-            heroImgsha={location.hero_imgsha || null}
+            heroImgsha={currentSubLocation?.hero_imgsha || location.hero_imgsha || null}
             onOpenImageLightbox={(i) => selectedMediaIndex = i}
             onOpenVideoLightbox={(i) => selectedMediaIndex = images.length + i}
             onOpenDocument={openMediaFile}
@@ -632,10 +813,15 @@
       mediaList={mediaViewerList}
       startIndex={selectedMediaIndex}
       onClose={() => selectedMediaIndex = null}
-      heroImgsha={location?.hero_imgsha || null}
-      focalX={location?.hero_focal_x ?? 0.5}
-      focalY={location?.hero_focal_y ?? 0.5}
-      onSetHeroImage={setHeroImageWithFocal}
+      heroImgsha={currentSubLocation?.hero_imgsha || location?.hero_imgsha || null}
+      focalX={currentSubLocation ? 0.5 : (location?.hero_focal_x ?? 0.5)}
+      focalY={currentSubLocation ? 0.5 : (location?.hero_focal_y ?? 0.5)}
+      onSetHeroImage={currentSubLocation
+        ? async (imgsha, fx, fy) => {
+            await window.electronAPI.sublocations.update(currentSubLocation.subid, { hero_imgsha: imgsha });
+            await loadLocation();
+          }
+        : setHeroImageWithFocal}
       onHiddenChanged={handleHiddenChanged}
     />
   {/if}
@@ -746,6 +932,74 @@
             class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Import
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Migration 28: Add Building Modal -->
+  {#if showAddBuildingModal}
+    <div
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[99999]"
+      onclick={closeAddBuildingModal}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4"
+        onclick={(e) => e.stopPropagation()}
+      >
+        <div class="p-4 border-b">
+          <h2 class="text-lg font-semibold text-foreground">Add Building</h2>
+          <p class="text-sm text-gray-500 mt-1">
+            Add a building to {location?.locnam || 'this location'}
+          </p>
+        </div>
+
+        <div class="p-4 space-y-4">
+          <div>
+            <label for="building-name" class="block text-sm font-medium text-gray-700 mb-1">
+              Building Name <span class="text-red-500">*</span>
+            </label>
+            <input
+              id="building-name"
+              type="text"
+              bind:value={newBuildingName}
+              disabled={addingBuilding}
+              placeholder="e.g., Main Building, Powerhouse"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+            />
+          </div>
+
+          <label class="flex items-center gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              bind:checked={newBuildingIsPrimary}
+              disabled={addingBuilding}
+              class="h-5 w-5 rounded border-gray-300 text-accent focus:ring-accent"
+            />
+            <div>
+              <span class="text-sm font-medium text-gray-700">Primary Building</span>
+              <p class="text-xs text-gray-500">Set as main structure of this campus</p>
+            </div>
+          </label>
+        </div>
+
+        <div class="p-4 border-t flex justify-end gap-2">
+          <button
+            onclick={closeAddBuildingModal}
+            disabled={addingBuilding}
+            class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200 transition disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onclick={handleAddBuilding}
+            disabled={addingBuilding || !newBuildingName.trim()}
+            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {addingBuilding ? 'Adding...' : 'Add Building'}
           </button>
         </div>
       </div>

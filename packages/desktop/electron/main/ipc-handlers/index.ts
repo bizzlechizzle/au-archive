@@ -16,6 +16,7 @@
  * - projects.ts: projects:* handlers
  * - bookmarks.ts: bookmarks:* handlers
  * - users.ts: users:* handlers
+ * - sublocations.ts: sublocation:* handlers
  * - database.ts: database:* handlers
  * - health.ts: health:* handlers
  * - geocode.ts: geocode:* handlers
@@ -36,6 +37,7 @@ import { registerUsersHandlers } from './users';
 import { registerDatabaseHandlers } from './database';
 import { registerHealthHandlers } from './health';
 import { registerGeocodeHandlers } from './geocode';
+import { registerSubLocationHandlers } from './sublocations';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -65,6 +67,7 @@ export function registerIpcHandlers() {
   registerProjectsHandlers(db);
   registerBookmarksHandlers(db);
   registerUsersHandlers(db);
+  registerSubLocationHandlers(db);
 
   // Migration 25 - Phase 3: Location authors (multi-user attribution)
   registerLocationAuthorsHandlers(db);
