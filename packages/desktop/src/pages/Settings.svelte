@@ -165,17 +165,22 @@
       return;
     }
 
-    if (newPin && newPin.length < 4) {
+    if (!newPin) {
+      newUserError = 'PIN is required';
+      return;
+    }
+
+    if (newPin.length < 4) {
       newUserError = 'PIN must be at least 4 digits';
       return;
     }
 
-    if (newPin && !/^\d+$/.test(newPin)) {
+    if (!/^\d+$/.test(newPin)) {
       newUserError = 'PIN must contain only numbers';
       return;
     }
 
-    if (newPin && newPin !== newConfirmPin) {
+    if (newPin !== newConfirmPin) {
       newUserError = 'PINs do not match';
       return;
     }
@@ -184,7 +189,7 @@
       await window.electronAPI.users.create({
         username: newUsername.trim(),
         display_name: newDisplayName.trim() || null,
-        pin: newPin.length >= 4 ? newPin : null,
+        pin: newPin,
       });
 
       showAddUser = false;
@@ -252,29 +257,29 @@
 
     changePinError = '';
 
-    if (changePin && changePin.length < 4) {
+    if (!changePin) {
+      changePinError = 'PIN is required';
+      return;
+    }
+
+    if (changePin.length < 4) {
       changePinError = 'PIN must be at least 4 digits';
       return;
     }
 
-    if (changePin && !/^\d+$/.test(changePin)) {
+    if (!/^\d+$/.test(changePin)) {
       changePinError = 'PIN must contain only numbers';
       return;
     }
 
-    if (changePin && changePin !== changeConfirmPin) {
+    if (changePin !== changeConfirmPin) {
       changePinError = 'PINs do not match';
       return;
     }
 
     try {
-      if (changePin.length >= 4) {
-        await window.electronAPI.users.setPin(changingPinUserId, changePin);
-        saveMessage = 'PIN set successfully';
-      } else {
-        await window.electronAPI.users.clearPin(changingPinUserId);
-        saveMessage = 'PIN removed';
-      }
+      await window.electronAPI.users.setPin(changingPinUserId, changePin);
+      saveMessage = 'PIN changed successfully';
 
       changingPinUserId = null;
       await loadUsers();
@@ -536,55 +541,9 @@
     </div>
   {:else}
     <div class="max-w-2xl">
-      <!-- Migration 24: User Management -->
+      <!-- User Management -->
       <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <div class="flex items-center justify-between mb-4">
-          <div>
-            <h2 class="text-lg font-semibold text-foreground">Users</h2>
-            <p class="text-sm text-gray-500">
-              Mode: <span class="font-medium">{appMode === 'multi' ? 'Multi-User' : 'Single User'}</span>
-            </p>
-          </div>
-          <div class="flex gap-2">
-            {#if appMode === 'single'}
-              <button
-                onclick={switchToMultiUser}
-                class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
-              >
-                Switch to Multi-User
-              </button>
-            {:else}
-              <button
-                onclick={switchToSingleUser}
-                class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
-              >
-                Switch to Single User
-              </button>
-            {/if}
-          </div>
-        </div>
-
-        <!-- Require Login Toggle (only in multi-user mode) -->
-        {#if appMode === 'multi'}
-          <div class="mb-4 p-3 bg-gray-50 rounded-lg">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-sm font-medium text-foreground">Require login at startup</p>
-                <p class="text-xs text-gray-500">Always show login screen, even if no users have PINs</p>
-              </div>
-              <button
-                onclick={toggleRequireLogin}
-                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {requireLogin ? 'bg-accent' : 'bg-gray-300'}"
-                role="switch"
-                aria-checked={requireLogin}
-              >
-                <span
-                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {requireLogin ? 'translate-x-6' : 'translate-x-1'}"
-                ></span>
-              </button>
-            </div>
-          </div>
-        {/if}
+        <h2 class="text-lg font-semibold text-foreground mb-4">Users</h2>
 
         <!-- User List -->
         <div class="space-y-3">
@@ -634,7 +593,7 @@
                 <!-- Change PIN Mode -->
                 <div class="space-y-3">
                   <p class="text-sm font-medium text-foreground">
-                    {user.has_pin ? 'Change PIN for' : 'Set PIN for'} {user.display_name || user.username}
+                    Change PIN for {user.display_name || user.username}
                   </p>
                   <div class="grid grid-cols-2 gap-3">
                     <div>
@@ -662,7 +621,6 @@
                       />
                     </div>
                   </div>
-                  <p class="text-xs text-gray-500">Leave empty to remove PIN protection</p>
                   {#if changePinError}
                     <p class="text-red-500 text-xs">{changePinError}</p>
                   {/if}
@@ -671,7 +629,7 @@
                       onclick={saveChangePin}
                       class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90"
                     >
-                      {changePin ? 'Set PIN' : 'Remove PIN'}
+                      Save PIN
                     </button>
                     <button
                       onclick={cancelChangePin}
@@ -687,9 +645,6 @@
                   <div>
                     <div class="flex items-center gap-2">
                       <span class="font-medium text-foreground">{user.display_name || user.username}</span>
-                      {#if user.has_pin}
-                        <span class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">PIN</span>
-                      {/if}
                       {#if currentUserId === user.user_id}
                         <span class="text-xs bg-accent/10 text-accent px-1.5 py-0.5 rounded">Current</span>
                       {/if}
@@ -711,17 +666,15 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                       </svg>
                     </button>
-                    {#if appMode === 'multi'}
-                      <button
-                        onclick={() => startChangePin(user)}
-                        class="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
-                        title={user.has_pin ? 'Change PIN' : 'Set PIN'}
-                      >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-                        </svg>
-                      </button>
-                    {/if}
+                    <button
+                      onclick={() => startChangePin(user)}
+                      class="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+                      title="Change PIN"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                      </svg>
+                    </button>
                     {#if users.length > 1}
                       <button
                         onclick={() => deleteUser(user)}
@@ -764,34 +717,32 @@
                     />
                   </div>
                 </div>
-                {#if appMode === 'multi'}
-                  <div class="grid grid-cols-2 gap-3">
-                    <div>
-                      <label class="block text-xs font-medium text-gray-600 mb-1">PIN (optional)</label>
-                      <input
-                        type="password"
-                        inputmode="numeric"
-                        pattern="[0-9]*"
-                        maxlength="6"
-                        bind:value={newPin}
-                        placeholder="4-6 digits"
-                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
-                      />
-                    </div>
-                    <div>
-                      <label class="block text-xs font-medium text-gray-600 mb-1">Confirm PIN</label>
-                      <input
-                        type="password"
-                        inputmode="numeric"
-                        pattern="[0-9]*"
-                        maxlength="6"
-                        bind:value={newConfirmPin}
-                        placeholder="Re-enter"
-                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
-                      />
-                    </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">PIN *</label>
+                    <input
+                      type="password"
+                      inputmode="numeric"
+                      pattern="[0-9]*"
+                      maxlength="6"
+                      bind:value={newPin}
+                      placeholder="4-6 digits"
+                      class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
+                    />
                   </div>
-                {/if}
+                  <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Confirm PIN *</label>
+                    <input
+                      type="password"
+                      inputmode="numeric"
+                      pattern="[0-9]*"
+                      maxlength="6"
+                      bind:value={newConfirmPin}
+                      placeholder="Re-enter"
+                      class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
+                    />
+                  </div>
+                </div>
                 {#if newUserError}
                   <p class="text-red-500 text-xs">{newUserError}</p>
                 {/if}

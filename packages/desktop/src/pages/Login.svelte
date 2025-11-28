@@ -153,7 +153,6 @@
             {#each users as user}
               <option value={user.user_id}>
                 {user.display_name || user.username}
-                {user.has_pin ? '🔒' : ''}
               </option>
             {/each}
           </select>
@@ -221,9 +220,5 @@
       {/if}
     </div>
 
-    <!-- Footer -->
-    <div class="mt-6 text-center text-sm text-gray-500">
-      <p>All data is stored locally on your computer.</p>
-    </div>
   </div>
 </div>

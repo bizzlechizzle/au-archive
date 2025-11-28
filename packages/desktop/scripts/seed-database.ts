@@ -474,26 +474,8 @@ function main() {
     console.log(`\nSeeded ${seededCount} locations.`);
   }
 
-  // Set default user if not exists
-  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-  if (userCount.count === 0) {
-    console.log('Creating default user...');
-    const userId = crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO users (user_id, username, display_name, created_date)
-      VALUES (?, ?, ?, ?)
-    `).run(userId, 'default', 'Default User', new Date().toISOString());
-  }
-
-  // Set current_user setting if not exists
-  const currentUserSetting = db.prepare("SELECT value FROM settings WHERE key = 'current_user'").get();
-  if (!currentUserSetting) {
-    console.log('Setting current_user to default...');
-    db.prepare(`
-      INSERT INTO settings (key, value) VALUES ('current_user', 'default')
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `).run();
-  }
+  // NOTE: No default user created - users must be created via Setup wizard with required PIN
+  // Seed script is for development location data only, not user accounts
 
   // Show final status
   console.log('\n');

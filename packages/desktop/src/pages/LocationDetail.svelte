@@ -98,7 +98,7 @@
       words = words.slice(1);
     }
 
-    if (words.length <= 2) return words.join(' ');
+    if (words.length <= 3) return words.join(' ');
 
     const suffixesToStrip = new Set<string>(LOCATION_SUFFIXES);
     if (type) { suffixesToStrip.add(type.toLowerCase()); suffixesToStrip.add(type.toLowerCase() + 's'); }
@@ -111,7 +111,7 @@
     }
 
     const result = [...words];
-    while (result.length > 2) {
+    while (result.length > 3) {
       const lastWord = result[result.length - 1].toLowerCase();
       if (suffixesToStrip.has(lastWord)) result.pop();
       else break;
@@ -408,7 +408,13 @@
           else if (result.imported > 0) { importProgress = `Imported ${result.imported} files successfully`; toasts.success(`Successfully imported ${result.imported} files`); failedFiles = []; }
           else if (result.duplicates > 0) { importProgress = `${result.duplicates} files were already in archive`; toasts.info(`${result.duplicates} files were already in archive`); }
         }
-        loadLocation(); // AAA: Reload to show new imports immediately
+        loadLocation().then(() => {
+          // Scroll to media gallery after successful import
+          const mediaSection = document.getElementById('media-gallery');
+          if (mediaSection) {
+            mediaSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
       })
       .catch((err) => { const msg = err instanceof Error ? err.message : 'Unknown error'; importStore.completeJob(undefined, msg); importProgress = `Import error: ${msg}`; toasts.error(`Import error: ${msg}`); });
     setTimeout(() => importProgress = '', 8000);
@@ -515,15 +521,17 @@
           onDismissAllWarnings={() => gpsWarnings = []} />
 
         <LocationBookmarks {bookmarks} onAddBookmark={handleAddBookmark} onDeleteBookmark={handleDeleteBookmark} onOpenBookmark={handleOpenBookmark} />
-        <LocationOriginalAssets
-          {images}
-          {videos}
-          {documents}
-          heroImgsha={location.hero_imgsha || null}
-          onOpenImageLightbox={(i) => selectedMediaIndex = i}
-          onOpenVideoLightbox={(i) => selectedMediaIndex = images.length + i}
-          onOpenDocument={openMediaFile}
-        />
+        <div id="media-gallery">
+          <LocationOriginalAssets
+            {images}
+            {videos}
+            {documents}
+            heroImgsha={location.hero_imgsha || null}
+            onOpenImageLightbox={(i) => selectedMediaIndex = i}
+            onOpenVideoLightbox={(i) => selectedMediaIndex = images.length + i}
+            onOpenDocument={openMediaFile}
+          />
+        </div>
         <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} />
       {/if}
     </div>

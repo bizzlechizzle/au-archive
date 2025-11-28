@@ -27,6 +27,9 @@
   let availableTypes = $state<string[]>([]);
   let allTypes = $state<string[]>([]);
 
+  // Users for author dropdown
+  let users = $state<Array<{user_id: string, username: string, display_name: string | null}>>([]);
+
   // UI state
   let saving = $state(false);
   let error = $state('');
@@ -102,16 +105,7 @@
     return Array.from(subTypes).sort();
   }
 
-  // Get author suggestions from existing locations
-  function getAuthorSuggestions(): string[] {
-    const authors = new Set<string>();
-    allLocations.forEach(loc => {
-      if (loc.auth_imp) authors.add(loc.auth_imp);
-    });
-    return Array.from(authors).sort();
-  }
-
-  // Load locations and default author from database/settings
+  // Load locations, users, and default author from database/settings
   async function loadOptions() {
     try {
       const locations = await window.electronAPI.locations.findAll();
@@ -126,7 +120,12 @@
       allTypes = Array.from(types).sort();
       availableTypes = allTypes;
 
-      // FEAT-7: Load default author from settings
+      // Load users for author dropdown
+      if (window.electronAPI?.users) {
+        users = await window.electronAPI.users.findAll();
+      }
+
+      // Set default author to current user
       if (window.electronAPI?.settings) {
         const settings = await window.electronAPI.settings.getAll();
         if (settings.current_user && !author) {
@@ -420,19 +419,23 @@
           <p class="text-xs text-gray-500 mt-1">Optional sub-category within Type</p>
         </div>
 
-        <!-- Author - Now with AutocompleteInput -->
+        <!-- Author - Dropdown of registered users -->
         <div>
           <label for="loc-author" class="block text-sm font-medium text-gray-700 mb-1">
             Author
           </label>
-          <AutocompleteInput
-            value={author}
-            onchange={(val) => author = val}
-            suggestions={getAuthorSuggestions()}
+          <select
             id="loc-author"
-            placeholder="Your name"
+            bind:value={author}
+            disabled={saving}
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-          />
+          >
+            {#each users as user}
+              <option value={user.username}>
+                {user.display_name || user.username}
+              </option>
+            {/each}
+          </select>
         </div>
 
         <!-- Status -->

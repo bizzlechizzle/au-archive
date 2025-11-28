@@ -411,15 +411,8 @@ function runMigrations(sqlite: Database.Database): void {
         CREATE INDEX idx_users_username ON users(username);
       `);
 
-      // Create default user using parameterized query (NOT template literals)
-      const defaultUserId = 'default-user-id';
-      const defaultDate = new Date().toISOString();
-      const insertStmt = sqlite.prepare(
-        'INSERT INTO users (user_id, username, display_name, created_date) VALUES (?, ?, ?, ?)'
-      );
-      insertStmt.run(defaultUserId, 'default', 'Default User', defaultDate);
-
-      console.log('Migration completed: users table created with default user');
+      // NOTE: No default user created - users must be created via Setup wizard with required PIN
+      console.log('Migration completed: users table created');
     }
 
     // Migration 8: Add thumbnail/preview/XMP columns to imgs and vids tables

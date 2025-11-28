@@ -3,8 +3,13 @@
    * Setup.svelte - First-run setup wizard
    * Redesigned: 3 steps with PIN for all users
    */
-  import { router } from '../stores/router';
   import logo from '../assets/abandoned-upstate-logo.png';
+
+  interface Props {
+    onComplete: (userId: string, username: string) => void;
+  }
+
+  let { onComplete }: Props = $props();
 
   let currentStep = $state(1);
   const totalSteps = 3;
@@ -151,16 +156,6 @@
     try {
       isProcessing = true;
 
-      // Delete legacy "default" user from old migrations if it exists
-      try {
-        const defaultUser = await window.electronAPI.users.findByUsername('default');
-        if (defaultUser) {
-          await window.electronAPI.users.delete(defaultUser.user_id);
-        }
-      } catch {
-        // Ignore if default user doesn't exist
-      }
-
       // Create primary user record in database (PIN is required)
       const user = await window.electronAPI.users.create({
         username: username.trim(),
@@ -182,15 +177,15 @@
       // Save all settings
       await Promise.all([
         window.electronAPI.settings.set('app_mode', appMode),
-        window.electronAPI.settings.set('current_user', username),
+        window.electronAPI.settings.set('current_user', username.trim()),
         window.electronAPI.settings.set('current_user_id', user.user_id),
         window.electronAPI.settings.set('archive_folder', archivePath),
         window.electronAPI.settings.set('delete_on_import', deleteOriginals.toString()),
         window.electronAPI.settings.set('setup_complete', 'true'),
       ]);
 
-      // Navigate to dashboard
-      router.navigate('/dashboard');
+      // Notify parent that setup is complete (handles auth + navigation)
+      onComplete(user.user_id, username.trim());
     } catch (error) {
       console.error('Error completing setup:', error);
       alert('Failed to complete setup. Please try again.');

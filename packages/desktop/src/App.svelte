@@ -51,7 +51,8 @@
   let unsubscribeBackup: (() => void) | null = null;
 
   /**
-   * Migration 24: Check if login is required based on app mode and PIN settings
+   * Check if login is required
+   * Since all users now have required PINs, always require login on app restart
    */
   async function checkAuthRequired(): Promise<boolean> {
     if (!window.electronAPI?.settings || !window.electronAPI?.users) {
@@ -59,22 +60,8 @@
     }
 
     try {
-      const appMode = await window.electronAPI.settings.get('app_mode');
-
-      // Single user mode: no login required
-      if (appMode !== 'multi') {
-        return false;
-      }
-
-      // Check if "always require login" is enabled
-      const alwaysRequireLogin = await window.electronAPI.settings.get('require_login');
-      if (alwaysRequireLogin === 'true') {
-        return true;
-      }
-
-      // Multi-user mode: check if any user has a PIN set
-      const hasAnyPin = await window.electronAPI.users.anyUserHasPin();
-      return hasAnyPin;
+      // All users have PINs now - always require login
+      return true;
     } catch (error) {
       console.error('Error checking auth requirement:', error);
       return false;
@@ -82,7 +69,7 @@
   }
 
   /**
-   * Migration 24: Handle successful login
+   * Handle successful login from Login page
    */
   function handleLogin(userId: string, username: string) {
     currentUserId = userId;
@@ -94,6 +81,20 @@
       window.electronAPI.settings.set('current_user_id', userId);
       window.electronAPI.settings.set('current_user', username);
     }
+
+    router.navigate('/dashboard');
+  }
+
+  /**
+   * Handle setup completion - authenticate user directly
+   * User just created their account, no need to ask for login immediately
+   */
+  function handleSetupComplete(userId: string, username: string) {
+    setupComplete = true;
+    currentUserId = userId;
+    currentUsername = username;
+    isAuthenticated = true;
+    requiresLogin = false; // Don't show login after fresh setup
 
     router.navigate('/dashboard');
   }
@@ -206,9 +207,9 @@
     </div>
   </div>
 {:else if currentRoute.path === '/setup'}
-  <Setup />
+  <Setup onComplete={handleSetupComplete} />
 {:else if !setupComplete}
-  <Setup />
+  <Setup onComplete={handleSetupComplete} />
 {:else if requiresLogin && !isAuthenticated}
   <!-- Migration 24: Show login page when PIN authentication is required -->
   <Login onLogin={handleLogin} />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { type Location, LocationEntity } from '@au-archive/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
@@ -104,6 +105,16 @@
   // Author - DECISION-013: Auto-fill from Settings
   let newAuthor = $state(defaultAuthor);
 
+  // Users for author dropdown
+  let users = $state<Array<{user_id: string, username: string, display_name: string | null}>>([]);
+
+  // Load users on mount
+  onMount(async () => {
+    if (window.electronAPI?.users) {
+      users = await window.electronAPI.users.findAll();
+    }
+  });
+
   // Autocomplete suggestions derived from existing locations
   function getTypeSuggestions(): string[] {
     const types = new Set<string>();
@@ -119,14 +130,6 @@
       if (loc.stype) subtypes.add(loc.stype);
     });
     return Array.from(subtypes).sort();
-  }
-
-  function getAuthorSuggestions(): string[] {
-    const authors = new Set<string>();
-    locations.forEach(loc => {
-      if (loc.auth_imp) authors.add(loc.auth_imp);
-    });
-    return Array.from(authors).sort();
   }
 
   function getCitySuggestions(): string[] {
@@ -693,14 +696,17 @@
             <label for="new-author" class="block text-sm font-medium text-gray-700 mb-1">
               Documented By
             </label>
-            <AutocompleteInput
-              bind:value={newAuthor}
-              onchange={(val) => newAuthor = val}
-              suggestions={getAuthorSuggestions()}
+            <select
               id="new-author"
-              placeholder="Your name or username"
+              bind:value={newAuthor}
               class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-            />
+            >
+              {#each users as user}
+                <option value={user.username}>
+                  {user.display_name || user.username}
+                </option>
+              {/each}
+            </select>
             <p class="text-xs text-gray-500 mt-1">Who documented/photographed this location</p>
           </div>
         </div>
