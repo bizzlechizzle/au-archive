@@ -14,6 +14,8 @@ export const CENSUS_REGIONS: Record<string, string[]> = {
   Midwest: ['IL', 'IN', 'IA', 'KS', 'MI', 'MN', 'MO', 'NE', 'ND', 'OH', 'SD', 'WI'],
   South: ['AL', 'AR', 'DE', 'DC', 'FL', 'GA', 'KY', 'LA', 'MD', 'MS', 'NC', 'OK', 'SC', 'TN', 'TX', 'VA', 'WV'],
   West: ['AK', 'AZ', 'CA', 'CO', 'HI', 'ID', 'MT', 'NV', 'NM', 'OR', 'UT', 'WA', 'WY'],
+  // US Territories (not part of official Census regions, but needed for completeness)
+  Territories: ['PR', 'VI', 'GU'],
 };
 
 // =============================================================================
@@ -30,6 +32,9 @@ export const CENSUS_DIVISIONS: Record<string, string[]> = {
   'West South Central': ['AR', 'LA', 'OK', 'TX'],
   'Mountain': ['AZ', 'CO', 'ID', 'MT', 'NV', 'NM', 'UT', 'WY'],
   'Pacific': ['AK', 'CA', 'HI', 'OR', 'WA'],
+  // US Territories (not part of official Census divisions, but needed for completeness)
+  'Caribbean': ['PR', 'VI'],
+  'Pacific Islands': ['GU'],
 };
 
 // =============================================================================
@@ -94,6 +99,10 @@ export const STATE_CENTERS: Record<string, StateCenter> = {
   WV: { lat: 38.5976, lng: -80.4549, threshold: 0.3 },
   WI: { lat: 43.7844, lng: -88.7879, threshold: 0.45 },
   WY: { lat: 43.0760, lng: -107.2903, threshold: 0.6 },
+  // Territories
+  PR: { lat: 18.2208, lng: -66.5901, threshold: 0.3 }, // Puerto Rico center
+  VI: { lat: 18.3358, lng: -64.8963, threshold: 0.2 }, // US Virgin Islands center
+  GU: { lat: 13.4443, lng: 144.7937, threshold: 0.15 }, // Guam center
 };
 
 // =============================================================================
@@ -152,6 +161,11 @@ export const STATE_CULTURAL_REGIONS: Record<string, string[]> = {
   HI: ['Big Island', 'Kauai', 'Maui County', 'Neighbor Islands', 'Oahu'],
   OR: ['Central Oregon', 'Eastern Oregon', 'Oregon Coast', 'Portland Metro', 'Southern Oregon', 'Willamette Valley'],
   WA: ['Central Washington', 'Eastern Washington', 'North Central Washington', 'Olympic Peninsula', 'Puget Sound', 'Southwest Washington'],
+  // District of Columbia and Territories
+  DC: ['Capitol Hill', 'Downtown DC', 'Georgetown', 'Northeast DC', 'Northwest DC', 'Southeast DC', 'Southwest DC'],
+  PR: ['Central Mountains', 'East Coast', 'North Coast', 'San Juan Metro', 'South Coast', 'West Coast'],
+  VI: ['St. Croix', 'St. John', 'St. Thomas'],
+  GU: ['Central Guam', 'Northern Guam', 'Southern Guam'],
 };
 
 // =============================================================================
@@ -3537,6 +3551,132 @@ export const WA_COUNTY_REGIONS: Record<string, string> = {
   'Pend Oreille': 'North Central Washington',
 };
 
+// DISTRICT OF COLUMBIA (single district, mapped by quadrant/neighborhood)
+export const DC_COUNTY_REGIONS: Record<string, string> = {
+  'District of Columbia': 'Downtown DC',
+  'Washington': 'Downtown DC',
+  // Quadrant-based assignments for geocoding results
+};
+
+// PUERTO RICO (78 municipios)
+export const PR_COUNTY_REGIONS: Record<string, string> = {
+  'San Juan': 'San Juan Metro',
+  'Bayamón': 'San Juan Metro',
+  'Carolina': 'San Juan Metro',
+  'Guaynabo': 'San Juan Metro',
+  'Cataño': 'San Juan Metro',
+  'Trujillo Alto': 'San Juan Metro',
+  'Toa Baja': 'San Juan Metro',
+  'Toa Alta': 'San Juan Metro',
+  'Caguas': 'Central Mountains',
+  'Cayey': 'Central Mountains',
+  'Cidra': 'Central Mountains',
+  'Aguas Buenas': 'Central Mountains',
+  'Comerio': 'Central Mountains',
+  'Barranquitas': 'Central Mountains',
+  'Aibonito': 'Central Mountains',
+  'Orocovis': 'Central Mountains',
+  'Corozal': 'Central Mountains',
+  'Naranjito': 'Central Mountains',
+  'Morovis': 'Central Mountains',
+  'Ciales': 'Central Mountains',
+  'Jayuya': 'Central Mountains',
+  'Utuado': 'Central Mountains',
+  'Adjuntas': 'Central Mountains',
+  'Lares': 'Central Mountains',
+  'Las Marías': 'West Coast',
+  'Maricao': 'West Coast',
+  'San Germán': 'West Coast',
+  'Sabana Grande': 'West Coast',
+  'Hormigueros': 'West Coast',
+  'Mayagüez': 'West Coast',
+  'Añasco': 'West Coast',
+  'Rincón': 'West Coast',
+  'Aguada': 'West Coast',
+  'Aguadilla': 'West Coast',
+  'Moca': 'West Coast',
+  'San Sebastián': 'West Coast',
+  'Isabela': 'North Coast',
+  'Quebradillas': 'North Coast',
+  'Camuy': 'North Coast',
+  'Hatillo': 'North Coast',
+  'Arecibo': 'North Coast',
+  'Barceloneta': 'North Coast',
+  'Manatí': 'North Coast',
+  'Vega Baja': 'North Coast',
+  'Vega Alta': 'North Coast',
+  'Dorado': 'North Coast',
+  'Loíza': 'East Coast',
+  'Río Grande': 'East Coast',
+  'Luquillo': 'East Coast',
+  'Fajardo': 'East Coast',
+  'Ceiba': 'East Coast',
+  'Naguabo': 'East Coast',
+  'Humacao': 'East Coast',
+  'Las Piedras': 'East Coast',
+  'Juncos': 'East Coast',
+  'San Lorenzo': 'East Coast',
+  'Yabucoa': 'South Coast',
+  'Maunabo': 'South Coast',
+  'Patillas': 'South Coast',
+  'Arroyo': 'South Coast',
+  'Guayama': 'South Coast',
+  'Salinas': 'South Coast',
+  'Santa Isabel': 'South Coast',
+  'Coamo': 'South Coast',
+  'Juana Díaz': 'South Coast',
+  'Villalba': 'South Coast',
+  'Ponce': 'South Coast',
+  'Peñuelas': 'South Coast',
+  'Guayanilla': 'South Coast',
+  'Yauco': 'South Coast',
+  'Guánica': 'South Coast',
+  'Lajas': 'South Coast',
+  'Cabo Rojo': 'West Coast',
+  'Florida': 'North Coast',
+  'Gurabo': 'East Coast',
+  'Canóvanas': 'East Coast',
+  'Culebra': 'East Coast',
+  'Vieques': 'East Coast',
+};
+
+// US VIRGIN ISLANDS (3 islands)
+export const VI_COUNTY_REGIONS: Record<string, string> = {
+  'St. Thomas': 'St. Thomas',
+  'St. John': 'St. John',
+  'St. Croix': 'St. Croix',
+  'Saint Thomas': 'St. Thomas',
+  'Saint John': 'St. John',
+  'Saint Croix': 'St. Croix',
+};
+
+// GUAM (villages grouped by region)
+export const GU_COUNTY_REGIONS: Record<string, string> = {
+  'Hagåtña': 'Central Guam',
+  'Hagatna': 'Central Guam',
+  'Agana Heights': 'Central Guam',
+  'Asan': 'Central Guam',
+  'Maina': 'Central Guam',
+  'Mongmong-Toto-Maite': 'Central Guam',
+  'Sinajana': 'Central Guam',
+  'Chalan Pago-Ordot': 'Central Guam',
+  'Barrigada': 'Central Guam',
+  'Mangilao': 'Central Guam',
+  'Dededo': 'Northern Guam',
+  'Yigo': 'Northern Guam',
+  'Tamuning': 'Northern Guam',
+  'Tumon': 'Northern Guam',
+  'Harmon': 'Northern Guam',
+  'Agat': 'Southern Guam',
+  'Santa Rita': 'Southern Guam',
+  'Talofofo': 'Southern Guam',
+  'Yona': 'Southern Guam',
+  'Inarajan': 'Southern Guam',
+  'Merizo': 'Southern Guam',
+  'Umatac': 'Southern Guam',
+  'Piti': 'Southern Guam',
+};
+
 // =============================================================================
 // COMBINED COUNTY REGIONS LOOKUP
 // =============================================================================
@@ -3600,6 +3740,11 @@ export const COUNTY_TO_CULTURAL_REGION: Record<string, Record<string, string>> =
   HI: HI_COUNTY_REGIONS,
   OR: OR_COUNTY_REGIONS,
   WA: WA_COUNTY_REGIONS,
+  // District of Columbia and Territories
+  DC: DC_COUNTY_REGIONS,
+  PR: PR_COUNTY_REGIONS,
+  VI: VI_COUNTY_REGIONS,
+  GU: GU_COUNTY_REGIONS,
 };
 
 // =============================================================================
@@ -3631,7 +3776,7 @@ export const STATE_ADJACENCY: Record<string, string[]> = {
   KY: ['IL', 'IN', 'MO', 'OH', 'TN', 'VA', 'WV'],
   LA: ['AR', 'MS', 'TX'],
   ME: ['NH'],
-  MD: ['DE', 'PA', 'VA', 'WV'],
+  MD: ['DC', 'DE', 'PA', 'VA', 'WV'],
   MA: ['CT', 'NH', 'NY', 'RI', 'VT'],
   MI: ['IN', 'OH', 'WI'],
   MN: ['IA', 'ND', 'SD', 'WI'],
@@ -3657,11 +3802,87 @@ export const STATE_ADJACENCY: Record<string, string[]> = {
   TX: ['AR', 'LA', 'NM', 'OK'],
   UT: ['AZ', 'CO', 'ID', 'NM', 'NV', 'WY'],
   VT: ['MA', 'NH', 'NY'],
-  VA: ['KY', 'MD', 'NC', 'TN', 'WV'],
+  VA: ['DC', 'KY', 'MD', 'NC', 'TN', 'WV'],
   WA: ['ID', 'OR'],
   WV: ['KY', 'MD', 'OH', 'PA', 'VA'],
   WI: ['IA', 'IL', 'MI', 'MN'],
   WY: ['CO', 'ID', 'MT', 'NE', 'SD', 'UT'],
+  // District of Columbia and Territories
+  DC: ['MD', 'VA'], // DC borders Maryland and Virginia
+  PR: [], // Puerto Rico - island, no adjacent US states
+  VI: [], // US Virgin Islands - island, no adjacent US states
+  GU: [], // Guam - island, no adjacent US states
+};
+
+// =============================================================================
+// STATE TO DEFAULT COUNTRY CULTURAL REGION
+// Fallback when GPS is unavailable - maps each state to its primary country cultural region
+// =============================================================================
+
+export const STATE_TO_DEFAULT_COUNTRY_REGION: Record<string, string> = {
+  // Northeast
+  ME: 'Maritime New England',
+  NH: 'Woodland New England',
+  VT: 'Woodland New England',
+  MA: 'NYC Metro',
+  RI: 'NYC Metro',
+  CT: 'NYC Metro',
+  NY: 'NYC Metro',
+  NJ: 'NYC Metro',
+  PA: 'Mid-Atlantic',
+  // South Atlantic
+  DE: 'Mid-Atlantic',
+  MD: 'Mid-Atlantic',
+  DC: 'Mid-Atlantic',
+  VA: 'Northern Tidewaters',
+  WV: 'Northern Appalachia',
+  NC: 'Piedmont',
+  SC: 'Piedmont',
+  GA: 'Piedmont',
+  FL: 'Central Florida',
+  // East South Central
+  KY: 'Ohio River Valley',
+  TN: 'Midsouth',
+  AL: 'Deep South',
+  MS: 'Deep South',
+  // West South Central
+  AR: 'The Ozarks',
+  LA: 'Acadiana-Cajun',
+  OK: 'The Ozarks',
+  TX: 'Texas Heartland',
+  // East North Central
+  OH: 'Ohio River Valley',
+  MI: 'Great Lakes',
+  IN: 'Ohio River Valley',
+  IL: 'Chicagoland',
+  WI: 'Northwoods',
+  // West North Central
+  MN: 'Upper Midwest',
+  IA: 'Lower Midwest',
+  MO: 'Lower Midwest',
+  ND: 'Northern Great Plains',
+  SD: 'Black Hills',
+  NE: 'Lower Great Plains',
+  KS: 'Lower Great Plains',
+  // Mountain
+  MT: 'Northern Rockies',
+  WY: 'Northern Rockies',
+  CO: 'Front Range',
+  NM: 'Classic Southwest',
+  AZ: 'Classic Southwest',
+  UT: 'Mormon Corridor',
+  NV: 'Great Basin',
+  ID: 'Northern Rockies',
+  // Pacific
+  WA: 'Cascadia',
+  OR: 'Cascadia',
+  CA: 'SoCal',
+  AK: 'Alaskan First Nation',
+  HI: 'Hawaii',
+  // Territories
+  PR: 'Puerto Rico',
+  VI: 'US Virgin Islands',
+  GU: 'American Oceania',
 };
 
 // =============================================================================
@@ -3788,4 +4009,13 @@ export function getCulturalRegionsForState(state: string | null | undefined): st
   if (!state) return [];
   const stateUpper = state.toUpperCase();
   return STATE_CULTURAL_REGIONS[stateUpper] || [];
+}
+
+/**
+ * Get default country cultural region for a state (fallback when GPS unavailable)
+ */
+export function getDefaultCountryRegion(state: string | null | undefined): string | null {
+  if (!state) return null;
+  const stateUpper = state.toUpperCase();
+  return STATE_TO_DEFAULT_COUNTRY_REGION[stateUpper] || null;
 }

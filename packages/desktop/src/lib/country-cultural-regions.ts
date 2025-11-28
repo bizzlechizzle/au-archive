@@ -254,11 +254,17 @@ export function pointInPolygon(lat: number, lng: number, polygon: [number, numbe
 
 /**
  * Get Country Cultural Region from GPS coordinates using point-in-polygon
- * Falls back to nearest region within 100 miles if point-in-polygon fails
- * @returns Region name or null if not found
+ * Falls back to nearest region if point-in-polygon fails
+ * Always returns a region name (never null) for valid US coordinates
+ * @returns Region name or null only if coordinates are invalid
  */
 export function getCountryCulturalRegion(lat: number, lng: number): string | null {
-  // Try point-in-polygon first
+  // Validate coordinates
+  if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) {
+    return null;
+  }
+
+  // Try point-in-polygon first (most accurate)
   for (const region of COUNTRY_CULTURAL_REGIONS) {
     const polygon = COUNTRY_CULTURAL_REGION_POLYGONS[region.id];
     if (polygon && pointInPolygon(lat, lng, polygon)) {
@@ -266,9 +272,16 @@ export function getCountryCulturalRegion(lat: number, lng: number): string | nul
     }
   }
 
-  // Fallback: nearest region within 100 miles (for edge cases / polygon gaps)
-  const nearby = getNearbyCountryCulturalRegions(lat, lng, 100);
-  return nearby.length > 0 ? nearby[0].name : null;
+  // Fallback: find the absolute nearest region by center distance
+  // This ensures we always return a region for valid GPS coordinates
+  const nearest = COUNTRY_CULTURAL_REGIONS
+    .map(region => ({
+      name: region.name,
+      distance: haversineDistance(lat, lng, region.latitude, region.longitude),
+    }))
+    .sort((a, b) => a.distance - b.distance)[0];
+
+  return nearest ? nearest.name : null;
 }
 
 /**
