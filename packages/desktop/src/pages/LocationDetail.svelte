@@ -29,7 +29,7 @@
   }
   let { locationId, subId = null }: Props = $props();
 
-  // Sub-location type (Migration 28)
+  // Sub-location type (Migration 28 + Migration 31 GPS)
   interface SubLocation {
     subid: string;
     sub12: string;
@@ -41,6 +41,13 @@
     hero_imgsha: string | null;
     is_primary: boolean;
     hero_thumb_path?: string;
+    // Migration 31: Sub-location GPS (separate from host location)
+    gps_lat: number | null;
+    gps_lng: number | null;
+    gps_accuracy: number | null;
+    gps_source: string | null;
+    gps_verified_on_map: boolean;
+    gps_captured_at: string | null;
   }
 
   // State
@@ -50,6 +57,10 @@
   let images = $state<MediaImage[]>([]);
   let videos = $state<MediaVideo[]>([]);
   let documents = $state<MediaDocument[]>([]);
+  // Issue 3: All media for author extraction (includes sub-location media on host view)
+  let allImagesForAuthors = $state<MediaImage[]>([]);
+  let allVideosForAuthors = $state<MediaVideo[]>([]);
+  let allDocumentsForAuthors = $state<MediaDocument[]>([]);
   let bookmarks = $state<Bookmark[]>([]);
   let failedFiles = $state<FailedFile[]>([]);
   let gpsWarnings = $state<GpsWarning[]>([]);
@@ -234,6 +245,11 @@
       }
 
       if (media) {
+        // Issue 3: Store all media for author extraction (used by LocationInfo)
+        allImagesForAuthors = (media.images as MediaImage[]) || [];
+        allVideosForAuthors = (media.videos as MediaVideo[]) || [];
+        allDocumentsForAuthors = (media.documents as MediaDocument[]) || [];
+
         if (subId) {
           // Viewing a sub-location: filter to only media linked to this sub-location
           images = ((media.images as MediaImage[]) || []).filter(img => img.subid === subId);
@@ -337,10 +353,37 @@
     if (!location) return;
     try {
       verifyingGps = true;
-      await window.electronAPI.locations.update(locationId, { gps: { ...location.gps, verifiedOnMap: true } });
-      await loadLocation();
+      // Migration 31: If viewing sub-location, verify sub-location GPS (separate from host)
+      if (isViewingSubLocation && currentSubLocation) {
+        await window.electronAPI.sublocations.verifyGps(currentSubLocation.subid);
+        // Refresh sub-location data
+        currentSubLocation = await window.electronAPI.sublocations.findById(currentSubLocation.subid);
+      } else {
+        // Host location GPS
+        await window.electronAPI.locations.update(locationId, { gps: { ...location.gps, verifiedOnMap: true } });
+        await loadLocation();
+      }
     } catch (err) { console.error('Error marking GPS verified:', err); }
     finally { verifyingGps = false; }
+  }
+
+  /**
+   * Migration 31: Save GPS from map click for sub-location
+   * Updates sub-location's own GPS (not the host location)
+   */
+  async function saveSubLocationGps(lat: number, lng: number) {
+    if (!currentSubLocation) return;
+    try {
+      await window.electronAPI.sublocations.updateGps(currentSubLocation.subid, {
+        lat, lng, source: 'user_map_click',
+      });
+      // Refresh sub-location data
+      currentSubLocation = await window.electronAPI.sublocations.findById(currentSubLocation.subid);
+      toasts.success('Building GPS updated');
+    } catch (err) {
+      console.error('Error saving sub-location GPS:', err);
+      toasts.error('Failed to save GPS');
+    }
   }
 
   /**
@@ -685,6 +728,14 @@
       heroImgsha={currentSubLocation?.hero_imgsha || location.hero_imgsha || null}
       focalX={currentSubLocation ? 0.5 : (location.hero_focal_x ?? 0.5)}
       focalY={currentSubLocation ? 0.5 : (location.hero_focal_y ?? 0.5)}
+      onRegeneratePreview={async (imgsha) => {
+        // Issue 1: Regenerate preview for low-quality hero image
+        const img = images.find(i => i.imgsha === imgsha);
+        if (img && window.electronAPI?.media?.regenerateSingleFile) {
+          await window.electronAPI.media.regenerateSingleFile(imgsha, img.imgloc);
+          await loadLocation(); // Refresh to get new thumbnail paths
+        }
+      }}
     />
 
     <!-- Title below hero: left-anchored, premium text fitting - always one line -->
@@ -749,16 +800,34 @@
             {images}
             {videos}
             {documents}
+            {allImagesForAuthors}
+            {allVideosForAuthors}
+            {allDocumentsForAuthors}
             onNavigateFilter={navigateToFilter}
             onSave={isViewingSubLocation ? undefined : handleSave}
-            sublocationCount={sublocations.length}
+            {sublocations}
             isHostLocation={isHostLocation && !isViewingSubLocation}
             onConvertToHost={isViewingSubLocation ? undefined : handleConvertToHost}
             parentLocation={isViewingSubLocation ? { locid: locationId, locnam: location.locnam } : null}
           />
           <div class="location-map-section">
             <!-- DECISION-011: Unified location box with verification checkmarks, edit modal -->
-            <LocationMapSection {location} onSave={handleLocationSave} onNavigateFilter={navigateToFilter} />
+            <!-- Migration 31: Pass sub-location GPS props when viewing a sub-location -->
+            <LocationMapSection
+              {location}
+              onSave={handleLocationSave}
+              onNavigateFilter={navigateToFilter}
+              isHostLocation={isHostLocation && !isViewingSubLocation}
+              subLocation={isViewingSubLocation && currentSubLocation ? {
+                subid: currentSubLocation.subid,
+                subnam: currentSubLocation.subnam,
+                gps_lat: currentSubLocation.gps_lat,
+                gps_lng: currentSubLocation.gps_lng,
+                gps_verified_on_map: currentSubLocation.gps_verified_on_map,
+                gps_source: currentSubLocation.gps_source,
+              } : null}
+              onSubLocationGpsSave={isViewingSubLocation ? saveSubLocationGps : undefined}
+            />
           </div>
         </div>
 
@@ -822,6 +891,7 @@
             await loadLocation();
           }
         : setHeroImageWithFocal}
+      onSetHostHeroImage={currentSubLocation ? setHeroImageWithFocal : undefined}
       onHiddenChanged={handleHiddenChanged}
     />
   {/if}

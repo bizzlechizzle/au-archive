@@ -26,15 +26,27 @@
     contribution_source?: string | null;
   }
 
+  // Sub-location type for building list
+  interface SubLocationSummary {
+    subid: string;
+    locid: string;
+    subnam: string;
+    is_primary?: boolean;
+  }
+
   interface Props {
     location: Location;
     images?: MediaWithAuthor[];
     videos?: MediaWithAuthor[];
     documents?: MediaWithAuthor[];
+    // Issue 3: All media for author extraction (includes sub-location media on host view)
+    allImagesForAuthors?: MediaWithAuthor[];
+    allVideosForAuthors?: MediaWithAuthor[];
+    allDocumentsForAuthors?: MediaWithAuthor[];
     onNavigateFilter: (type: string, value: string) => void;
     onSave?: (updates: Partial<LocationInput>) => Promise<void>;
     // Host/Sub-location support
-    sublocationCount?: number;
+    sublocations?: SubLocationSummary[];
     parentLocation?: { locid: string; locnam: string } | null;
     isHostLocation?: boolean;
     onConvertToHost?: () => Promise<void>;
@@ -42,7 +54,8 @@
 
   let {
     location, images = [], videos = [], documents = [], onNavigateFilter, onSave,
-    sublocationCount = 0, parentLocation = null, isHostLocation = false, onConvertToHost
+    allImagesForAuthors, allVideosForAuthors, allDocumentsForAuthors,
+    sublocations = [], parentLocation = null, isHostLocation = false, onConvertToHost
   }: Props = $props();
 
   // Edit modal state
@@ -123,7 +136,7 @@
   const hasAuthors = $derived(authors.length > 0);  // Tracked contributors from location_authors
 
   // Host/Sub-location display flags
-  const hasSublocations = $derived(isHostLocation && sublocationCount > 0);
+  const hasSublocations = $derived(isHostLocation && sublocations.length > 0);
   const hasParentLocation = $derived(!!parentLocation);
   const canConvertToHost = $derived(!isHostLocation && !parentLocation && !!onConvertToHost);
 
@@ -135,15 +148,20 @@
   };
 
   // Extract unique authors from media (dedup against location_authors)
+  // Issue 3: Use all media (including sub-location media) when provided for host view
   const mediaAuthors = $derived(() => {
-    const allMedia = [...images, ...videos, ...documents];
+    const mediaForAuthors: MediaWithAuthor[] = [
+      ...(allImagesForAuthors || images),
+      ...(allVideosForAuthors || videos),
+      ...(allDocumentsForAuthors || documents)
+    ];
     const authorSet = new Set<string>();
     const locationAuthorNames = new Set(authors.map(a => a.username).concat(authors.map(a => a.display_name).filter(Boolean) as string[]));
 
     // Also include location.auth_imp in dedup check
     if (location.auth_imp) locationAuthorNames.add(location.auth_imp);
 
-    for (const m of allMedia) {
+    for (const m of mediaForAuthors) {
       if (m.auth_imp && !locationAuthorNames.has(m.auth_imp)) {
         authorSet.add(m.auth_imp);
       }
@@ -152,10 +170,15 @@
   });
 
   // Extract unique external contributors (is_contributed = 1)
+  // Issue 3: Use all media (including sub-location media) when provided for host view
   const externalContributors = $derived(() => {
-    const allMedia = [...images, ...videos, ...documents];
+    const mediaForAuthors: MediaWithAuthor[] = [
+      ...(allImagesForAuthors || images),
+      ...(allVideosForAuthors || videos),
+      ...(allDocumentsForAuthors || documents)
+    ];
     const sources = new Set<string>();
-    for (const m of allMedia) {
+    for (const m of mediaForAuthors) {
       if (m.is_contributed === 1 && m.contribution_source) {
         sources.add(m.contribution_source);
       }
@@ -426,11 +449,20 @@
         </div>
       {/if}
 
-      <!-- Sub-Locations count (for host locations) -->
+      <!-- Sub-Locations list (for host locations) - clickable inline -->
       {#if hasSublocations}
         <div class="mb-4">
           <h3 class="section-title mb-1">Buildings</h3>
-          <span class="text-base">{sublocationCount} {sublocationCount === 1 ? 'building' : 'buildings'}</span>
+          <p class="text-base">
+            {#each sublocations as subloc, i}
+              {#if i > 0}<span class="text-gray-400"> / </span>{/if}
+              <button
+                onclick={() => router.navigate(`/location/${subloc.locid}/sub/${subloc.subid}`)}
+                class="text-accent hover:underline"
+                title="View {subloc.subnam}"
+              >{subloc.subnam}{#if subloc.is_primary}<span class="text-xs text-amber-600 ml-1">(primary)</span>{/if}</button>
+            {/each}
+          </p>
         </div>
       {/if}
 

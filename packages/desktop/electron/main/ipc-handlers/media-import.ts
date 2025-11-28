@@ -44,6 +44,82 @@ async function getCurrentUser(db: Kysely<Database>): Promise<{ userId: string; u
 // Track active imports for cancellation
 const activeImports: Map<string, AbortController> = new Map();
 
+/**
+ * Migration 23 FIX: Auto-detect Live Photos and SDR duplicates for a location
+ * This function matches IMG_xxxx.HEIC with IMG_xxxx.MOV and hides the video component
+ * Also detects _sdr duplicate images and hides them
+ */
+async function detectLivePhotosForLocation(
+  db: Kysely<Database>,
+  mediaRepo: SQLiteMediaRepository,
+  locid: string
+): Promise<{ livePhotosHidden: number; sdrHidden: number }> {
+  // Get all images and videos for this location
+  const images = await mediaRepo.getImageFilenamesByLocation(locid);
+  const videos = await mediaRepo.getVideoFilenamesByLocation(locid);
+
+  console.log(`[detectLivePhotos] Scanning ${images.length} images and ${videos.length} videos for location ${locid}`);
+
+  // Build set of image base names for fast lookup
+  const imageBaseNames = new Map<string, string>();
+  for (const img of images) {
+    const ext = path.extname(img.imgnamo);
+    const baseName = path.basename(img.imgnamo, ext).toLowerCase();
+    imageBaseNames.set(baseName, img.imgsha);
+  }
+
+  let livePhotosHidden = 0;
+  let sdrHidden = 0;
+
+  // Detect Live Photo videos (IMG_xxxx.MOV paired with IMG_xxxx.HEIC)
+  for (const vid of videos) {
+    const ext = path.extname(vid.vidnamo).toLowerCase();
+    if (ext === '.mov' || ext === '.mp4') {
+      const baseName = path.basename(vid.vidnamo, ext).toLowerCase();
+      if (imageBaseNames.has(baseName)) {
+        await mediaRepo.setVideoHidden(vid.vidsha, true, 'live_photo');
+        await mediaRepo.setVideoLivePhoto(vid.vidsha, true);
+        const imgsha = imageBaseNames.get(baseName);
+        if (imgsha) {
+          await mediaRepo.setImageLivePhoto(imgsha, true);
+        }
+        livePhotosHidden++;
+        console.log(`[detectLivePhotos] Detected Live Photo pair: ${baseName}`);
+      }
+    }
+  }
+
+  // Detect SDR duplicates (filename_sdr.jpg paired with filename.jpg)
+  for (const img of images) {
+    if (/_sdr\./i.test(img.imgnamo)) {
+      const hdrBaseName = path.basename(img.imgnamo.replace(/_sdr\./i, '.'), path.extname(img.imgnamo)).toLowerCase();
+      if (imageBaseNames.has(hdrBaseName)) {
+        await mediaRepo.setImageHidden(img.imgsha, true, 'sdr_duplicate');
+        sdrHidden++;
+        console.log(`[detectLivePhotos] Detected SDR duplicate: ${img.imgnamo}`);
+      }
+    }
+  }
+
+  // Check for Android Motion Photos (EXIF flag)
+  for (const img of images) {
+    try {
+      const imgData = await mediaRepo.findImageByHash(img.imgsha);
+      if (imgData?.meta_exiftool) {
+        const exif = JSON.parse(imgData.meta_exiftool);
+        if (exif.MotionPhoto === 1 || exif.MicroVideo || exif.MicroVideoOffset) {
+          await mediaRepo.setImageLivePhoto(img.imgsha, true);
+          console.log(`[detectLivePhotos] Detected Android Motion Photo: ${img.imgnamo}`);
+        }
+      }
+    } catch {
+      // Ignore parse errors - non-fatal
+    }
+  }
+
+  return { livePhotosHidden, sdrHidden };
+}
+
 // Supported file extensions
 const SUPPORTED_EXTENSIONS = new Set([
   'jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'bmp', 'tiff', 'tif', 'webp',
@@ -190,6 +266,13 @@ export function registerMediaImportHandlers(
           });
         }
 
+        // Migration 23 FIX: Auto-detect Live Photos and SDR duplicates after import
+        // This runs automatically so users don't have to manually trigger detection
+        try {
+          const livePhotoResult = await detectLivePhotosForLocation(db, mediaRepo, validatedInput.locid);
+          console.log(`[media:import] Auto-detected Live Photos: ${livePhotoResult.livePhotosHidden} hidden, ${livePhotoResult.sdrHidden} SDR duplicates`);
+        } catch (e) { console.warn('[media:import] Live Photo auto-detection failed (non-fatal):', e); }
+
         try {
           const config = getConfigService().get();
           if (config.backup.enabled && config.backup.backupAfterImport) {
@@ -278,6 +361,12 @@ export function registerMediaImportHandlers(
             // Non-fatal - don't fail import
           });
         }
+
+        // Migration 23 FIX: Auto-detect Live Photos and SDR duplicates after import
+        try {
+          const livePhotoResult = await detectLivePhotosForLocation(db, mediaRepo, validatedInput.locid);
+          console.log(`[media:phaseImport] Auto-detected Live Photos: ${livePhotoResult.livePhotosHidden} hidden, ${livePhotoResult.sdrHidden} SDR duplicates`);
+        } catch (e) { console.warn('[media:phaseImport] Live Photo auto-detection failed (non-fatal):', e); }
 
         try {
           const config = getConfigService().get();

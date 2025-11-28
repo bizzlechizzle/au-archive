@@ -39,6 +39,7 @@ Keep scripts under 300 LOC and documented in `lilbits.md`.
 5. **One Script = One Function** — Keep each script focused, under ~300 lines, recorded in `lilbits.md`
 6. **No AI in Docs** — Never mention Claude, ChatGPT, Codex, or similar in user-facing docs or UI
 7. **Keep It Simple** — Favor obvious code, minimal abstraction, fewer files
+8. **Binary Dependencies Welcome** — App size is not a concern; freely add binaries (dcraw_emu, ffmpeg, exiftool, libpostal, etc.) when they solve problems better than pure-JS alternatives
 
 ## Do Not
 

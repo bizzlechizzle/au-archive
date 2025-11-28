@@ -150,5 +150,65 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
     }
   });
 
+  // Migration 31: GPS handlers for sub-locations
+  ipcMain.handle('sublocation:updateGps', async (_event, subid: unknown, gps: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(subid);
+      const GpsSchema = z.object({
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180),
+        accuracy: z.number().nullable().optional(),
+        source: z.string().min(1),
+      });
+      const validatedGps = GpsSchema.parse(gps);
+      return await sublocRepo.updateGps(validatedId, validatedGps);
+    } catch (error) {
+      console.error('Error updating sub-location GPS:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('sublocation:clearGps', async (_event, subid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(subid);
+      return await sublocRepo.clearGps(validatedId);
+    } catch (error) {
+      console.error('Error clearing sub-location GPS:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('sublocation:verifyGps', async (_event, subid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(subid);
+      return await sublocRepo.verifyGpsOnMap(validatedId);
+    } catch (error) {
+      console.error('Error verifying sub-location GPS:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('sublocation:findWithGps', async (_event, locid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(locid);
+      return await sublocRepo.findWithGpsByLocationId(validatedId);
+    } catch (error) {
+      console.error('Error finding sub-locations with GPS:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
   return sublocRepo;
 }

@@ -392,6 +392,45 @@
     }
   }
 
+  // Migration 30: DNG LibRaw rendering state
+  let renderingDng = $state(false);
+  let dngMessage = $state('');
+
+  /**
+   * Migration 30: Regenerate DNG previews using LibRaw for full-quality rendering
+   * This fixes "potato quality" drone shots where embedded preview is tiny (960x720 for 5376x3956)
+   */
+  async function regenerateDngPreviews() {
+    if (!window.electronAPI?.media?.regenerateDngPreviews) {
+      dngMessage = 'DNG rendering not available';
+      return;
+    }
+
+    try {
+      renderingDng = true;
+      dngMessage = 'Rendering DNG files with LibRaw...';
+
+      const result = await window.electronAPI.media.regenerateDngPreviews();
+
+      if (result.total === 0) {
+        dngMessage = 'No DNG files need re-rendering';
+      } else {
+        dngMessage = `Rendered ${result.rendered}/${result.total} DNG files${result.failed > 0 ? ` (${result.failed} failed)` : ''}`;
+        // Bust cache to force reload
+        thumbnailCache.bust();
+      }
+
+      setTimeout(() => {
+        dngMessage = '';
+      }, 5000);
+    } catch (error) {
+      console.error('DNG rendering failed:', error);
+      dngMessage = 'DNG rendering failed';
+    } finally {
+      renderingDng = false;
+    }
+  }
+
   /**
    * Kanye9: Normalize all addresses using AddressService
    * This backfills address_raw, address_normalized, address_parsed_json for existing locations
@@ -893,12 +932,23 @@
               >
                 {regenerating ? 'Regenerating...' : 'Fix All Rotations'}
               </button>
+              <button
+                onclick={regenerateDngPreviews}
+                disabled={renderingDng}
+                class="px-4 py-2 bg-orange-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                title="Uses LibRaw/dcraw_emu to render full-quality DNG previews (fixes potato quality drone shots)"
+              >
+                {renderingDng ? 'Rendering...' : 'Fix DNG Quality'}
+              </button>
               {#if regenMessage}
                 <span class="text-sm text-gray-600">{regenMessage}</span>
               {/if}
+              {#if dngMessage}
+                <span class="text-sm text-gray-600">{dngMessage}</span>
+              {/if}
             </div>
             <p class="text-xs text-gray-500 mt-2">
-              "Regenerate Missing" processes only images without thumbnails. "Fix All Rotations" re-processes everything to fix sideways DSLR images.
+              "Regenerate Missing" processes only images without thumbnails. "Fix All Rotations" re-processes everything to fix sideways DSLR images. "Fix DNG Quality" uses LibRaw to render full-resolution DNG previews for drone shots.
             </p>
           </div>
 

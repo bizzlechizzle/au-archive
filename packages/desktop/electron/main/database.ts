@@ -1067,6 +1067,54 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 29 completed: UNIQUE constraint on slocnam removed');
     }
+
+    // Migration 30: Add preview_quality column to imgs table
+    // Track quality of extracted previews for RAW files
+    // Values: 'full' (LibRaw rendered), 'embedded' (ExifTool extracted), 'low' (< 50% resolution)
+    const imgsColsForQuality = sqlite.prepare('PRAGMA table_info(imgs)').all() as Array<{ name: string }>;
+    const hasPreviewQuality = imgsColsForQuality.some(col => col.name === 'preview_quality');
+
+    if (!hasPreviewQuality) {
+      console.log('Running migration 30: Adding preview_quality column to imgs');
+
+      sqlite.exec(`
+        ALTER TABLE imgs ADD COLUMN preview_quality TEXT DEFAULT 'embedded';
+      `);
+
+      // Create index for finding low-quality previews that need regeneration
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_imgs_preview_quality ON imgs(preview_quality) WHERE preview_quality = 'low';
+      `);
+
+      console.log('Migration 30 completed: preview_quality column added');
+    }
+
+    // Migration 31: Add GPS columns to slocs (sub-locations) table
+    // Per user spec: Sub-locations need their OWN GPS, separate from host location
+    // Host location = campus-level GPS (e.g., main entrance)
+    // Sub-location = building-specific GPS (e.g., individual building)
+    const slocsColsForGps = sqlite.prepare('PRAGMA table_info(slocs)').all() as Array<{ name: string }>;
+    const slocsHasGpsLat = slocsColsForGps.some(col => col.name === 'gps_lat');
+
+    if (!slocsHasGpsLat) {
+      console.log('Running migration 31: Adding GPS columns to slocs');
+
+      sqlite.exec(`
+        ALTER TABLE slocs ADD COLUMN gps_lat REAL;
+        ALTER TABLE slocs ADD COLUMN gps_lng REAL;
+        ALTER TABLE slocs ADD COLUMN gps_accuracy REAL;
+        ALTER TABLE slocs ADD COLUMN gps_source TEXT;
+        ALTER TABLE slocs ADD COLUMN gps_verified_on_map INTEGER DEFAULT 0;
+        ALTER TABLE slocs ADD COLUMN gps_captured_at TEXT;
+      `);
+
+      // Create index for sub-locations with GPS
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_slocs_gps ON slocs(gps_lat, gps_lng) WHERE gps_lat IS NOT NULL;
+      `);
+
+      console.log('Migration 31 completed: GPS columns added to slocs');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

@@ -43,11 +43,13 @@
     focalX?: number;
     focalY?: number;
     onSetHeroImage?: (imgsha: string, focalX: number, focalY: number) => void;
+    // Issue 7: Callback for setting host location hero from sub-location view
+    onSetHostHeroImage?: (imgsha: string, focalX: number, focalY: number) => void;
     // Hidden status callback
     onHiddenChanged?: (hash: string, hidden: boolean) => void;
   }
 
-  let { mediaList, startIndex = 0, onClose, heroImgsha, focalX = 0.5, focalY = 0.5, onSetHeroImage, onHiddenChanged }: Props = $props();
+  let { mediaList, startIndex = 0, onClose, heroImgsha, focalX = 0.5, focalY = 0.5, onSetHeroImage, onSetHostHeroImage, onHiddenChanged }: Props = $props();
 
   let currentIndex = $state(startIndex);
   let showExif = $state(false);
@@ -222,9 +224,13 @@
   let isDraggingFocal = $state(false);
   let focalPreviewEl: HTMLDivElement | null = $state(null);
 
-  function startFocalEdit() {
+  // Issue 7: Track which hero type we're setting (building or campus)
+  let settingHeroFor = $state<'building' | 'campus' | null>(null);
+
+  function startFocalEdit(heroType: 'building' | 'campus' = 'building') {
     pendingFocalX = isCurrentHero ? focalX : 0.5;
     pendingFocalY = isCurrentHero ? focalY : 0.5;
+    settingHeroFor = heroType;
     isEditingFocal = true;
   }
 
@@ -251,13 +257,20 @@
   }
 
   function saveFocalEdit() {
-    if (currentMedia && onSetHeroImage) {
-      onSetHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
+    if (currentMedia) {
+      // Issue 7: Call appropriate callback based on which hero type is being set
+      if (settingHeroFor === 'campus' && onSetHostHeroImage) {
+        onSetHostHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
+      } else if (onSetHeroImage) {
+        onSetHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
+      }
     }
+    settingHeroFor = null;
     isEditingFocal = false;
   }
 
   function cancelFocalEdit() {
+    settingHeroFor = null;
     isEditingFocal = false;
   }
 
@@ -451,8 +464,9 @@
           <div class="text-red-500 text-sm">{metadataError}</div>
         {:else}
           <!-- Hero Image Section (Images only) -->
+          <!-- Issue 6: Fixed min-height to prevent layout jump when toggling edit mode -->
           {#if canBeHero && onSetHeroImage}
-            <div class="pb-4 mb-4 border-b border-gray-200">
+            <div class="pb-4 mb-4 border-b border-gray-200 min-h-[200px]">
               <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Hero Image</div>
 
               {#if isEditingFocal}
@@ -513,41 +527,82 @@
                       onclick={saveFocalEdit}
                       class="flex-1 px-3 py-2 text-sm bg-accent text-white hover:bg-accent/90 rounded-lg transition"
                     >
-                      {isCurrentHero ? 'Save Position' : 'Set as Hero'}
+                      {#if isCurrentHero}
+                        Save Position
+                      {:else if settingHeroFor === 'campus'}
+                        Set as Campus Hero
+                      {:else}
+                        Set as Building Hero
+                      {/if}
                     </button>
                   </div>
                 </div>
               {:else}
-                <!-- Hero Status + Action Button -->
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
+                <!-- Issue 6 & 7: Hero Preview + Action Buttons -->
+                <div class="space-y-3">
+                  <!-- Preview thumbnail with current focal point -->
+                  <div class="relative w-full aspect-[2.35/1] bg-gray-100 rounded-lg overflow-hidden">
+                    <img
+                      src={imageSrc()}
+                      alt="Hero preview"
+                      class="w-full h-full object-cover opacity-80"
+                      style="object-position: {(focalX ?? 0.5) * 100}% {(focalY ?? 0.5) * 100}%;"
+                    />
+                    <!-- Semi-transparent overlay -->
+                    <div class="absolute inset-0 bg-background/40"></div>
+                    <!-- Status badge -->
                     {#if isCurrentHero}
-                      <span class="inline-flex items-center gap-1 px-2 py-1 bg-accent/10 text-accent text-xs font-medium rounded">
-                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                        </svg>
-                        Current Hero
-                      </span>
-                    {:else}
-                      <span class="text-sm text-gray-500">Not currently hero</span>
+                      <div class="absolute top-2 left-2">
+                        <span class="inline-flex items-center gap-1 px-2 py-1 bg-accent text-white text-xs font-medium rounded shadow-sm">
+                          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                          </svg>
+                          Current Hero
+                        </span>
+                      </div>
                     {/if}
                   </div>
-                  <button
-                    onclick={startFocalEdit}
-                    class="px-3 py-1.5 text-sm {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition flex items-center gap-1.5"
-                  >
-                    {#if isCurrentHero}
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" />
-                      </svg>
-                      Adjust
-                    {:else}
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                      </svg>
-                      Make Hero
-                    {/if}
-                  </button>
+                  <!-- Issue 7: Side-by-side buttons when both building and campus hero options available -->
+                  {#if onSetHostHeroImage}
+                    <div class="flex gap-2">
+                      <button
+                        onclick={() => startFocalEdit('building')}
+                        class="flex-1 px-3 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition flex items-center justify-center gap-1.5"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
+                        {isCurrentHero ? 'Adjust' : 'Building Hero'}
+                      </button>
+                      <button
+                        onclick={() => startFocalEdit('campus')}
+                        class="flex-1 px-3 py-2.5 text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 rounded-lg transition flex items-center justify-center gap-1.5"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                        </svg>
+                        Campus Hero
+                      </button>
+                    </div>
+                  {:else}
+                    <!-- Single button when only building hero option -->
+                    <button
+                      onclick={() => startFocalEdit('building')}
+                      class="w-full px-4 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition flex items-center justify-center gap-2"
+                    >
+                      {#if isCurrentHero}
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" />
+                        </svg>
+                        Adjust Position
+                      {:else}
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                        </svg>
+                        Set as Hero Image
+                      {/if}
+                    </button>
+                  {/if}
                 </div>
               {/if}
             </div>

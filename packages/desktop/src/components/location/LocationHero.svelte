@@ -4,6 +4,7 @@
    * Per LILBITS: ~100 lines, single responsibility
    * Per PUEA: Show placeholder with import prompt if no images
    * Migration 22: Uses focal point from location data
+   * Issue 1: Added quality indicator and regenerate option
    */
   import type { MediaImage } from './types';
   import { thumbnailCache } from '../../stores/thumbnail-cache-store';
@@ -13,9 +14,10 @@
     heroImgsha: string | null;
     focalX?: number; // 0-1, default 0.5 (center)
     focalY?: number; // 0-1, default 0.5 (center)
+    onRegeneratePreview?: (imgsha: string) => Promise<void>;
   }
 
-  let { images, heroImgsha, focalX = 0.5, focalY = 0.5 }: Props = $props();
+  let { images, heroImgsha, focalX = 0.5, focalY = 0.5, onRegeneratePreview }: Props = $props();
 
   // Cache version for busting browser cache after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
@@ -31,6 +33,37 @@
       ? heroImage.preview_path || heroImage.thumb_path_lg || heroImage.thumb_path_sm || heroImage.thumb_path
       : null
   );
+
+  // Issue 1: Determine quality level (for showing warning when using low-quality fallback)
+  type QualityLevel = 'preview' | 'large' | 'medium' | 'small' | 'none';
+  const qualityLevel = $derived<QualityLevel>(() => {
+    if (!heroImage) return 'none';
+    if (heroImage.preview_path) return 'preview';
+    if (heroImage.thumb_path_lg) return 'large';
+    if (heroImage.thumb_path_sm) return 'medium';
+    if (heroImage.thumb_path) return 'small';
+    return 'none';
+  });
+
+  // Show warning for low quality (small or legacy thumb only)
+  const isLowQuality = $derived(qualityLevel() === 'small' || qualityLevel() === 'medium');
+
+  // Regenerate state
+  let regenerating = $state(false);
+  let regenerateError = $state<string | null>(null);
+
+  async function handleRegenerate() {
+    if (!heroImage || !onRegeneratePreview || regenerating) return;
+    regenerating = true;
+    regenerateError = null;
+    try {
+      await onRegeneratePreview(heroImage.imgsha);
+    } catch (err) {
+      regenerateError = err instanceof Error ? err.message : 'Failed to regenerate';
+    } finally {
+      regenerating = false;
+    }
+  }
 
   // Convert focal point (0-1) to object-position percentage
   const objectPosition = $derived(`${focalX * 100}% ${focalY * 100}%`);
@@ -50,6 +83,40 @@
           class="absolute inset-0 w-full h-full object-cover"
           style="object-position: {objectPosition};"
         />
+        <!-- Issue 1: Quality indicator and regenerate button for low-quality hero -->
+        {#if isLowQuality && onRegeneratePreview}
+          <div class="absolute top-3 right-3 z-10 flex items-center gap-2">
+            <span class="px-2 py-1 bg-amber-500/90 text-white text-xs font-medium rounded-full shadow-sm flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              Low Quality
+            </span>
+            <button
+              onclick={handleRegenerate}
+              disabled={regenerating}
+              class="px-2 py-1 bg-white/90 hover:bg-white text-gray-700 text-xs font-medium rounded-full shadow-sm flex items-center gap-1 transition disabled:opacity-50"
+              title="Regenerate higher quality preview"
+            >
+              {#if regenerating}
+                <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              {:else}
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              {/if}
+              {regenerating ? 'Generating...' : 'Regenerate'}
+            </button>
+          </div>
+        {/if}
+        {#if regenerateError}
+          <div class="absolute top-12 right-3 z-10 px-2 py-1 bg-red-500/90 text-white text-xs rounded shadow-sm">
+            {regenerateError}
+          </div>
+        {/if}
       {:else}
         <div class="absolute inset-0 flex items-center justify-center text-gray-400">
           <svg class="w-24 h-24" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -6,20 +6,53 @@
   import { router } from '../../stores/router';
   import Map from '../Map.svelte';
   import LocationEditModal from './LocationEditModal.svelte';
+  import SubLocationGpsModal from './SubLocationGpsModal.svelte';
   import type { Location, LocationInput } from '@au-archive/core';
   import { GPS_ZOOM_LEVELS, GPS_GEOCODE_TIER_ZOOM } from '../../lib/constants';
   import { getDisplayCity } from '../../lib/display-helpers';
+
+  /**
+   * Migration 31: Sub-location GPS interface
+   * When provided, displays and edits sub-location GPS separately from host location
+   */
+  interface SubLocationGps {
+    subid: string;
+    subnam: string;
+    gps_lat: number | null;
+    gps_lng: number | null;
+    gps_verified_on_map: boolean;
+    gps_source: string | null;
+  }
 
   interface Props {
     location: Location;
     onSave: (updates: Partial<LocationInput>, addressVerified: boolean, gpsVerified: boolean, culturalRegion: string | null) => Promise<void>;
     onNavigateFilter: (type: string, value: string, additionalFilters?: Record<string, string>) => void;
+    /** When true, zooms out 1 level more and allows extra zoom-out capability */
+    isHostLocation?: boolean;
+    /** Migration 31: When viewing sub-location, use its GPS (separate from host) */
+    subLocation?: SubLocationGps | null;
+    /** Migration 31: Callback to save sub-location GPS */
+    onSubLocationGpsSave?: (lat: number, lng: number) => Promise<void>;
   }
 
-  let { location, onSave, onNavigateFilter }: Props = $props();
+  let { location, onSave, onNavigateFilter, isHostLocation = false, subLocation = null, onSubLocationGpsSave }: Props = $props();
 
   // Edit modal state
   let showEditModal = $state(false);
+  // Migration 31: Sub-location GPS modal (separate from host location edit)
+  let showSubLocationGpsModal = $state(false);
+
+  // Migration 31: Handle edit button click - show correct modal based on context
+  function handleEditClick() {
+    if (subLocation && onSubLocationGpsSave) {
+      // Viewing sub-location: show GPS-only modal for building
+      showSubLocationGpsModal = true;
+    } else {
+      // Viewing host location: show full edit modal
+      showEditModal = true;
+    }
+  }
 
   // Copy notification state
   let copiedAddress = $state(false);
@@ -82,12 +115,15 @@
     location.address?.state ? STATE_NAMES[location.address.state] || location.address.state : null
   );
 
-  // GPS helpers
-  const hasGps = $derived(location.gps?.lat && location.gps?.lng);
+  // GPS helpers - Migration 31: Use sub-location GPS when viewing sub-location
+  const effectiveGpsLat = $derived(subLocation ? subLocation.gps_lat : location.gps?.lat);
+  const effectiveGpsLng = $derived(subLocation ? subLocation.gps_lng : location.gps?.lng);
+  const hasGps = $derived(effectiveGpsLat && effectiveGpsLng);
 
   // DECISION-016: Verification states for colored dots (must check actual verified flags, not just data existence)
   const isAddressVerified = $derived(location.address?.verified === true);
-  const isGpsVerified = $derived(location.gps?.verifiedOnMap === true);
+  // Migration 31: GPS verification uses sub-location's verified status when applicable
+  const isGpsVerified = $derived(subLocation ? subLocation.gps_verified_on_map : (location.gps?.verifiedOnMap === true));
   const isAreaVerified = $derived(!!(location.address?.county || culturalRegion));
 
   // Copy address with notification
@@ -103,10 +139,10 @@
     setTimeout(() => copiedAddress = false, 2000);
   }
 
-  // Copy GPS with notification
+  // Copy GPS with notification - Migration 31: Uses effective GPS (sub-location or host)
   function copyGPS() {
-    if (location.gps?.lat && location.gps?.lng) {
-      navigator.clipboard.writeText(`${location.gps.lat.toFixed(6)}, ${location.gps.lng.toFixed(6)}`);
+    if (effectiveGpsLat && effectiveGpsLng) {
+      navigator.clipboard.writeText(`${effectiveGpsLat.toFixed(6)}, ${effectiveGpsLng.toFixed(6)}`);
       copiedGps = true;
       setTimeout(() => copiedGps = false, 2000);
     }
@@ -154,9 +190,10 @@
   }
 
   // Navigate to Atlas centered on this location (satellite view for seamless transition)
+  // Migration 31: Uses effective GPS (sub-location or host)
   function openOnAtlas() {
-    if (location.gps?.lat && location.gps?.lng) {
-      router.navigate(`/atlas?lat=${location.gps.lat}&lng=${location.gps.lng}&zoom=${mapZoom}&locid=${location.locid}&layer=satellite-labels`);
+    if (effectiveGpsLat && effectiveGpsLng) {
+      router.navigate(`/atlas?lat=${effectiveGpsLat}&lng=${effectiveGpsLng}&zoom=${mapZoom}&locid=${location.locid}&layer=satellite-labels`);
     } else {
       router.navigate('/atlas');
     }
@@ -179,25 +216,48 @@
     return GPS_ZOOM_LEVELS.MANUAL;
   }
 
-  const mapZoom = $derived(getZoomLevel(location.gps, !!location.address?.state));
+  // Calculate base zoom, then subtract 1 for host locations to show more area
+  const baseZoom = $derived(getZoomLevel(location.gps, !!location.address?.state));
+  const mapZoom = $derived(isHostLocation ? Math.max(1, baseZoom - 1) : baseZoom);
+
+  // Migration 31: Create location object for map that uses sub-location GPS when available
+  const mapLocation = $derived(subLocation && subLocation.gps_lat && subLocation.gps_lng
+    ? {
+        ...location,
+        gps: {
+          lat: subLocation.gps_lat,
+          lng: subLocation.gps_lng,
+          verifiedOnMap: subLocation.gps_verified_on_map,
+          source: subLocation.gps_source || 'user_map_click',
+        }
+      }
+    : location
+  );
 </script>
 
 <div class="bg-white rounded-lg shadow-md">
   <!-- Header: Location with verification status and edit button (DECISION-013: No border) -->
   <div class="flex items-start justify-between px-8 pt-6 pb-4">
-    <h2 class="text-2xl font-semibold text-foreground leading-none">Location</h2>
+    <h2 class="text-2xl font-semibold text-foreground leading-none">
+      {subLocation ? 'Building GPS' : 'Location'}
+    </h2>
     <button
-      onclick={() => showEditModal = true}
+      onclick={handleEditClick}
       class="text-sm text-accent hover:underline leading-none mt-1"
-      title="Edit location"
+      title={subLocation ? 'Edit building GPS' : 'Edit location'}
     >
       edit
     </button>
   </div>
 
-  <!-- SECTION 1: GPS (stacked first) -->
+  <!-- SECTION 1: GPS (stacked first) - Migration 31: Shows sub-location GPS when viewing building -->
   <div class="px-8">
-    <h3 class="section-title mb-2">GPS</h3>
+    <h3 class="section-title mb-2">
+      GPS
+      {#if subLocation}
+        <span class="text-xs font-normal text-gray-400 ml-1">(Building)</span>
+      {/if}
+    </h3>
 
     {#if hasGps}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -207,7 +267,7 @@
           class="text-accent hover:underline font-mono text-sm text-left"
           title="View on Atlas"
         >
-          {location.gps!.lat.toFixed(6)}, {location.gps!.lng.toFixed(6)}
+          {effectiveGpsLat!.toFixed(6)}, {effectiveGpsLng!.toFixed(6)}
         </button>
         {#if copiedGps}
           <span class="absolute -right-2 top-0 text-xs text-verified animate-pulse">Copied!</span>
@@ -268,11 +328,12 @@
   <div class="px-8 mt-5">
     <div class="relative rounded-lg overflow-hidden border border-gray-200 group" style="aspect-ratio: 2 / 1;">
       <Map
-        locations={[location]}
+        locations={[mapLocation]}
         zoom={mapZoom}
         limitedInteraction={true}
         hideAttribution={true}
         defaultLayer="satellite-labels"
+        extraZoomOut={isHostLocation}
       />
 
       <!-- Expand to Atlas button -->
@@ -378,12 +439,24 @@
   </div>
 </div>
 
-<!-- Edit Modal -->
+<!-- Edit Modal (Host Location) -->
 {#if showEditModal}
   <LocationEditModal
     {location}
     {onSave}
     onClose={() => showEditModal = false}
+  />
+{/if}
+
+<!-- Migration 31: Sub-Location GPS Modal (Building GPS - separate from host) -->
+{#if showSubLocationGpsModal && subLocation && onSubLocationGpsSave}
+  <SubLocationGpsModal
+    subLocationName={subLocation.subnam}
+    initialLat={subLocation.gps_lat}
+    initialLng={subLocation.gps_lng}
+    initialVerified={subLocation.gps_verified_on_map}
+    onSave={onSubLocationGpsSave}
+    onClose={() => showSubLocationGpsModal = false}
   />
 {/if}
 

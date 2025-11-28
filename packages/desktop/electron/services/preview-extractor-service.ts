@@ -5,6 +5,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { MediaPathService } from './media-path-service';
 import { ExifToolService } from './exiftool-service';
+import { LibRawService } from './libraw-service';
 
 const execFileAsync = promisify(execFile);
 
@@ -16,9 +17,15 @@ const execFileAsync = promisify(execFile);
  * 2. Fallback chain: PreviewImage -> JpgFromRaw -> ThumbnailImage
  * 3. Never throw, return null - Import must not fail because preview failed
  * 4. Hash bucketing - Store as .previews/a3/a3d5e8f9...jpg
- * 5. ExifTool only - Do not add LibRaw, dcraw, or WASM decoders
+ * 5. LibRaw fallback for low-quality embedded previews (e.g., DJI DNG with 960x720 preview)
+ *
+ * Quality Levels:
+ * - 'full': Preview is >= 80% of source resolution (or rendered via LibRaw)
+ * - 'embedded': Preview is 50-80% of source resolution (acceptable)
+ * - 'low': Preview is < 50% of source resolution (shows warning in UI)
  */
 export class PreviewExtractorService {
+  private libRawService: LibRawService;
   // Formats that contain embedded JPEG previews (RAW + HEIC)
   // Sharp cannot decode HEIC directly (missing libheif plugin), so we extract embedded JPEG
   private readonly PREVIEW_FORMATS = new Set([
@@ -53,7 +60,16 @@ export class PreviewExtractorService {
   constructor(
     private readonly mediaPathService: MediaPathService,
     private readonly exifToolService: ExifToolService
-  ) {}
+  ) {
+    this.libRawService = new LibRawService();
+  }
+
+  /**
+   * Check if LibRaw (dcraw_emu) is available for full-quality RAW rendering
+   */
+  isLibRawAvailable(): boolean {
+    return this.libRawService.isAvailable();
+  }
 
   /**
    * Convert EXIF orientation string to rotation degrees
@@ -244,5 +260,157 @@ export class PreviewExtractorService {
     }
 
     return results;
+  }
+
+  /**
+   * Extract preview with quality assessment
+   * Returns both the preview path and quality level for database storage
+   *
+   * @param sourcePath - Absolute path to RAW/HEIC file
+   * @param hash - SHA256 hash of the file (for naming)
+   * @param sourceWidth - Original image width from EXIF (for quality comparison)
+   * @param sourceHeight - Original image height from EXIF (for quality comparison)
+   * @param force - If true, re-extract even if preview exists
+   * @returns Object with previewPath and qualityLevel
+   */
+  async extractPreviewWithQuality(
+    sourcePath: string,
+    hash: string,
+    sourceWidth: number | null,
+    sourceHeight: number | null,
+    force: boolean = false
+  ): Promise<{ previewPath: string | null; qualityLevel: 'full' | 'embedded' | 'low' }> {
+    try {
+      // Skip files that don't need preview extraction
+      if (!this.needsPreviewExtraction(sourcePath)) {
+        return { previewPath: null, qualityLevel: 'embedded' };
+      }
+
+      const previewPath = this.mediaPathService.getPreviewPath(hash);
+
+      // Check if preview already exists (skip if force=true)
+      if (!force) {
+        try {
+          await fs.access(previewPath);
+          // Existing preview - determine quality by checking dimensions
+          const previewMeta = await sharp(previewPath).metadata();
+          const qualityLevel = this.libRawService.getQualityLevel(
+            sourceWidth || 0,
+            sourceHeight || 0,
+            previewMeta.width || 0,
+            previewMeta.height || 0
+          );
+          return { previewPath, qualityLevel };
+        } catch {
+          // Doesn't exist, continue to extract
+        }
+      }
+
+      // Ensure bucket directory exists
+      await this.mediaPathService.ensureBucketDir(
+        this.mediaPathService.getPreviewDir(),
+        hash
+      );
+
+      // HEIC files: Use sips (macOS) to convert to JPEG
+      if (this.isHeicFormat(sourcePath)) {
+        console.log(`[PreviewExtractor] Converting HEIC via sips: ${sourcePath}`);
+        const tempPath = previewPath + '.tmp.jpg';
+        const success = await this.convertHeicWithSips(sourcePath, tempPath);
+
+        if (success) {
+          const rotatedBuffer = await sharp(tempPath).rotate().toBuffer();
+          await fs.writeFile(previewPath, rotatedBuffer);
+          await fs.unlink(tempPath).catch(() => {});
+          console.log(`[PreviewExtractor] HEIC converted and rotated: ${previewPath}`);
+          return { previewPath, qualityLevel: 'full' }; // HEIC conversion is always full quality
+        }
+
+        console.log(`[PreviewExtractor] HEIC conversion failed for ${sourcePath}`);
+        return { previewPath: null, qualityLevel: 'low' };
+      }
+
+      // RAW files: Extract embedded JPEG preview via ExifTool
+      let bestBuffer: Buffer | null = null;
+      let bestTag: string | null = null;
+
+      for (const tag of this.PREVIEW_TAGS) {
+        const buffer = await this.exifToolService.extractBinaryTag(sourcePath, tag);
+
+        if (buffer && buffer.length > 0) {
+          console.log(`[PreviewExtractor] Found ${tag}: ${buffer.length} bytes`);
+          if (!bestBuffer || buffer.length > bestBuffer.length) {
+            bestBuffer = buffer;
+            bestTag = tag;
+          }
+        }
+      }
+
+      if (bestBuffer && bestTag) {
+        // Get preview dimensions to check quality
+        const previewMeta = await sharp(bestBuffer).metadata();
+        const previewWidth = previewMeta.width || 0;
+        const previewHeight = previewMeta.height || 0;
+
+        // Check if preview is too small (< 50% of source)
+        const needsFullRender = sourceWidth && sourceHeight &&
+          this.libRawService.needsFullRender(sourceWidth, sourceHeight, previewWidth, previewHeight);
+
+        // If preview is too small and LibRaw is available, render full quality
+        if (needsFullRender && this.libRawService.isAvailable() && this.libRawService.canProcess(sourcePath)) {
+          console.log(`[PreviewExtractor] Embedded preview too small, using LibRaw for full render`);
+          const libRawSuccess = await this.libRawService.renderPreview(sourcePath, previewPath);
+
+          if (libRawSuccess) {
+            console.log(`[PreviewExtractor] LibRaw render successful: ${previewPath}`);
+            return { previewPath, qualityLevel: 'full' };
+          }
+          // Fall back to embedded preview if LibRaw fails
+          console.log(`[PreviewExtractor] LibRaw failed, using embedded preview`);
+        }
+
+        // Apply rotation and save embedded preview
+        const rawOrientation = await this.exifToolService.getOrientation(sourcePath);
+        const rotationDegrees = this.orientationToDegrees(rawOrientation);
+
+        let finalBuffer: Buffer;
+        if (rotationDegrees !== 0) {
+          finalBuffer = await sharp(bestBuffer).rotate(rotationDegrees).toBuffer();
+          console.log(`[PreviewExtractor] Applied ${rotationDegrees}° rotation from RAW EXIF`);
+        } else {
+          finalBuffer = await sharp(bestBuffer).rotate().toBuffer();
+        }
+
+        await fs.writeFile(previewPath, finalBuffer);
+        console.log(`[PreviewExtractor] Extracted ${bestTag} (${bestBuffer.length} bytes) from ${sourcePath}`);
+
+        // Determine quality level
+        const qualityLevel = this.libRawService.getQualityLevel(
+          sourceWidth || 0,
+          sourceHeight || 0,
+          previewWidth,
+          previewHeight
+        );
+
+        return { previewPath, qualityLevel };
+      }
+
+      // No preview found - try LibRaw as last resort
+      if (this.libRawService.isAvailable() && this.libRawService.canProcess(sourcePath)) {
+        console.log(`[PreviewExtractor] No embedded preview, trying LibRaw render`);
+        const libRawSuccess = await this.libRawService.renderPreview(sourcePath, previewPath);
+
+        if (libRawSuccess) {
+          console.log(`[PreviewExtractor] LibRaw render successful (no embedded preview): ${previewPath}`);
+          return { previewPath, qualityLevel: 'full' };
+        }
+      }
+
+      console.log(`[PreviewExtractor] No preview found and LibRaw unavailable for ${sourcePath}`);
+      return { previewPath: null, qualityLevel: 'low' };
+    } catch (error) {
+      console.error(`[PreviewExtractor] Failed to extract preview from ${sourcePath}:`, error);
+      return { previewPath: null, qualityLevel: 'low' };
+    }
   }
 }

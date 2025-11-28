@@ -19,6 +19,23 @@ export interface SubLocation {
   created_by: string | null;
   modified_date: string | null;
   modified_by: string | null;
+  // Migration 31: Sub-location GPS (separate from host location)
+  gps_lat: number | null;
+  gps_lng: number | null;
+  gps_accuracy: number | null;
+  gps_source: string | null;
+  gps_verified_on_map: boolean;
+  gps_captured_at: string | null;
+}
+
+/**
+ * GPS data for updating sub-location coordinates
+ */
+export interface SubLocationGpsInput {
+  lat: number;
+  lng: number;
+  accuracy?: number | null;
+  source: string;  // 'user_map_click', 'photo_exif', 'manual_entry'
 }
 
 /**
@@ -91,6 +108,13 @@ export class SQLiteSubLocationRepository {
         created_by: input.created_by || null,
         modified_date: null,
         modified_by: null,
+        // Migration 31: GPS fields (all null on creation)
+        gps_lat: null,
+        gps_lng: null,
+        gps_accuracy: null,
+        gps_source: null,
+        gps_verified_on_map: 0,
+        gps_captured_at: null,
       })
       .execute();
 
@@ -116,6 +140,13 @@ export class SQLiteSubLocationRepository {
       created_by: input.created_by || null,
       modified_date: null,
       modified_by: null,
+      // Migration 31: GPS fields (all null on creation)
+      gps_lat: null,
+      gps_lng: null,
+      gps_accuracy: null,
+      gps_source: null,
+      gps_verified_on_map: false,
+      gps_captured_at: null,
     };
   }
 
@@ -260,23 +291,27 @@ export class SQLiteSubLocationRepository {
 
   /**
    * Get sub-locations with their hero images for display
+   * Checks all thumbnail columns: preview_path > thumb_path_lg > thumb_path_sm > thumb_path
    */
   async findWithHeroImages(locid: string): Promise<Array<SubLocation & { hero_thumb_path?: string }>> {
     const sublocs = await this.findByLocationId(locid);
 
-    // For each subloc with a hero_imgsha, fetch the thumbnail path
+    // For each subloc with a hero_imgsha, fetch the best available thumbnail
     const results = await Promise.all(
       sublocs.map(async (subloc) => {
         if (subloc.hero_imgsha) {
           const img = await this.db
             .selectFrom('imgs')
-            .select(['thumb_path_lg', 'thumb_path'])
+            .select(['preview_path', 'thumb_path_lg', 'thumb_path_sm', 'thumb_path'])
             .where('imgsha', '=', subloc.hero_imgsha)
             .executeTakeFirst();
 
+          // Priority: preview (1920px) > lg (800px) > sm (400px) > legacy (256px)
+          const heroPath = img?.preview_path || img?.thumb_path_lg || img?.thumb_path_sm || img?.thumb_path || undefined;
+
           return {
             ...subloc,
-            hero_thumb_path: img?.thumb_path_lg || img?.thumb_path || undefined,
+            hero_thumb_path: heroPath,
           };
         }
         return subloc;
@@ -284,6 +319,99 @@ export class SQLiteSubLocationRepository {
     );
 
     return results;
+  }
+
+  /**
+   * Update GPS coordinates for a sub-location
+   * This is SEPARATE from the host location's GPS
+   */
+  async updateGps(subid: string, gps: SubLocationGpsInput): Promise<SubLocation | null> {
+    const existing = await this.findById(subid);
+    if (!existing) return null;
+
+    const gps_captured_at = new Date().toISOString();
+    const gps_verified = gps.source === 'user_map_click' ? 1 : 0;
+
+    await this.db
+      .updateTable('slocs')
+      .set({
+        gps_lat: gps.lat,
+        gps_lng: gps.lng,
+        gps_accuracy: gps.accuracy || null,
+        gps_source: gps.source,
+        gps_verified_on_map: gps_verified,
+        gps_captured_at,
+        modified_date: gps_captured_at,
+      })
+      .where('subid', '=', subid)
+      .execute();
+
+    console.log(`[SubLocationRepo] Updated GPS for ${subid}: ${gps.lat}, ${gps.lng} (source: ${gps.source})`);
+
+    return this.findById(subid);
+  }
+
+  /**
+   * Clear GPS coordinates for a sub-location
+   */
+  async clearGps(subid: string): Promise<SubLocation | null> {
+    const existing = await this.findById(subid);
+    if (!existing) return null;
+
+    await this.db
+      .updateTable('slocs')
+      .set({
+        gps_lat: null,
+        gps_lng: null,
+        gps_accuracy: null,
+        gps_source: null,
+        gps_verified_on_map: 0,
+        gps_captured_at: null,
+        modified_date: new Date().toISOString(),
+      })
+      .where('subid', '=', subid)
+      .execute();
+
+    console.log(`[SubLocationRepo] Cleared GPS for ${subid}`);
+
+    return this.findById(subid);
+  }
+
+  /**
+   * Verify GPS on map for a sub-location
+   */
+  async verifyGpsOnMap(subid: string): Promise<SubLocation | null> {
+    const existing = await this.findById(subid);
+    if (!existing) return null;
+
+    await this.db
+      .updateTable('slocs')
+      .set({
+        gps_verified_on_map: 1,
+        gps_source: 'user_map_click',
+        modified_date: new Date().toISOString(),
+      })
+      .where('subid', '=', subid)
+      .execute();
+
+    console.log(`[SubLocationRepo] Verified GPS on map for ${subid}`);
+
+    return this.findById(subid);
+  }
+
+  /**
+   * Get all sub-locations with GPS for a location (for map display)
+   */
+  async findWithGpsByLocationId(locid: string): Promise<SubLocation[]> {
+    const rows = await this.db
+      .selectFrom('slocs')
+      .selectAll()
+      .where('locid', '=', locid)
+      .where('gps_lat', 'is not', null)
+      .where('gps_lng', 'is not', null)
+      .execute();
+
+    return rows.map(row => this.mapRowToSubLocation(row));
   }
 
   // Private helper methods
@@ -303,6 +431,13 @@ export class SQLiteSubLocationRepository {
       created_by: row.created_by || null,
       modified_date: row.modified_date || null,
       modified_by: row.modified_by || null,
+      // Migration 31: GPS fields
+      gps_lat: row.gps_lat || null,
+      gps_lng: row.gps_lng || null,
+      gps_accuracy: row.gps_accuracy || null,
+      gps_source: row.gps_source || null,
+      gps_verified_on_map: row.gps_verified_on_map === 1,
+      gps_captured_at: row.gps_captured_at || null,
     };
   }
 

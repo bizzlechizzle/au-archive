@@ -135,6 +135,8 @@ const api = {
     regenerateVideoThumbnails: (options) => ipcRenderer.invoke("media:regenerateVideoThumbnails", options),
     // Kanye11: Regenerate preview/thumbnails for a single file
     regenerateSingleFile: (hash, filePath) => ipcRenderer.invoke("media:regenerateSingleFile", hash, filePath),
+    // Migration 30: Regenerate DNG previews using LibRaw for full quality
+    regenerateDngPreviews: () => ipcRenderer.invoke("media:regenerateDngPreviews"),
     // Hidden/Live Photo operations (Migration 23)
     setHidden: (input) => ipcRenderer.invoke("media:setHidden", input),
     detectLivePhotosAndSDR: (locid) => ipcRenderer.invoke("media:detectLivePhotosAndSDR", locid),
@@ -161,6 +163,11 @@ const api = {
     setPrimary: (locid, subid) => ipcRenderer.invoke("sublocation:setPrimary", locid, subid),
     checkName: (locid, subnam, excludeSubid) => ipcRenderer.invoke("sublocation:checkName", locid, subnam, excludeSubid),
     count: (locid) => ipcRenderer.invoke("sublocation:count", locid),
+    // Migration 31: Sub-location GPS (separate from host location)
+    updateGps: (subid, gps) => ipcRenderer.invoke("sublocation:updateGps", subid, gps),
+    clearGps: (subid) => ipcRenderer.invoke("sublocation:clearGps", subid),
+    verifyGps: (subid) => ipcRenderer.invoke("sublocation:verifyGps", subid),
+    findWithGps: (locid) => ipcRenderer.invoke("sublocation:findWithGps", locid),
   },
 
   projects: {

@@ -168,6 +168,14 @@ export interface SlocsTable {
   created_by: string | null;
   modified_date: string | null;
   modified_by: string | null;
+
+  // Migration 31: Sub-location GPS (separate from host location)
+  gps_lat: number | null;
+  gps_lng: number | null;
+  gps_accuracy: number | null;
+  gps_source: string | null;
+  gps_verified_on_map: number;  // 0 or 1
+  gps_captured_at: string | null;
 }
 
 // Images table
@@ -221,6 +229,9 @@ export interface ImgsTable {
   // Contributor Tracking (Migration 26)
   is_contributed: number;          // 0 = author shot it, 1 = contributor
   contribution_source: string | null; // e.g., "John Smith via text", "FB group"
+
+  // Migration 30: Preview quality tracking for RAW files
+  preview_quality: string | null;  // 'full' | 'embedded' | 'low'
 
   // NOTE: darktable columns exist in DB but are deprecated/unused
   // darktable_path, darktable_processed, darktable_processed_at - REMOVED from app

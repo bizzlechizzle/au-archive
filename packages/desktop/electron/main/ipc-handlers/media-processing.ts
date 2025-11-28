@@ -607,4 +607,52 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // Migration 30: Regenerate DNG previews using LibRaw for full-quality rendering
+  // This fixes "potato quality" drone shots where embedded preview is tiny (960x720 for 5376x3956 image)
+  ipcMain.handle('media:regenerateDngPreviews', async (_event) => {
+    try {
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+      const previewService = new PreviewExtractorService(mediaPathService, exifToolService);
+
+      // Get DNG files that need LibRaw rendering
+      const dngFiles = await mediaRepo.getDngImagesNeedingLibraw();
+      let rendered = 0;
+      let failed = 0;
+
+      console.log(`[Migration30] Found ${dngFiles.length} DNG files needing LibRaw rendering...`);
+
+      for (const img of dngFiles) {
+        try {
+          // Use extractPreviewWithQuality which automatically uses LibRaw when embedded preview is low-quality
+          const result = await previewService.extractPreviewWithQuality(
+            img.imgloc,
+            img.imgsha,
+            img.meta_width,
+            img.meta_height,
+            true  // force re-extraction
+          );
+
+          if (result.previewPath) {
+            await mediaRepo.updateImagePreviewWithQuality(img.imgsha, result.previewPath, result.qualityLevel);
+            rendered++;
+            console.log(`[Migration30] Rendered ${img.imgsha}: quality=${result.qualityLevel}`);
+          } else {
+            failed++;
+            console.warn(`[Migration30] No preview generated for ${img.imgsha}`);
+          }
+        } catch (err) {
+          console.error(`[Migration30] Failed to render ${img.imgsha}:`, err);
+          failed++;
+        }
+      }
+
+      console.log(`[Migration30] DNG rendering complete: ${rendered} rendered, ${failed} failed`);
+      return { success: true, rendered, failed, total: dngFiles.length };
+    } catch (error) {
+      console.error('Error regenerating DNG previews:', error);
+      throw error;
+    }
+  });
+
 }

@@ -324,6 +324,42 @@ export class SQLiteMediaRepository {
   }
 
   /**
+   * Update preview path with quality level (Migration 30)
+   */
+  async updateImagePreviewWithQuality(imgsha: string, previewPath: string, quality: 'full' | 'embedded' | 'low'): Promise<void> {
+    await this.db
+      .updateTable('imgs')
+      .set({ preview_path: previewPath, preview_extracted: 1, preview_quality: quality })
+      .where('imgsha', '=', imgsha)
+      .execute();
+  }
+
+  /**
+   * Get DNG images that need LibRaw re-rendering (have low-quality embedded previews)
+   * Returns DNGs where preview_quality is 'low' or 'embedded' (not yet rendered via LibRaw)
+   */
+  async getDngImagesNeedingLibraw(): Promise<Array<{ imgsha: string; imgloc: string; meta_width: number | null; meta_height: number | null }>> {
+    const rows = await this.db
+      .selectFrom('imgs')
+      .select(['imgsha', 'imgloc', 'meta_width', 'meta_height'])
+      .where((eb) =>
+        eb.or([
+          eb('imgloc', 'like', '%.dng'),
+          eb('imgloc', 'like', '%.DNG'),
+        ])
+      )
+      .where((eb) =>
+        eb.or([
+          eb('preview_quality', 'is', null),
+          eb('preview_quality', '=', 'low'),
+          eb('preview_quality', '=', 'embedded'),
+        ])
+      )
+      .execute();
+    return rows;
+  }
+
+  /**
    * Get videos without poster frames (legacy - checks thumb_path)
    */
   async getVideosWithoutPosters(): Promise<Array<{ vidsha: string; vidloc: string }>> {

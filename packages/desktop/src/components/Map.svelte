@@ -155,6 +155,8 @@
     compactLayerControl?: boolean;
     // Hide layer control entirely (for modal maps)
     showLayerControl?: boolean;
+    // Allow extra zoom-out capability for host locations (2 levels instead of 1 for limited interaction)
+    extraZoomOut?: boolean;
   }
 
   let {
@@ -171,7 +173,8 @@
     hideAttribution = false,
     defaultLayer = 'light',
     compactLayerControl = false,
-    showLayerControl = true
+    showLayerControl = true,
+    extraZoomOut = false
   }: Props = $props();
 
   /**
@@ -321,8 +324,9 @@
         boxZoom: !readonly && !limitedInteraction,
         keyboard: !readonly && !limitedInteraction,
         zoomControl: !readonly && !limitedInteraction,
-        // DECISION-011: Limited interaction - restrict zoom range to ±1 from initial
-        minZoom: limitedInteraction ? Math.max(1, initialZoom - 1) : undefined,
+        // DECISION-011: Limited interaction - restrict zoom range
+        // extraZoomOut allows 2 levels of zoom-out for host locations to see more campus area
+        minZoom: limitedInteraction ? Math.max(1, initialZoom - (extraZoomOut ? 2 : 1)) : undefined,
         maxZoom: limitedInteraction ? Math.min(19, initialZoom + 1) : undefined,
         // DECISION-011: Hide attribution for mini map
         attributionControl: !hideAttribution,
