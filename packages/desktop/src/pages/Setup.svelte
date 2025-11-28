@@ -1,24 +1,34 @@
 <script lang="ts">
   /**
    * Setup.svelte - First-run setup wizard
-   * Migration 24: Added single/multi user mode and PIN setup
+   * Redesigned: 3 steps with PIN for all users
    */
   import { router } from '../stores/router';
   import logo from '../assets/abandoned-upstate-logo.png';
 
   let currentStep = $state(1);
-  const totalSteps = 4;
+  const totalSteps = 3;
 
   // Form state
   let appMode = $state<'single' | 'multi'>('single');
   let username = $state('');
-  let displayName = $state('');
+  let nickname = $state('');
   let pin = $state('');
   let confirmPin = $state('');
+  let showPinFields = $state(false);
   let archivePath = $state('');
   let deleteOriginals = $state(false);
   let isProcessing = $state(false);
   let pinError = $state('');
+
+  // Additional users for multi-user mode
+  let additionalUsers = $state<Array<{ name: string; nickname: string; pin: string }>>([]);
+  let showAddUserModal = $state(false);
+  let newUserName = $state('');
+  let newUserNickname = $state('');
+  let newUserPin = $state('');
+  let newUserConfirmPin = $state('');
+  let newUserPinError = $state('');
 
   async function selectFolder() {
     try {
@@ -45,7 +55,8 @@
 
   function validatePin(): boolean {
     pinError = '';
-    if (appMode === 'multi' && pin.length > 0) {
+    // Validate PIN if fields are shown and PIN is entered
+    if (showPinFields && pin.length > 0) {
       if (pin.length < 4) {
         pinError = 'PIN must be at least 4 digits';
         return false;
@@ -62,20 +73,66 @@
     return true;
   }
 
+  function validateNewUserPin(): boolean {
+    newUserPinError = '';
+    if (newUserPin.length > 0) {
+      if (newUserPin.length < 4) {
+        newUserPinError = 'PIN must be at least 4 digits';
+        return false;
+      }
+      if (!/^\d+$/.test(newUserPin)) {
+        newUserPinError = 'PIN must contain only numbers';
+        return false;
+      }
+      if (newUserPin !== newUserConfirmPin) {
+        newUserPinError = 'PINs do not match';
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function openAddUserModal() {
+    newUserName = '';
+    newUserNickname = '';
+    newUserPin = '';
+    newUserConfirmPin = '';
+    newUserPinError = '';
+    showAddUserModal = true;
+  }
+
+  function closeAddUserModal() {
+    showAddUserModal = false;
+  }
+
+  function addUser() {
+    if (!newUserName.trim()) return;
+    if (!validateNewUserPin()) return;
+
+    additionalUsers = [...additionalUsers, {
+      name: newUserName.trim(),
+      nickname: newUserNickname.trim(),
+      pin: newUserPin.length >= 4 ? newUserPin : '',
+    }];
+    closeAddUserModal();
+  }
+
+  function removeUser(index: number) {
+    additionalUsers = additionalUsers.filter((_, i) => i !== index);
+  }
+
   function canProceed(): boolean {
     switch (currentStep) {
       case 1:
         return true; // Welcome screen, always can proceed
       case 2:
-        return true; // Mode selection, always can proceed
-      case 3:
-        // Username required, PIN validation if multi-user
+        // Username required, PIN validation if shown
         if (username.trim().length === 0) return false;
-        if (appMode === 'multi' && pin.length > 0) {
+        if (showPinFields && pin.length > 0) {
           return pin.length >= 4 && pin === confirmPin;
         }
         return true;
-      case 4:
+      case 3:
         return archivePath.trim().length > 0; // Archive path required
       default:
         return false;
@@ -89,12 +146,23 @@
     try {
       isProcessing = true;
 
-      // Create user record in database
+      // Create primary user record in database (PIN for any mode if provided)
       const user = await window.electronAPI.users.create({
         username: username.trim(),
-        display_name: displayName.trim() || null,
-        pin: appMode === 'multi' && pin.length >= 4 ? pin : null,
+        display_name: nickname.trim() || null,
+        pin: showPinFields && pin.length >= 4 ? pin : null,
       });
+
+      // Create additional users for multi-user mode
+      if (appMode === 'multi' && additionalUsers.length > 0) {
+        for (const additionalUser of additionalUsers) {
+          await window.electronAPI.users.create({
+            username: additionalUser.name,
+            display_name: additionalUser.nickname || null,
+            pin: additionalUser.pin || null,
+          });
+        }
+      }
 
       // Save all settings
       await Promise.all([
@@ -154,10 +222,10 @@
       <!-- Step 1: Welcome -->
       {#if currentStep === 1}
         <div class="text-center">
-          <h2 class="text-2xl font-bold text-foreground mb-4">Welcome to AU Archive</h2>
+          <h2 class="text-2xl font-bold text-foreground mb-4">Welcome to the Abandoned Archive!</h2>
           <div class="space-y-4 text-left max-w-lg mx-auto">
             <p class="text-gray-700">
-              AU Archive is a powerful tool for documenting and organizing abandoned locations.
+              A powerful tool for documenting and organizing abandoned locations.
             </p>
             <div class="bg-gray-50 rounded-lg p-4 space-y-2">
               <h3 class="font-semibold text-foreground">Key Features:</h3>
@@ -176,110 +244,71 @@
         </div>
       {/if}
 
-      <!-- Step 2: App Mode Selection -->
+      <!-- Step 2: User Setup (Combined user info + mode selection) -->
       {#if currentStep === 2}
         <div>
-          <h2 class="text-2xl font-bold text-foreground mb-2">Choose Your Mode</h2>
+          <h2 class="text-2xl font-bold text-foreground mb-2">User Setup</h2>
           <p class="text-gray-600 mb-6">
-            How will you be using AU Archive?
-          </p>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- Single User Option -->
-            <button
-              onclick={() => appMode = 'single'}
-              class="p-6 rounded-lg border-2 text-left transition {appMode === 'single'
-                ? 'border-accent bg-accent/5'
-                : 'border-gray-200 hover:border-gray-300'}"
-            >
-              <div class="flex items-center gap-3 mb-3">
-                <span class="text-2xl">👤</span>
-                <h3 class="font-semibold text-lg text-foreground">Single User</h3>
-              </div>
-              <p class="text-sm text-gray-600">
-                Just you using the archive. No login required, quick access to your data.
-              </p>
-              <ul class="mt-3 text-xs text-gray-500 space-y-1">
-                <li>• No PIN required</li>
-                <li>• Immediate access on launch</li>
-                <li>• Perfect for personal use</li>
-              </ul>
-            </button>
-
-            <!-- Multi User Option -->
-            <button
-              onclick={() => appMode = 'multi'}
-              class="p-6 rounded-lg border-2 text-left transition {appMode === 'multi'
-                ? 'border-accent bg-accent/5'
-                : 'border-gray-200 hover:border-gray-300'}"
-            >
-              <div class="flex items-center gap-3 mb-3">
-                <span class="text-2xl">👥</span>
-                <h3 class="font-semibold text-lg text-foreground">Multi User</h3>
-              </div>
-              <p class="text-sm text-gray-600">
-                Multiple people contributing. Track who documents what with optional PIN protection.
-              </p>
-              <ul class="mt-3 text-xs text-gray-500 space-y-1">
-                <li>• Optional PIN for each user</li>
-                <li>• Track contributions per person</li>
-                <li>• Great for teams or shared NAS</li>
-              </ul>
-            </button>
-          </div>
-        </div>
-      {/if}
-
-      <!-- Step 3: User Information -->
-      {#if currentStep === 3}
-        <div>
-          <h2 class="text-2xl font-bold text-foreground mb-2">User Information</h2>
-          <p class="text-gray-600 mb-6">
-            This information will be used to track who adds or modifies locations.
+            Enter your information and choose how you'll use the archive.
           </p>
 
           <div class="space-y-4">
+            <!-- Name Field -->
             <div>
               <label for="username" class="block text-sm font-medium text-gray-700 mb-2">
-                Your Name *
+                Enter Your Name (first/last) *
               </label>
               <input
                 id="username"
                 type="text"
                 bind:value={username}
-                placeholder="Enter your name or username"
+                placeholder="John Smith"
                 class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition"
-                autofocus
               />
               <p class="text-xs text-gray-500 mt-1">
-                This will appear as the author on locations you create.
+                This name will be used for copyright attribution.
               </p>
             </div>
 
+            <!-- Nickname Field -->
             <div>
-              <label for="displayName" class="block text-sm font-medium text-gray-700 mb-2">
-                Display Name (optional)
+              <label for="nickname" class="block text-sm font-medium text-gray-700 mb-2">
+                Nickname (optional)
               </label>
               <input
-                id="displayName"
+                id="nickname"
                 type="text"
-                bind:value={displayName}
-                placeholder="How you want your name shown"
+                bind:value={nickname}
+                placeholder="How you want your name displayed"
                 class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition"
               />
-              <p class="text-xs text-gray-500 mt-1">
-                Leave blank to use your username.
-              </p>
             </div>
 
-            <!-- PIN Section (only for multi-user mode) -->
-            {#if appMode === 'multi'}
-              <div class="border-t pt-4 mt-4">
-                <h3 class="font-semibold text-foreground mb-2">PIN Protection (Optional)</h3>
-                <p class="text-sm text-gray-600 mb-4">
-                  Set a 4-6 digit PIN to protect your account. Leave blank if you don't need PIN protection.
+            <!-- PIN Toggle Button -->
+            {#if !showPinFields}
+              <button
+                type="button"
+                onclick={() => showPinFields = true}
+                class="text-accent hover:text-accent/80 text-sm font-medium flex items-center gap-1"
+              >
+                <span>+</span> Add PIN
+              </button>
+            {:else}
+              <!-- PIN Fields -->
+              <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <div class="flex items-center justify-between mb-3">
+                  <h3 class="font-medium text-foreground">PIN Protection</h3>
+                  <button
+                    type="button"
+                    onclick={() => { showPinFields = false; pin = ''; confirmPin = ''; pinError = ''; }}
+                    class="text-gray-500 hover:text-gray-700 text-sm"
+                  >
+                    Remove
+                  </button>
+                </div>
+                <p class="text-xs text-gray-600 mb-3">
+                  Set a 4-6 digit PIN to protect your account.
                 </p>
-
                 <div class="grid grid-cols-2 gap-4">
                   <div>
                     <label for="pin" class="block text-sm font-medium text-gray-700 mb-2">
@@ -312,9 +341,87 @@
                     />
                   </div>
                 </div>
-
                 {#if pinError}
                   <p class="text-red-500 text-sm mt-2">{pinError}</p>
+                {/if}
+              </div>
+            {/if}
+
+            <!-- Mode Selection -->
+            <div class="border-t pt-4 mt-4">
+              <h3 class="font-medium text-foreground mb-3">Archive Mode</h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Single User Option -->
+                <button
+                  type="button"
+                  onclick={() => appMode = 'single'}
+                  class="p-4 rounded-lg border-2 text-left transition {appMode === 'single'
+                    ? 'border-accent bg-accent/5'
+                    : 'border-gray-200 hover:border-gray-300'}"
+                >
+                  <h4 class="font-semibold text-foreground">Single User</h4>
+                  <p class="text-sm text-gray-600 mt-1">
+                    Personal archive, quick access on launch.
+                  </p>
+                </button>
+
+                <!-- Multi User Option -->
+                <button
+                  type="button"
+                  onclick={() => appMode = 'multi'}
+                  class="p-4 rounded-lg border-2 text-left transition {appMode === 'multi'
+                    ? 'border-accent bg-accent/5'
+                    : 'border-gray-200 hover:border-gray-300'}"
+                >
+                  <h4 class="font-semibold text-foreground">Multi User</h4>
+                  <p class="text-sm text-gray-600 mt-1">
+                    Multiple contributors, track who documents what.
+                  </p>
+                </button>
+              </div>
+            </div>
+
+            <!-- Additional Users Section (Multi-user only) -->
+            {#if appMode === 'multi'}
+              <div class="border-t pt-4 mt-4">
+                <div class="flex items-center justify-between mb-3">
+                  <h3 class="font-medium text-foreground">Additional Users</h3>
+                  <button
+                    type="button"
+                    onclick={openAddUserModal}
+                    class="px-3 py-1.5 bg-accent text-white rounded text-sm hover:opacity-90 transition"
+                  >
+                    + Add User
+                  </button>
+                </div>
+
+                {#if additionalUsers.length === 0}
+                  <p class="text-sm text-gray-500">
+                    No additional users added. You can add more users now or later in Settings.
+                  </p>
+                {:else}
+                  <div class="space-y-2">
+                    {#each additionalUsers as user, index}
+                      <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <span class="font-medium text-foreground">{user.name}</span>
+                          {#if user.nickname}
+                            <span class="text-gray-500 text-sm"> ({user.nickname})</span>
+                          {/if}
+                          {#if user.pin}
+                            <span class="text-xs text-gray-400 ml-2">PIN set</span>
+                          {/if}
+                        </div>
+                        <button
+                          type="button"
+                          onclick={() => removeUser(index)}
+                          class="text-red-500 hover:text-red-700 text-sm"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    {/each}
+                  </div>
                 {/if}
               </div>
             {/if}
@@ -322,8 +429,8 @@
         </div>
       {/if}
 
-      <!-- Step 4: Archive Folder -->
-      {#if currentStep === 4}
+      <!-- Step 3: Archive Folder -->
+      {#if currentStep === 3}
         <div>
           <h2 class="text-2xl font-bold text-foreground mb-2">Archive Location</h2>
           <p class="text-gray-600 mb-6">
@@ -345,6 +452,7 @@
                   class="flex-1 px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
                 />
                 <button
+                  type="button"
                   onclick={selectFolder}
                   class="px-6 py-3 bg-accent text-white rounded-lg hover:opacity-90 transition font-medium"
                 >
@@ -357,7 +465,7 @@
             </div>
 
             <div class="bg-gray-50 rounded-lg p-4">
-              <h3 class="font-semibold text-foreground mb-2">Import Options</h3>
+              <h3 class="font-semibold text-foreground mb-2">Archive Options</h3>
               <div class="flex items-start gap-3">
                 <input
                   type="checkbox"
@@ -419,9 +527,99 @@
       </div>
     </div>
 
-    <!-- Footer -->
-    <div class="mt-6 text-center text-sm text-gray-500">
-      <p>All data is stored locally on your computer.</p>
-    </div>
   </div>
 </div>
+
+<!-- Add User Modal -->
+{#if showAddUserModal}
+  <div
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+    onclick={closeAddUserModal}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+  >
+    <div
+      class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4"
+      onclick={(e) => e.stopPropagation()}
+      role="document"
+    >
+      <h3 class="text-lg font-bold text-foreground mb-4">Add User</h3>
+
+      <div class="space-y-4">
+        <div>
+          <label for="newUserName" class="block text-sm font-medium text-gray-700 mb-2">
+            Name (first/last) *
+          </label>
+          <input
+            id="newUserName"
+            type="text"
+            bind:value={newUserName}
+            placeholder="Jane Doe"
+            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition"
+          />
+        </div>
+
+        <div>
+          <label for="newUserNickname" class="block text-sm font-medium text-gray-700 mb-2">
+            Nickname (optional)
+          </label>
+          <input
+            id="newUserNickname"
+            type="text"
+            bind:value={newUserNickname}
+            placeholder="Display name"
+            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition"
+          />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            PIN (optional)
+          </label>
+          <div class="grid grid-cols-2 gap-4">
+            <input
+              type="password"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="6"
+              bind:value={newUserPin}
+              placeholder="4-6 digits"
+              class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-center tracking-widest"
+            />
+            <input
+              type="password"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="6"
+              bind:value={newUserConfirmPin}
+              placeholder="Confirm PIN"
+              class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-center tracking-widest"
+            />
+          </div>
+          {#if newUserPinError}
+            <p class="text-red-500 text-sm mt-2">{newUserPinError}</p>
+          {/if}
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-3 mt-6">
+        <button
+          type="button"
+          onclick={closeAddUserModal}
+          class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onclick={addUser}
+          disabled={!newUserName.trim()}
+          class="px-4 py-2 bg-accent text-white rounded-lg hover:opacity-90 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Add User
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}

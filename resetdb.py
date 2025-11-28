@@ -29,6 +29,16 @@ def get_config_dir() -> Path:
         return home / ".config" / "@au-archive" / "desktop"
 
 
+def get_dev_data_dir() -> Path | None:
+    """Get the development data directory if running from project root."""
+    # Check if we're in the project directory
+    cwd = Path.cwd()
+    dev_data = cwd / "packages" / "desktop" / "data"
+    if dev_data.exists() or (cwd / "packages" / "desktop").exists():
+        return dev_data
+    return None
+
+
 def get_default_db_path() -> Path:
     """Get the default database path."""
     return get_config_dir() / "data" / "au-archive.db"
@@ -82,6 +92,7 @@ def reset_database(archive_path: str | None = None, force: bool = False):
     db_path = get_default_db_path()
     config_path = get_bootstrap_config_path()
     config_dir = get_config_dir()
+    dev_data_dir = get_dev_data_dir()
 
     # Show what will be removed
     print("The following will be removed:")
@@ -89,6 +100,11 @@ def reset_database(archive_path: str | None = None, force: bool = False):
     print(f"  - Config: {config_path}")
     print(f"  - Data directory: {config_dir / 'data'}")
     print(f"  - Backups directory: {config_dir / 'backups'}")
+
+    if dev_data_dir:
+        print(f"  - Dev database: {dev_data_dir / 'au-archive.db'}")
+        print(f"  - Dev config: {dev_data_dir / 'config.json'}")
+        print(f"  - Dev backups: {dev_data_dir / 'backups'}")
 
     if archive_path:
         archive = Path(archive_path)
@@ -133,6 +149,16 @@ def reset_database(archive_path: str | None = None, force: bool = False):
     backups_dir = config_dir / "backups"
     remove_dir(backups_dir, "Backups directory")
 
+    # Remove development database if running from project root
+    if dev_data_dir:
+        print("\nRemoving development files...")
+        dev_db_path = dev_data_dir / "au-archive.db"
+        remove_file(dev_db_path, "Dev database")
+        for suffix in ["-wal", "-shm"]:
+            remove_file(dev_data_dir / f"au-archive.db{suffix}", f"Dev database {suffix} file")
+        remove_file(dev_data_dir / "config.json", "Dev config")
+        remove_dir(dev_data_dir / "backups", "Dev backups directory")
+
     # Remove archive support directories if archive path provided
     if archive_path:
         archive = Path(archive_path)
@@ -170,9 +196,12 @@ def main():
     if args.db_only:
         print("\n=== AU Archive Reset Script (DB Only) ===\n")
         db_path = get_default_db_path()
+        dev_data_dir = get_dev_data_dir()
 
         if not args.force:
             print(f"Will remove: {db_path}")
+            if dev_data_dir:
+                print(f"Will remove: {dev_data_dir / 'au-archive.db'}")
             response = input("Are you sure? [y/N]: ").strip().lower()
             if response not in ("y", "yes"):
                 print("Aborted.")
@@ -186,6 +215,14 @@ def main():
             wal_path = db_path.parent / f"{db_path.name}{suffix}"
             if wal_path.exists():
                 remove_file(wal_path, f"Database {suffix} file")
+
+        # Remove dev database if running from project root
+        if dev_data_dir:
+            print("\nRemoving dev database...")
+            dev_db_path = dev_data_dir / "au-archive.db"
+            remove_file(dev_db_path, "Dev database")
+            for suffix in ["-wal", "-shm"]:
+                remove_file(dev_data_dir / f"au-archive.db{suffix}", f"Dev database {suffix} file")
 
         print("\n✓ Done!\n")
     else:
