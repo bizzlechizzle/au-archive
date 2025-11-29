@@ -129,6 +129,16 @@
     });
   }
 
+  /**
+   * Campus map: Sub-location with GPS for campus mini map
+   */
+  interface CampusSubLocation {
+    subid: string;
+    subnam: string;
+    gps_lat: number;
+    gps_lng: number;
+  }
+
   interface Props {
     locations?: Location[];
     onLocationClick?: (location: Location) => void;
@@ -157,6 +167,12 @@
     showLayerControl?: boolean;
     // Allow extra zoom-out capability for host locations (2 levels instead of 1 for limited interaction)
     extraZoomOut?: boolean;
+    // Campus map: Allow full zoom-in for detailed campus exploration
+    allowFullZoomIn?: boolean;
+    // Campus map: Sub-locations with GPS to render on mini map
+    campusSubLocations?: CampusSubLocation[];
+    // Campus map: Callback when clicking a sub-location marker
+    onCampusSubLocationClick?: (subid: string) => void;
   }
 
   let {
@@ -174,7 +190,10 @@
     defaultLayer = 'light',
     compactLayerControl = false,
     showLayerControl = true,
-    extraZoomOut = false
+    extraZoomOut = false,
+    allowFullZoomIn = false,
+    campusSubLocations = [],
+    onCampusSubLocationClick
   }: Props = $props();
 
   /**
@@ -193,6 +212,8 @@
   let mapContainer: HTMLDivElement;
   let map: LeafletMap | null = null;
   let markersLayer: LayerGroup | null = null;
+  // Campus map: Layer for sub-location markers
+  let campusMarkersLayer: LayerGroup | null = null;
   // FIX 6.8: Heat map layer
   let heatLayer: any = null;
   let cluster: Supercluster | null = null;
@@ -326,8 +347,9 @@
         zoomControl: !readonly && !limitedInteraction,
         // DECISION-011: Limited interaction - restrict zoom range
         // extraZoomOut allows 2 levels of zoom-out for host locations to see more campus area
+        // allowFullZoomIn enables zooming all the way in for campus maps
         minZoom: limitedInteraction ? Math.max(1, initialZoom - (extraZoomOut ? 2 : 1)) : undefined,
-        maxZoom: limitedInteraction ? Math.min(19, initialZoom + 1) : undefined,
+        maxZoom: limitedInteraction && !allowFullZoomIn ? Math.min(19, initialZoom + 1) : undefined,
         // DECISION-011: Hide attribution for mini map
         attributionControl: !hideAttribution,
       });
@@ -399,6 +421,8 @@
       }
 
       markersLayer = L.layerGroup().addTo(map);
+      // Campus map: Layer for sub-location markers (rendered on top)
+      campusMarkersLayer = L.layerGroup().addTo(map);
 
       // DECISION-010: Skip click handlers when readonly
       if (!readonly) {
@@ -613,20 +637,68 @@
         }
       }
     }
+
+    // Campus map: Add sub-location markers
+    if (campusMarkersLayer && campusSubLocations.length > 0) {
+      console.log('[Map] Adding', campusSubLocations.length, 'campus markers in updateClusters');
+      campusMarkersLayer.clearLayers();
+      const accentColor = '#b9975c';
+
+      campusSubLocations.forEach((subloc) => {
+        const icon = L.divIcon({
+          html: `<div class="confidence-marker" style="background-color: ${accentColor};"></div>`,
+          className: 'confidence-icon',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
+        });
+
+        const marker = L.marker([subloc.gps_lat, subloc.gps_lng], { icon });
+
+        marker.on('click', () => {
+          if (onCampusSubLocationClick) {
+            onCampusSubLocationClick(subloc.subid);
+          }
+        });
+
+        marker.bindTooltip(subloc.subnam, {
+          permanent: false,
+          direction: 'top',
+          offset: [0, -8],
+        });
+
+        campusMarkersLayer!.addLayer(marker);
+      });
+    }
+  }
+
+  // Track campus sub-locations hash for change detection
+  let lastCampusHash = $state('');
+  function getCampusHash(subs: CampusSubLocation[]): string {
+    return subs.map(s => `${s.subid}:${s.gps_lat}:${s.gps_lng}`).join(',');
   }
 
   $effect(() => {
     // Kanye9 FIX: Track GPS hash, not just length
     // This triggers re-zoom when forward geocoding updates location GPS
     const currentHash = getLocationsHash(locations);
-    if (map && markersLayer && currentHash !== lastLocationsHash) {
-      lastLocationsHash = currentHash;
-      // Kanye11 FIX: Reset initialViewSet so map re-zooms when GPS changes
-      // DECISION-016: Only reset if no explicit view was provided via props
-      if (!hasExplicitView) {
-        initialViewSet = false;
+    const currentCampusHash = getCampusHash(campusSubLocations);
+    const locationsChanged = currentHash !== lastLocationsHash;
+    const campusChanged = currentCampusHash !== lastCampusHash;
+
+    if (map && markersLayer && (locationsChanged || campusChanged)) {
+      if (locationsChanged) {
+        lastLocationsHash = currentHash;
+        // Kanye11 FIX: Reset initialViewSet so map re-zooms when GPS changes
+        // DECISION-016: Only reset if no explicit view was provided via props
+        if (!hasExplicitView) {
+          initialViewSet = false;
+        }
+        initCluster();
       }
-      initCluster();
+      if (campusChanged) {
+        lastCampusHash = currentCampusHash;
+        console.log('[Map] Campus hash changed, updating markers');
+      }
       import('leaflet').then((L) => updateClusters(L.default));
     }
   });

@@ -29,7 +29,7 @@
   }
   let { locationId, subId = null }: Props = $props();
 
-  // Sub-location type (Migration 28 + Migration 31 GPS)
+  // Sub-location type (Migration 28 + Migration 31 GPS + Migration 32 AKA/Historical)
   interface SubLocation {
     subid: string;
     sub12: string;
@@ -48,6 +48,9 @@
     gps_source: string | null;
     gps_verified_on_map: boolean;
     gps_captured_at: string | null;
+    // Migration 32: AKA and historical name
+    akanam: string | null;
+    historicalName: string | null;
   }
 
   // State
@@ -76,6 +79,11 @@
 
   // Derived: Are we viewing a sub-location?
   const isViewingSubLocation = $derived(!!subId && !!currentSubLocation);
+
+  // Campus map: sub-locations with GPS coordinates
+  const subLocationsWithGps = $derived(
+    sublocations.filter(s => s.gps_lat !== null && s.gps_lng !== null)
+  );
 
   // Migration 26: Import attribution modal
   let showAttributionModal = $state(false);
@@ -371,6 +379,34 @@
     await window.electronAPI.locations.update(location.locid, updates);
     await loadLocation();
     isEditing = false;
+  }
+
+  // Migration 32: Dual save handler for sub-location edit (saves to both subloc and host location)
+  interface SubLocationUpdates {
+    subnam?: string;
+    ssubname?: string | null;
+    type?: string | null;
+    status?: string | null;
+    is_primary?: boolean;
+    akanam?: string | null;
+    historicalName?: string | null;
+  }
+
+  async function handleSubLocationSave(subUpdates: SubLocationUpdates, locUpdates: Partial<LocationInput>) {
+    if (!currentSubLocation || !location) return;
+    try {
+      // Save sub-location fields
+      await window.electronAPI.sublocations.update(currentSubLocation.subid, subUpdates);
+      // Save host location fields (campus-level info)
+      if (Object.keys(locUpdates).length > 0) {
+        await window.electronAPI.locations.update(location.locid, locUpdates);
+      }
+      // Reload to get updated data
+      await loadLocation();
+    } catch (err) {
+      console.error('Error saving sub-location:', err);
+      throw err;
+    }
   }
 
   async function toggleFavorite() {
@@ -721,6 +757,14 @@
     await loadLocation();
     loadBookmarks();
     // DECISION-014: Removed ensureGpsFromAddress() - GPS should only come from EXIF or user action
+
+    // Migration 33: Track view for Nerd Stats (only for host locations, not sub-locations)
+    if (!subId && locationId) {
+      window.electronAPI?.locations?.trackView(locationId).catch((err: unknown) => {
+        console.warn('[LocationDetail] Failed to track view:', err);
+      });
+    }
+
     try {
       const settings = await window.electronAPI.settings.getAll();
       currentUser = settings.current_user || 'default';
@@ -773,7 +817,7 @@
     />
 
     <!-- Title overlaps hero gradient: centered, premium text fitting - up to 2 lines -->
-    <div class="max-w-6xl mx-auto px-8 pb-4 relative z-20 -mt-12">
+    <div class="max-w-6xl mx-auto px-8 pb-4 relative z-20 -mt-10">
       <div bind:this={heroContainerEl} class="w-[88%] mx-auto text-center">
         <h1
           bind:this={heroTitleEl}
@@ -783,13 +827,24 @@
         >
           {heroDisplayName}
         </h1>{#if isViewingSubLocation}
-          <!-- Host location tagline (cinematic style) -->
+          <!-- Host location tagline (sub-location view) -->
           <button
             onclick={() => router.navigate(`/location/${locationId}`)}
             class="host-tagline block w-[90%] mx-auto mt-0 uppercase hover:underline text-center"
           >
             {location.locnam}
           </button>
+        {:else if isHostLocation && sublocations.length > 0}
+          <!-- Buildings tagline (host location view) - list building names -->
+          <div class="host-tagline block w-[90%] mx-auto mt-0 uppercase text-center">
+            {#each sublocations as subloc, i}
+              {#if i > 0}<span class="mx-2"></span>{/if}
+              <button
+                onclick={() => router.navigate(`/location/${locationId}/sub/${subloc.subid}`)}
+                class="hover:underline"
+              >{subloc.subnam}</button>
+            {/each}
+          </div>
         {/if}
       </div>
     </div>
@@ -809,11 +864,12 @@
             {allVideosForAuthors}
             {allDocumentsForAuthors}
             onNavigateFilter={navigateToFilter}
-            onSave={isViewingSubLocation ? undefined : handleSave}
+            onSave={handleSave}
             {sublocations}
             isHostLocation={isHostLocation && !isViewingSubLocation}
             onConvertToHost={isViewingSubLocation ? undefined : handleConvertToHost}
-            parentLocation={isViewingSubLocation ? { locid: locationId, locnam: location.locnam } : null}
+            currentSubLocation={isViewingSubLocation ? currentSubLocation : null}
+            onSubLocationSave={isViewingSubLocation ? handleSubLocationSave : undefined}
           />
           <div class="location-map-section">
             <!-- DECISION-011: Unified location box with verification checkmarks, edit modal -->
@@ -832,6 +888,8 @@
                 gps_source: currentSubLocation.gps_source,
               } : null}
               onSubLocationGpsSave={isViewingSubLocation ? saveSubLocationGps : undefined}
+              campusSubLocations={!isViewingSubLocation && isHostLocation ? subLocationsWithGps : []}
+              onCampusSubLocationClick={(subid) => router.navigate(`/location/${locationId}/sub/${subid}`)}
             />
           </div>
         </div>
@@ -841,11 +899,13 @@
 
         <!-- Migration 28: Sub-Location Grid (only for host locations, hide when viewing a sub-location) -->
         {#if !isViewingSubLocation && isHostLocation}
-          <SubLocationGrid
-            locid={location.locid}
-            {sublocations}
-            onAddSubLocation={openAddBuildingModal}
-          />
+          <div id="buildings-section">
+            <SubLocationGrid
+              locid={location.locid}
+              {sublocations}
+              onAddSubLocation={openAddBuildingModal}
+            />
+          </div>
         {/if}
 
         <!-- Import zone - host locations get campus-level media, buildings get building media -->

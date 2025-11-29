@@ -15,6 +15,7 @@ export interface Database {
   bookmarks: BookmarksTable;
   users: UsersTable;
   location_authors: LocationAuthorsTable;
+  location_views: LocationViewsTable;
 }
 
 // Locations table
@@ -143,6 +144,10 @@ export interface LocsTable {
   modified_by: string | null;      // Username for display
   modified_at: string | null;      // ISO timestamp of last modification
 
+  // View tracking (Migration 33)
+  view_count: number;              // Number of times location has been viewed
+  last_viewed_at: string | null;   // ISO timestamp of last view
+
   // Regions
   regions: string | null;
   state: string | null;
@@ -176,6 +181,10 @@ export interface SlocsTable {
   gps_source: string | null;
   gps_verified_on_map: number;  // 0 or 1
   gps_captured_at: string | null;
+
+  // Migration 32: AKA and historical name for sub-locations
+  akanam: string | null;
+  historicalName: string | null;
 }
 
 // Images table
@@ -437,4 +446,12 @@ export interface LocationAuthorsTable {
   user_id: string;
   role: string;      // 'creator', 'documenter', 'contributor'
   added_at: string;  // ISO timestamp
+}
+
+// Location Views table (Migration 34) - Per-user view tracking
+export interface LocationViewsTable {
+  view_id: string;
+  locid: string;
+  user_id: string;
+  viewed_at: string;  // ISO timestamp
 }

@@ -34,6 +34,29 @@
     is_primary?: boolean;
   }
 
+  // Migration 32: SubLocation type for edit mode
+  interface SubLocationData {
+    subid: string;
+    subnam: string;
+    ssubname: string | null;
+    type: string | null;
+    status: string | null;
+    is_primary: boolean;
+    akanam: string | null;
+    historicalName: string | null;
+  }
+
+  // Migration 32: SubLocation update input
+  interface SubLocationUpdates {
+    subnam?: string;
+    ssubname?: string | null;
+    type?: string | null;
+    status?: string | null;
+    is_primary?: boolean;
+    akanam?: string | null;
+    historicalName?: string | null;
+  }
+
   interface Props {
     location: Location;
     images?: MediaWithAuthor[];
@@ -47,16 +70,22 @@
     onSave?: (updates: Partial<LocationInput>) => Promise<void>;
     // Host/Sub-location support
     sublocations?: SubLocationSummary[];
-    parentLocation?: { locid: string; locnam: string } | null;
     isHostLocation?: boolean;
     onConvertToHost?: () => Promise<void>;
+    // Migration 32: Sub-location edit mode
+    currentSubLocation?: SubLocationData | null;
+    onSubLocationSave?: (subUpdates: SubLocationUpdates, locUpdates: Partial<LocationInput>) => Promise<void>;
   }
 
   let {
     location, images = [], videos = [], documents = [], onNavigateFilter, onSave,
     allImagesForAuthors, allVideosForAuthors, allDocumentsForAuthors,
-    sublocations = [], parentLocation = null, isHostLocation = false, onConvertToHost
+    sublocations = [], isHostLocation = false, onConvertToHost,
+    currentSubLocation = null, onSubLocationSave
   }: Props = $props();
+
+  // Migration 32: Sub-location edit mode detection
+  const isSubLocationMode = $derived(!!currentSubLocation && !!onSubLocationSave);
 
   // Edit modal state
   let showEditModal = $state(false);
@@ -92,22 +121,24 @@
   });
 
   // Edit form state - DECISION-019: All information fields
+  // Migration 32: Extended to support sub-location editing
   let editForm = $state({
+    // Location/Building name (locnam or subnam depending on mode)
     locnam: '',
     locnamVerified: false,
-    locnamShort: '',      // Migration 21: Custom short name for hero
-    locnamUseThe: false,  // Migration 21: Prepend "The" to display name
+    locnamShort: '',      // Migration 21: Custom short name for hero (or ssubname for sub-location)
+    locnamUseThe: false,  // Migration 21: Prepend "The" to display name (host only)
     historicalName: '',
     historicalNameVerified: false,
     akanam: '',
     akanamVerified: false,
-    access: '',
+    access: '',           // Status (locs.access or slocs.status)
     builtYear: '',
     builtType: 'year' as 'year' | 'range' | 'date',
     abandonedYear: '',
     abandonedType: 'year' as 'year' | 'range' | 'date',
-    type: '',
-    stype: '',
+    type: '',             // Type (locs.type or slocs.type for Building Type)
+    stype: '',            // Sub-Type (host only)
     historic: false,
     favorite: false,
     project: false,
@@ -117,6 +148,8 @@
     docWebHistory: false,
     docMapFind: false,
     auth_imp: '',
+    // Migration 32: Sub-location specific fields
+    is_primary: false,    // Primary Building checkbox (sub-location only)
   });
 
   // Track original status for change detection
@@ -137,8 +170,8 @@
 
   // Host/Sub-location display flags
   const hasSublocations = $derived(isHostLocation && sublocations.length > 0);
-  const hasParentLocation = $derived(!!parentLocation);
-  const canConvertToHost = $derived(!isHostLocation && !parentLocation && !!onConvertToHost);
+  // Migration 32: Hide Convert to Host when viewing/editing a sub-location
+  const canConvertToHost = $derived(!isHostLocation && !isSubLocationMode && !!onConvertToHost);
 
   // Role display labels
   const roleLabels: Record<string, string> = {
@@ -204,7 +237,7 @@
   const hasAnyInfo = $derived(
     hasHistoricalName || hasAkaName || hasStatus || hasDocumentation ||
     hasBuiltOrAbandoned || hasType || hasFlags || hasAuthor || hasAuthors ||
-    hasMediaAuthors || hasExternalContributors || hasSublocations || hasParentLocation
+    hasMediaAuthors || hasExternalContributors || hasSublocations
   );
 
   // Documentation labels for display
@@ -265,73 +298,142 @@
   }
 
   function openEditModal() {
-    originalStatus = location.access || '';
-    editForm = {
-      locnam: location.locnam || '',
-      locnamVerified: location.locnamVerified || false,
-      locnamShort: location.locnamShort || '',
-      locnamUseThe: location.locnamUseThe || false,
-      historicalName: location.historicalName || '',
-      historicalNameVerified: location.historicalNameVerified || false,
-      akanam: location.akanam || '',
-      akanamVerified: location.akanamVerified || false,
-      access: location.access || '',
-      builtYear: location.builtYear || '',
-      builtType: location.builtType || 'year',
-      abandonedYear: location.abandonedYear || '',
-      abandonedType: location.abandonedType || 'year',
-      type: location.type || '',
-      stype: location.stype || '',
-      historic: location.historic || false,
-      favorite: location.favorite || false,
-      project: location.project || false,
-      docInterior: location.docInterior || false,
-      docExterior: location.docExterior || false,
-      docDrone: location.docDrone || false,
-      docWebHistory: location.docWebHistory || false,
-      docMapFind: location.docMapFind || false,
-      auth_imp: location.auth_imp || '',
-    };
+    // Migration 32: Initialize form differently for sub-location vs host location
+    if (isSubLocationMode && currentSubLocation) {
+      // Sub-location mode: load from sub-location data + host location for campus fields
+      originalStatus = currentSubLocation.status || '';
+      editForm = {
+        // Sub-location specific fields
+        locnam: currentSubLocation.subnam || '',
+        locnamVerified: false, // Not used for sub-locations
+        locnamShort: currentSubLocation.ssubname || '',
+        locnamUseThe: false, // Not used for sub-locations
+        historicalName: currentSubLocation.historicalName || '',
+        historicalNameVerified: false, // Not used for sub-locations
+        akanam: currentSubLocation.akanam || '',
+        akanamVerified: false, // Not used for sub-locations
+        access: currentSubLocation.status || '', // slocs.status
+        type: currentSubLocation.type || '', // Building Type
+        stype: '', // Not used for sub-locations
+        is_primary: currentSubLocation.is_primary || false,
+        // Campus-level fields from host location
+        builtYear: location.builtYear || '',
+        builtType: location.builtType || 'year',
+        abandonedYear: location.abandonedYear || '',
+        abandonedType: location.abandonedType || 'year',
+        historic: location.historic || false,
+        favorite: location.favorite || false,
+        project: location.project || false,
+        docInterior: location.docInterior || false,
+        docExterior: location.docExterior || false,
+        docDrone: location.docDrone || false,
+        docWebHistory: location.docWebHistory || false,
+        docMapFind: location.docMapFind || false,
+        auth_imp: location.auth_imp || '',
+      };
+    } else {
+      // Host/regular location mode
+      originalStatus = location.access || '';
+      editForm = {
+        locnam: location.locnam || '',
+        locnamVerified: location.locnamVerified || false,
+        locnamShort: location.locnamShort || '',
+        locnamUseThe: location.locnamUseThe || false,
+        historicalName: location.historicalName || '',
+        historicalNameVerified: location.historicalNameVerified || false,
+        akanam: location.akanam || '',
+        akanamVerified: location.akanamVerified || false,
+        access: location.access || '',
+        builtYear: location.builtYear || '',
+        builtType: location.builtType || 'year',
+        abandonedYear: location.abandonedYear || '',
+        abandonedType: location.abandonedType || 'year',
+        type: location.type || '',
+        stype: location.stype || '',
+        historic: location.historic || false,
+        favorite: location.favorite || false,
+        project: location.project || false,
+        docInterior: location.docInterior || false,
+        docExterior: location.docExterior || false,
+        docDrone: location.docDrone || false,
+        docWebHistory: location.docWebHistory || false,
+        docMapFind: location.docMapFind || false,
+        auth_imp: location.auth_imp || '',
+        is_primary: false, // Not used for host locations
+      };
+    }
     newAkaInput = '';
     showEditModal = true;
   }
 
   async function handleSave() {
-    if (!onSave) return;
     try {
       saving = true;
 
-      // Track status change date if status changed
-      const statusChanged = editForm.access !== originalStatus;
-      const statusChangedAt = statusChanged ? new Date().toISOString() : undefined;
+      // Migration 32: Split save based on sub-location mode
+      if (isSubLocationMode && onSubLocationSave) {
+        // Sub-location mode: save to both subloc and host location
+        const subUpdates: SubLocationUpdates = {
+          subnam: editForm.locnam,
+          ssubname: editForm.locnamShort || null,
+          type: editForm.type || null, // Building Type
+          status: editForm.access || null,
+          is_primary: editForm.is_primary,
+          akanam: editForm.akanam || null,
+          historicalName: editForm.historicalName || null,
+        };
 
-      await onSave({
-        locnam: editForm.locnam,
-        locnamVerified: editForm.locnamVerified,
-        locnamShort: editForm.locnamShort || undefined,
-        locnamUseThe: editForm.locnamUseThe,
-        historicalName: editForm.historicalName || undefined,
-        historicalNameVerified: editForm.historicalNameVerified,
-        akanam: editForm.akanam || undefined,
-        akanamVerified: editForm.akanamVerified,
-        access: editForm.access || undefined,
-        statusChangedAt: statusChangedAt,
-        builtYear: editForm.builtYear || undefined,
-        builtType: editForm.builtYear ? editForm.builtType : undefined,
-        abandonedYear: editForm.abandonedYear || undefined,
-        abandonedType: editForm.abandonedYear ? editForm.abandonedType : undefined,
-        type: editForm.type || undefined,
-        stype: editForm.stype || undefined,
-        historic: editForm.historic,
-        favorite: editForm.favorite,
-        project: editForm.project,
-        docInterior: editForm.docInterior,
-        docExterior: editForm.docExterior,
-        docDrone: editForm.docDrone,
-        docWebHistory: editForm.docWebHistory,
-        docMapFind: editForm.docMapFind,
-        auth_imp: editForm.auth_imp || undefined,
-      });
+        // Campus-level fields go to host location
+        const locUpdates: Partial<LocationInput> = {
+          builtYear: editForm.builtYear || undefined,
+          builtType: editForm.builtYear ? editForm.builtType : undefined,
+          abandonedYear: editForm.abandonedYear || undefined,
+          abandonedType: editForm.abandonedYear ? editForm.abandonedType : undefined,
+          historic: editForm.historic,
+          favorite: editForm.favorite,
+          project: editForm.project,
+          docInterior: editForm.docInterior,
+          docExterior: editForm.docExterior,
+          docDrone: editForm.docDrone,
+          docWebHistory: editForm.docWebHistory,
+          docMapFind: editForm.docMapFind,
+          auth_imp: editForm.auth_imp || undefined,
+        };
+
+        await onSubLocationSave(subUpdates, locUpdates);
+      } else if (onSave) {
+        // Host/regular location mode
+        const statusChanged = editForm.access !== originalStatus;
+        const statusChangedAt = statusChanged ? new Date().toISOString() : undefined;
+
+        await onSave({
+          locnam: editForm.locnam,
+          locnamVerified: editForm.locnamVerified,
+          locnamShort: editForm.locnamShort || undefined,
+          locnamUseThe: editForm.locnamUseThe,
+          historicalName: editForm.historicalName || undefined,
+          historicalNameVerified: editForm.historicalNameVerified,
+          akanam: editForm.akanam || undefined,
+          akanamVerified: editForm.akanamVerified,
+          access: editForm.access || undefined,
+          statusChangedAt: statusChangedAt,
+          builtYear: editForm.builtYear || undefined,
+          builtType: editForm.builtYear ? editForm.builtType : undefined,
+          abandonedYear: editForm.abandonedYear || undefined,
+          abandonedType: editForm.abandonedYear ? editForm.abandonedType : undefined,
+          type: editForm.type || undefined,
+          stype: editForm.stype || undefined,
+          historic: editForm.historic,
+          favorite: editForm.favorite,
+          project: editForm.project,
+          docInterior: editForm.docInterior,
+          docExterior: editForm.docExterior,
+          docDrone: editForm.docDrone,
+          docWebHistory: editForm.docWebHistory,
+          docMapFind: editForm.docMapFind,
+          auth_imp: editForm.auth_imp || undefined,
+        });
+      }
       showEditModal = false;
     } catch (err) {
       console.error('Error saving information:', err);
@@ -398,7 +500,7 @@
   <div class="flex items-start justify-between px-8 pt-6 pb-4">
     <h2 class="text-2xl font-semibold text-foreground leading-none">Information</h2>
     <div class="flex items-center gap-3">
-      {#if onSave}
+      {#if onSave || onSubLocationSave}
         <button
           onclick={openEditModal}
           class="text-sm text-accent hover:underline leading-none mt-1"
@@ -423,37 +525,6 @@
               <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{name}</span>
             {/each}
           </div>
-        </div>
-      {/if}
-
-      <!-- Parent Location (for sub-locations) -->
-      {#if hasParentLocation}
-        <div class="mb-4">
-          <h3 class="section-title mb-1">Part of</h3>
-          <button
-            onclick={() => router.navigate(`/locations/${parentLocation!.locid}`)}
-            class="text-base text-accent hover:underline"
-            title="View host location"
-          >
-            {parentLocation!.locnam}
-          </button>
-        </div>
-      {/if}
-
-      <!-- Sub-Locations list (for host locations) - clickable inline -->
-      {#if hasSublocations}
-        <div class="mb-4">
-          <h3 class="section-title mb-1">Buildings</h3>
-          <p class="text-base">
-            {#each sublocations as subloc, i}
-              {#if i > 0}<span class="text-gray-400"> / </span>{/if}
-              <button
-                onclick={() => router.navigate(`/location/${subloc.locid}/sub/${subloc.subid}`)}
-                class="text-accent hover:underline"
-                title="View {subloc.subnam}"
-              >{subloc.subnam}{#if subloc.is_primary}<span class="text-xs text-amber-600 ml-1">(primary)</span>{/if}</button>
-            {/each}
-          </p>
         </div>
       {/if}
 
@@ -655,23 +726,23 @@
         </button>
       </div>
 
-      <!-- Content - Form order: Location Name, AKA, Historical Name (dropdown), Status (dropdown), Type/Sub-Type (autocomplete), Built/Abandoned, Documentation, Flags, Author -->
+      <!-- Content - Form order: Location/Building Name, AKA, Historical Name (dropdown), Status (dropdown), Type/Sub-Type (autocomplete), Built/Abandoned, Documentation, Flags, Author -->
       <div class="p-6 overflow-y-auto max-h-[65vh] space-y-5">
-        <!-- Location Name -->
+        <!-- Location/Building Name -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Location Name</label>
+          <label class="block text-sm font-medium text-gray-700 mb-2">{isSubLocationMode ? 'Building Name' : 'Location Name'}</label>
           <input
             type="text"
             bind:value={editForm.locnam}
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-            placeholder="Location name"
+            placeholder={isSubLocationMode ? 'Building name' : 'Location name'}
           />
         </div>
 
-        <!-- Hero Display Name - Migration 21 -->
+        <!-- Hero Display Name - Migration 21 (simplified for sub-locations) -->
         <div class="bg-gray-50 rounded-lg p-4 -mx-1">
-          <label class="block text-sm font-medium text-gray-700 mb-2">Hero Display Name</label>
-          <p class="text-xs text-gray-500 mb-3">Override the auto-generated title shown on the hero image</p>
+          <label class="block text-sm font-medium text-gray-700 mb-2">{isSubLocationMode ? 'Short Name' : 'Hero Display Name'}</label>
+          <p class="text-xs text-gray-500 mb-3">{isSubLocationMode ? 'Optional shortened name for display' : 'Override the auto-generated title shown on the hero image'}</p>
 
           <div class="space-y-3">
             <div>
@@ -679,23 +750,25 @@
                 type="text"
                 bind:value={editForm.locnamShort}
                 class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-                placeholder="Custom short name (leave empty for auto)"
+                placeholder={isSubLocationMode ? 'Short name (optional)' : 'Custom short name (leave empty for auto)'}
               />
             </div>
 
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={editForm.locnamUseThe}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
-              />
-              <span class="text-sm">Prepend "The"</span>
-            </label>
+            {#if !isSubLocationMode}
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  bind:checked={editForm.locnamUseThe}
+                  class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                />
+                <span class="text-sm">Prepend "The"</span>
+              </label>
 
-            <!-- Preview -->
-            <div class="text-xs text-gray-500">
-              Preview: <span class="font-medium text-gray-700">{editForm.locnamUseThe ? 'The ' : ''}{editForm.locnamShort || '(auto-generated from name)'}</span>
-            </div>
+              <!-- Preview -->
+              <div class="text-xs text-gray-500">
+                Preview: <span class="font-medium text-gray-700">{editForm.locnamUseThe ? 'The ' : ''}{editForm.locnamShort || '(auto-generated from name)'}</span>
+              </div>
+            {/if}
           </div>
         </div>
 
@@ -760,16 +833,17 @@
           </select>
         </div>
 
-        <!-- Type / Sub-Type with autocomplete -->
-        <div class="grid grid-cols-2 gap-4">
+        <!-- Type / Sub-Type with autocomplete (or Building Type for sub-locations) -->
+        {#if isSubLocationMode}
+          <!-- Sub-location: Building Type only -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Building Type</label>
             <input
               type="text"
               list="type-options"
               bind:value={editForm.type}
               class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="e.g., Hospital, Factory"
+              placeholder="e.g., Administration, Dormitory, Chapel"
             />
             <datalist id="type-options">
               {#each typeOptions as option}
@@ -777,22 +851,57 @@
               {/each}
             </datalist>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Sub-Type</label>
+
+          <!-- Primary Building checkbox -->
+          <label class="flex items-center gap-2 cursor-pointer">
             <input
-              type="text"
-              list="stype-options"
-              bind:value={editForm.stype}
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="e.g., Psychiatric, Textile"
+              type="checkbox"
+              bind:checked={editForm.is_primary}
+              class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
             />
-            <datalist id="stype-options">
-              {#each stypeOptions as option}
-                <option value={option} />
-              {/each}
-            </datalist>
+            <span class="text-sm font-medium text-gray-700">Primary Building</span>
+            <span class="text-xs text-gray-500">(main building on campus)</span>
+          </label>
+
+          <!-- Campus Info divider -->
+          <div class="border-t border-gray-200 pt-4 -mx-1 px-1">
+            <h3 class="text-sm font-medium text-gray-500 mb-4">Campus Info</h3>
           </div>
-        </div>
+        {:else}
+          <!-- Host location: Type + Sub-Type -->
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
+              <input
+                type="text"
+                list="type-options"
+                bind:value={editForm.type}
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                placeholder="e.g., Hospital, Factory"
+              />
+              <datalist id="type-options">
+                {#each typeOptions as option}
+                  <option value={option} />
+                {/each}
+              </datalist>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Sub-Type</label>
+              <input
+                type="text"
+                list="stype-options"
+                bind:value={editForm.stype}
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                placeholder="e.g., Psychiatric, Textile"
+              />
+              <datalist id="stype-options">
+                {#each stypeOptions as option}
+                  <option value={option} />
+                {/each}
+              </datalist>
+            </div>
+          </div>
+        {/if}
 
         <!-- Built -->
         <div>

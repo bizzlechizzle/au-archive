@@ -10,6 +10,7 @@ import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
+import { SQLiteLocationViewsRepository } from '../../repositories/sqlite-location-views-repository';
 import { LocationInputSchema } from '@au-archive/core';
 import type { LocationFilters } from '@au-archive/core';
 import { AddressService, type NormalizedAddress } from '../../services/address-service';
@@ -37,6 +38,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
   const locationRepo = new SQLiteLocationRepository(db);
   // Migration 25 - Phase 3: Location authors repository for attribution tracking
   const authorsRepo = new SQLiteLocationAuthorsRepository(db);
+  // Migration 34: Location views repository for per-user view tracking
+  const viewsRepo = new SQLiteLocationViewsRepository(db);
 
   ipcMain.handle('location:findAll', async (_event, filters?: LocationFilters) => {
     try {
@@ -397,6 +400,64 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return stypes.map(r => r.stype).filter(Boolean) as string[];
     } catch (error) {
       console.error('Error getting distinct sub-types:', error);
+      throw error;
+    }
+  });
+
+  /**
+   * Migration 34: Track location views with per-user tracking
+   * Records view in location_views table and updates denormalized count on locs
+   */
+  ipcMain.handle('location:trackView', async (_event, id: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(id);
+
+      // Get current user - required for per-user tracking
+      const currentUser = await getCurrentUser(db);
+      if (!currentUser) {
+        // If no user logged in, fall back to simple counter (no per-user tracking)
+        return await locationRepo.trackView(validatedId);
+      }
+
+      // Track with per-user view record
+      return await viewsRepo.trackView(validatedId, currentUser.userId);
+    } catch (error) {
+      console.error('Error tracking view:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * Migration 34: Get view statistics for a location
+   */
+  ipcMain.handle('location:getViewStats', async (_event, id: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(id);
+      return await viewsRepo.getViewStats(validatedId);
+    } catch (error) {
+      console.error('Error getting view stats:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * Migration 34: Get view history for a location
+   */
+  ipcMain.handle('location:getViewHistory', async (_event, id: unknown, limit?: number) => {
+    try {
+      const validatedId = z.string().uuid().parse(id);
+      return await viewsRepo.getViewHistory(validatedId, limit ?? 50);
+    } catch (error) {
+      console.error('Error getting view history:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
       throw error;
     }
   });

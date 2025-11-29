@@ -2,6 +2,7 @@
   /**
    * LocationNerdStats - Technical metadata (IDs, timestamps, GPS details, counts)
    * Per LILBITS: ~150 lines, single responsibility
+   * Migration 34: Enhanced with per-user view tracking
    */
   import type { Location } from '@au-archive/core';
 
@@ -16,6 +17,39 @@
 
   let isOpen = $state(false);
   let copiedField = $state<string | null>(null);
+
+  // Migration 34: Per-user view statistics
+  interface ViewStats {
+    totalViews: number;
+    uniqueViewers: number;
+    lastViewedAt: string | null;
+    recentViewers: Array<{
+      user_id: string;
+      username: string;
+      display_name: string | null;
+      view_count: number;
+      last_viewed_at: string;
+    }>;
+  }
+  let viewStats = $state<ViewStats | null>(null);
+  let loadingViewStats = $state(false);
+
+  // Fetch view stats when section is opened
+  $effect(() => {
+    if (isOpen && !viewStats && !loadingViewStats) {
+      loadingViewStats = true;
+      window.electronAPI?.locations?.getViewStats(location.locid)
+        .then((stats) => {
+          viewStats = stats;
+        })
+        .catch((err) => {
+          console.warn('[NerdStats] Failed to load view stats:', err);
+        })
+        .finally(() => {
+          loadingViewStats = false;
+        });
+    }
+  });
 
   function copyToClipboard(text: string, field: string) {
     navigator.clipboard.writeText(text);
@@ -98,6 +132,43 @@
         <span class="text-gray-500">Author:</span>
         <span class="ml-2">{location.auth_imp}</span>
       </div>
+    {/if}
+
+    <!-- View Tracking (Migration 34: Per-user tracking) -->
+    <div class="col-span-full border-b pb-3 mb-2 mt-5">
+      <p class="text-xs font-semibold text-gray-400 uppercase mb-2">Activity</p>
+    </div>
+    <div>
+      <span class="text-gray-500">Total Views:</span>
+      <span class="ml-2 font-semibold">{viewStats?.totalViews ?? location.viewCount ?? 0}</span>
+    </div>
+    {#if viewStats}
+      <div>
+        <span class="text-gray-500">Unique Viewers:</span>
+        <span class="ml-2 font-semibold">{viewStats.uniqueViewers}</span>
+      </div>
+    {/if}
+    {#if viewStats?.lastViewedAt || location.lastViewedAt}
+      <div>
+        <span class="text-gray-500">Last Viewed:</span>
+        <span class="ml-2">{new Date(viewStats?.lastViewedAt ?? location.lastViewedAt!).toLocaleString()}</span>
+      </div>
+    {/if}
+    {#if viewStats?.recentViewers && viewStats.recentViewers.length > 0}
+      <div class="col-span-full mt-3">
+        <span class="text-gray-500">Recent Viewers:</span>
+        <div class="mt-2 flex flex-wrap gap-2">
+          {#each viewStats.recentViewers.slice(0, 5) as viewer}
+            <span class="inline-flex items-center px-2 py-1 bg-gray-100 rounded text-xs">
+              {viewer.display_name || viewer.username}
+              <span class="ml-1 text-gray-400">({viewer.view_count})</span>
+            </span>
+          {/each}
+        </div>
+      </div>
+    {/if}
+    {#if loadingViewStats}
+      <div class="col-span-full text-xs text-gray-400">Loading view details...</div>
     {/if}
 
     <!-- GPS Details -->

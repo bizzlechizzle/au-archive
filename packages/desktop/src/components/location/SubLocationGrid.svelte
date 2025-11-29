@@ -30,6 +30,9 @@
   function navigateToSubLocation(subid: string) {
     router.navigate(`/location/${locid}/sub/${subid}`);
   }
+
+  // Derived: Add Building should span full width when even number of buildings
+  const addCardFullWidth = $derived(sublocations.length % 2 === 0);
 </script>
 
 <section class="mt-8">
@@ -99,12 +102,12 @@
         </button>
       {/each}
 
-      <!-- Add card -->
+      <!-- Add card (full width when even number of buildings, same height as building cards) -->
       {#if onAddSubLocation}
         <button
           onclick={onAddSubLocation}
-          class="add-card rounded-lg border-2 border-dashed border-gray-200 hover:border-accent hover:bg-accent/5 transition flex flex-col items-center justify-center gap-2"
-          style="aspect-ratio: 1.618;"
+          class="add-card rounded-lg border-2 border-dashed border-gray-200 hover:border-accent hover:bg-accent/5 transition flex flex-col items-center justify-center gap-2 {addCardFullWidth ? 'col-span-2' : ''}"
+          style="aspect-ratio: {addCardFullWidth ? '3.3' : '1.618'};"
         >
           <svg class="w-8 h-8 text-gray-400 group-hover:text-accent transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />

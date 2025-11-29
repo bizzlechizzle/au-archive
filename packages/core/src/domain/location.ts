@@ -151,6 +151,9 @@ export const LocationSchema = LocationInputSchema.extend({
   modifiedById: z.string().uuid().optional(),
   modifiedBy: z.string().optional(),
   modifiedAt: z.string().datetime().optional(),
+  // Migration 33: View tracking for Nerd Stats
+  viewCount: z.number().default(0),
+  lastViewedAt: z.string().datetime().optional(),
 });
 
 export type Location = z.infer<typeof LocationSchema>;

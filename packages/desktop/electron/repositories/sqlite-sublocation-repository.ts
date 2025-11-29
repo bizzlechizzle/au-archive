@@ -26,6 +26,9 @@ export interface SubLocation {
   gps_source: string | null;
   gps_verified_on_map: boolean;
   gps_captured_at: string | null;
+  // Migration 32: AKA and historical name
+  akanam: string | null;
+  historicalName: string | null;
 }
 
 /**
@@ -62,6 +65,9 @@ export interface UpdateSubLocationInput {
   hero_imgsha?: string | null;
   is_primary?: boolean;
   modified_by?: string | null;
+  // Migration 32: AKA and historical name
+  akanam?: string | null;
+  historicalName?: string | null;
 }
 
 /**
@@ -115,6 +121,9 @@ export class SQLiteSubLocationRepository {
         gps_source: null,
         gps_verified_on_map: 0,
         gps_captured_at: null,
+        // Migration 32: AKA and historical name (null on creation)
+        akanam: null,
+        historicalName: null,
       })
       .execute();
 
@@ -147,6 +156,9 @@ export class SQLiteSubLocationRepository {
       gps_source: null,
       gps_verified_on_map: false,
       gps_captured_at: null,
+      // Migration 32: AKA and historical name
+      akanam: null,
+      historicalName: null,
     };
   }
 
@@ -198,6 +210,8 @@ export class SQLiteSubLocationRepository {
     if (input.status !== undefined) updateValues.status = input.status;
     if (input.hero_imgsha !== undefined) updateValues.hero_imgsha = input.hero_imgsha;
     if (input.is_primary !== undefined) updateValues.is_primary = input.is_primary ? 1 : 0;
+    if (input.akanam !== undefined) updateValues.akanam = input.akanam;
+    if (input.historicalName !== undefined) updateValues.historicalName = input.historicalName;
 
     await this.db
       .updateTable('slocs')
@@ -292,33 +306,62 @@ export class SQLiteSubLocationRepository {
   /**
    * Get sub-locations with their hero images for display
    * Checks all thumbnail columns: preview_path > thumb_path_lg > thumb_path_sm > thumb_path
+   * Sorts by: is_primary DESC, then by asset count (imgs + vids + docs) DESC
    */
-  async findWithHeroImages(locid: string): Promise<Array<SubLocation & { hero_thumb_path?: string }>> {
-    const sublocs = await this.findByLocationId(locid);
+  async findWithHeroImages(locid: string): Promise<Array<SubLocation & { hero_thumb_path?: string; asset_count?: number }>> {
+    // Query sublocations with asset counts using subqueries
+    const rows = await this.db
+      .selectFrom('slocs')
+      .selectAll('slocs')
+      .select(eb => [
+        eb.selectFrom('imgs')
+          .select(eb.fn.countAll<number>().as('cnt'))
+          .whereRef('imgs.subid', '=', 'slocs.subid')
+          .as('img_count'),
+        eb.selectFrom('vids')
+          .select(eb.fn.countAll<number>().as('cnt'))
+          .whereRef('vids.subid', '=', 'slocs.subid')
+          .as('vid_count'),
+        eb.selectFrom('docs')
+          .select(eb.fn.countAll<number>().as('cnt'))
+          .whereRef('docs.subid', '=', 'slocs.subid')
+          .as('doc_count'),
+      ])
+      .where('locid', '=', locid)
+      .execute();
 
-    // For each subloc with a hero_imgsha, fetch the best available thumbnail
-    const results = await Promise.all(
-      sublocs.map(async (subloc) => {
+    // Map to SubLocation with hero paths and calculate total asset count
+    const sublocsWithAssets = await Promise.all(
+      rows.map(async (row) => {
+        const subloc = this.mapRowToSubLocation(row);
+        const assetCount = (row.img_count || 0) + (row.vid_count || 0) + (row.doc_count || 0);
+
+        let heroPath: string | undefined;
         if (subloc.hero_imgsha) {
           const img = await this.db
             .selectFrom('imgs')
             .select(['preview_path', 'thumb_path_lg', 'thumb_path_sm', 'thumb_path'])
             .where('imgsha', '=', subloc.hero_imgsha)
             .executeTakeFirst();
-
-          // Priority: preview (1920px) > lg (800px) > sm (400px) > legacy (256px)
-          const heroPath = img?.preview_path || img?.thumb_path_lg || img?.thumb_path_sm || img?.thumb_path || undefined;
-
-          return {
-            ...subloc,
-            hero_thumb_path: heroPath,
-          };
+          heroPath = img?.preview_path || img?.thumb_path_lg || img?.thumb_path_sm || img?.thumb_path || undefined;
         }
-        return subloc;
+
+        return {
+          ...subloc,
+          hero_thumb_path: heroPath,
+          asset_count: assetCount,
+        };
       })
     );
 
-    return results;
+    // Sort: primary first, then by asset count descending
+    return sublocsWithAssets.sort((a, b) => {
+      // Primary always first
+      if (a.is_primary && !b.is_primary) return -1;
+      if (!a.is_primary && b.is_primary) return 1;
+      // Then by asset count descending
+      return (b.asset_count || 0) - (a.asset_count || 0);
+    });
   }
 
   /**
@@ -438,6 +481,9 @@ export class SQLiteSubLocationRepository {
       gps_source: row.gps_source || null,
       gps_verified_on_map: row.gps_verified_on_map === 1,
       gps_captured_at: row.gps_captured_at || null,
+      // Migration 32: AKA and historical name
+      akanam: row.akanam || null,
+      historicalName: row.historicalName || null,
     };
   }
 

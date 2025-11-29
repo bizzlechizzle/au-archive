@@ -1115,6 +1115,68 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 31 completed: GPS columns added to slocs');
     }
+
+    // Migration 32: Add akanam and historicalName columns to slocs table
+    // Per sub-location edit form: Buildings can have their own AKA and historical names
+    const slocsColsForAka = sqlite.prepare('PRAGMA table_info(slocs)').all() as Array<{ name: string }>;
+    const slocsHasAkanam = slocsColsForAka.some(col => col.name === 'akanam');
+
+    if (!slocsHasAkanam) {
+      console.log('Running migration 32: Adding akanam and historicalName columns to slocs');
+
+      sqlite.exec(`
+        ALTER TABLE slocs ADD COLUMN akanam TEXT;
+        ALTER TABLE slocs ADD COLUMN historicalName TEXT;
+      `);
+
+      console.log('Migration 32 completed: akanam and historicalName columns added to slocs');
+    }
+
+    // Migration 33: Add view_count and last_viewed_at columns to locs table
+    // For Nerd Stats: Track how many times a location has been viewed
+    const locsColsForViews = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const locsHasViewCount = locsColsForViews.some(col => col.name === 'view_count');
+
+    if (!locsHasViewCount) {
+      console.log('Running migration 33: Adding view_count and last_viewed_at columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN view_count INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN last_viewed_at TEXT;
+      `);
+
+      console.log('Migration 33 completed: view_count and last_viewed_at columns added to locs');
+    }
+
+    // Migration 34: Create location_views table for per-user view tracking
+    // Tracks who viewed what location and when, for analytics and future features
+    const locationViewsExists = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='location_views'"
+    ).get();
+
+    if (!locationViewsExists) {
+      console.log('Running migration 34: Creating location_views table');
+
+      sqlite.exec(`
+        CREATE TABLE location_views (
+          view_id TEXT PRIMARY KEY,
+          locid TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          viewed_at TEXT NOT NULL,
+          FOREIGN KEY (locid) REFERENCES locs(locid) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        -- Index for efficient queries by location and user
+        CREATE INDEX idx_location_views_locid ON location_views(locid);
+        CREATE INDEX idx_location_views_user_id ON location_views(user_id);
+        CREATE INDEX idx_location_views_viewed_at ON location_views(viewed_at);
+        -- Composite index for checking if user already viewed today
+        CREATE INDEX idx_location_views_locid_user_date ON location_views(locid, user_id, viewed_at);
+      `);
+
+      console.log('Migration 34 completed: location_views table created');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

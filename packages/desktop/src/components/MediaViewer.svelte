@@ -241,9 +241,17 @@
     pendingFocalY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
   }
 
+  // Preview click: start drag and update position
   function handleFocalMouseDown(e: MouseEvent) {
     isDraggingFocal = true;
     updateFocalFromEvent(e);
+  }
+
+  // Pin grab: start drag without updating position (grab where pin is)
+  function handlePinMouseDown(e: MouseEvent) {
+    e.stopPropagation(); // Don't trigger preview mousedown
+    e.preventDefault();
+    isDraggingFocal = true;
   }
 
   function handleFocalMouseMove(e: MouseEvent) {
@@ -253,6 +261,17 @@
   }
 
   function handleFocalMouseUp() {
+    isDraggingFocal = false;
+  }
+
+  // Global mouse tracking for smooth drag outside preview bounds
+  function handleGlobalMouseMove(e: MouseEvent) {
+    if (isDraggingFocal && focalPreviewEl) {
+      updateFocalFromEvent(e);
+    }
+  }
+
+  function handleGlobalMouseUp() {
     isDraggingFocal = false;
   }
 
@@ -272,6 +291,13 @@
   function cancelFocalEdit() {
     settingHeroFor = null;
     isEditingFocal = false;
+  }
+
+  // Handle escape key in focal editor
+  function handleFocalKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      cancelFocalEdit();
+    }
   }
 
   // Helper: Format file size
@@ -464,80 +490,11 @@
           <div class="text-red-500 text-sm">{metadataError}</div>
         {:else}
           <!-- Hero Image Section (Images only) -->
-          <!-- Issue 6: Fixed min-height to prevent layout jump when toggling edit mode -->
           {#if canBeHero && onSetHeroImage}
-            <div class="pb-4 mb-4 border-b border-gray-200 min-h-[200px]">
+            <div class="pb-4 mb-4 border-b border-gray-200">
               <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Hero Image</div>
 
-              {#if isEditingFocal}
-                <!-- Focal Point Editor -->
-                <div class="space-y-3">
-                  <p class="text-xs text-gray-500">Click or drag to set the focal point for hero crop</p>
-
-                  <!-- Preview with gradient simulation - supports drag to adjust -->
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <div
-                    bind:this={focalPreviewEl}
-                    class="relative w-full aspect-[2.35/1] bg-gray-100 rounded-lg overflow-hidden cursor-crosshair select-none"
-                    onmousedown={handleFocalMouseDown}
-                    onmousemove={handleFocalMouseMove}
-                    onmouseup={handleFocalMouseUp}
-                    onmouseleave={handleFocalMouseUp}
-                  >
-                    <img
-                      src={imageSrc()}
-                      alt="Hero preview"
-                      class="w-full h-full object-cover"
-                      style="object-position: {pendingFocalX * 100}% {pendingFocalY * 100}%;"
-                    />
-                    <!-- Gradient overlay simulation -->
-                    <div
-                      class="absolute bottom-0 left-0 right-0 h-[80%] pointer-events-none"
-                      style="background: linear-gradient(to top,
-                        #fffbf7 0%,
-                        #fffbf7 12.5%,
-                        rgba(255,251,247,0.95) 20%,
-                        rgba(255,251,247,0.82) 30%,
-                        rgba(255,251,247,0.62) 42%,
-                        rgba(255,251,247,0.40) 54%,
-                        rgba(255,251,247,0.22) 66%,
-                        rgba(255,251,247,0.10) 78%,
-                        rgba(255,251,247,0.03) 90%,
-                        transparent 100%
-                      );"
-                    ></div>
-                    <!-- Focal point indicator -->
-                    <div
-                      class="absolute w-6 h-6 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10"
-                      style="left: {pendingFocalX * 100}%; top: {pendingFocalY * 100}%;"
-                    >
-                      <div class="absolute inset-0 rounded-full border-2 border-white shadow-lg"></div>
-                      <div class="absolute inset-1 rounded-full bg-accent/80"></div>
-                    </div>
-                  </div>
-
-                  <div class="flex gap-2">
-                    <button
-                      onclick={cancelFocalEdit}
-                      class="flex-1 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onclick={saveFocalEdit}
-                      class="flex-1 px-3 py-2 text-sm bg-accent text-white hover:bg-accent/90 rounded-lg transition"
-                    >
-                      {#if isCurrentHero}
-                        Save Position
-                      {:else if settingHeroFor === 'campus'}
-                        Set as Campus Hero
-                      {:else}
-                        Set as Building Hero
-                      {/if}
-                    </button>
-                  </div>
-                </div>
-              {:else}
+              {#if !isEditingFocal}
                 <!-- Issue 6 & 7: Hero Preview + Action Buttons -->
                 <div class="space-y-3">
                   <!-- Preview thumbnail with current focal point -->
@@ -886,6 +843,108 @@
             {/if}
           </div>
         {/if}
+      </div>
+    </div>
+  {/if}
+
+  <!-- Focal Point Editor Modal (large overlay) -->
+  {#if isEditingFocal && currentMedia}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-8"
+      onmousemove={handleGlobalMouseMove}
+      onmouseup={handleGlobalMouseUp}
+      onkeydown={handleFocalKeydown}
+    >
+      <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-gray-200">
+          <h3 class="text-lg font-semibold text-gray-900">Set Hero Focal Point</h3>
+          <p class="text-sm text-gray-500 mt-1">Drag the pin to set the center of the hero crop</p>
+        </div>
+
+        <!-- Large Preview (matches hero constraints) -->
+        <div class="p-6 flex-1 overflow-hidden">
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            bind:this={focalPreviewEl}
+            class="relative w-full max-h-[40vh] mx-auto rounded-lg overflow-hidden cursor-crosshair select-none bg-gray-100"
+            style="aspect-ratio: 2.35 / 1;"
+            onmousedown={handleFocalMouseDown}
+            onmousemove={handleFocalMouseMove}
+            onmouseup={handleFocalMouseUp}
+          >
+            <img
+              src={imageSrc()}
+              alt="Hero preview"
+              class="absolute inset-0 w-full h-full object-cover"
+              style="object-position: {pendingFocalX * 100}% {pendingFocalY * 100}%;"
+            />
+            <!-- Gradient overlay (identical to LocationHero) -->
+            <div
+              class="absolute bottom-0 left-0 right-0 h-[80%] pointer-events-none"
+              style="background: linear-gradient(to top,
+                #fffbf7 0%,
+                #fffbf7 12.5%,
+                rgba(255,251,247,0.95) 20%,
+                rgba(255,251,247,0.82) 30%,
+                rgba(255,251,247,0.62) 42%,
+                rgba(255,251,247,0.40) 54%,
+                rgba(255,251,247,0.22) 66%,
+                rgba(255,251,247,0.10) 78%,
+                rgba(255,251,247,0.03) 90%,
+                transparent 100%
+              );"
+            ></div>
+            <!-- Draggable focal point pin -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="absolute w-10 h-10 -translate-x-1/2 -translate-y-1/2 z-10 cursor-grab active:cursor-grabbing"
+              style="left: {pendingFocalX * 100}%; top: {pendingFocalY * 100}%;"
+              onmousedown={handlePinMouseDown}
+              role="slider"
+              aria-label="Focal point position"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(pendingFocalX * 100)}
+              tabindex="0"
+            >
+              <!-- Outer ring -->
+              <div class="absolute inset-0 rounded-full border-3 border-white shadow-lg" style="box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 0 0 2px rgba(0,0,0,0.1);"></div>
+              <!-- Inner circle -->
+              <div class="absolute inset-2 rounded-full bg-accent shadow-inner"></div>
+              <!-- Crosshair -->
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-px h-4 bg-white/80"></div>
+              </div>
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-4 h-px bg-white/80"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex items-center justify-end gap-3">
+          <button
+            onclick={cancelFocalEdit}
+            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+          >
+            Cancel
+          </button>
+          <button
+            onclick={saveFocalEdit}
+            class="px-5 py-2 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 transition"
+          >
+            {#if isCurrentHero}
+              Save Position
+            {:else if settingHeroFor === 'campus'}
+              Set as Campus Hero
+            {:else}
+              Set as Hero Image
+            {/if}
+          </button>
+        </div>
       </div>
     </div>
   {/if}

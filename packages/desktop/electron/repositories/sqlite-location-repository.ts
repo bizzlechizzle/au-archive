@@ -558,6 +558,9 @@ export class SQLiteLocationRepository implements LocationRepository {
       // Migration 22: Hero focal point fields
       hero_focal_x: row.hero_focal_x ?? 0.5,
       hero_focal_y: row.hero_focal_y ?? 0.5,
+      // Migration 33: View tracking for Nerd Stats
+      viewCount: row.view_count ?? 0,
+      lastViewedAt: row.last_viewed_at ?? undefined,
     };
   }
 
@@ -651,5 +654,33 @@ export class SQLiteLocationRepository implements LocationRepository {
     }
 
     return { updated, total: rows.length };
+  }
+
+  /**
+   * Migration 33: Track location views for Nerd Stats
+   * Increments view_count and updates last_viewed_at timestamp
+   * @param locid Location ID to track
+   * @returns Updated view count
+   */
+  async trackView(locid: string): Promise<number> {
+    const now = new Date().toISOString();
+
+    await this.db
+      .updateTable('locs')
+      .set((eb) => ({
+        view_count: eb('view_count', '+', 1),
+        last_viewed_at: now,
+      }))
+      .where('locid', '=', locid)
+      .execute();
+
+    // Get the updated count
+    const result = await this.db
+      .selectFrom('locs')
+      .select('view_count')
+      .where('locid', '=', locid)
+      .executeTakeFirst();
+
+    return result?.view_count ?? 0;
   }
 }

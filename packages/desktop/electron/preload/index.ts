@@ -77,6 +77,33 @@ const api = {
       ipcRenderer.invoke('location:getDistinctTypes'),
     getDistinctSubTypes: (): Promise<string[]> =>
       ipcRenderer.invoke('location:getDistinctSubTypes'),
+    // Migration 34: Track location views with per-user tracking
+    trackView: (id: string): Promise<number> =>
+      ipcRenderer.invoke('location:trackView', id),
+    // Migration 34: Get view statistics for a location
+    getViewStats: (id: string): Promise<{
+      totalViews: number;
+      uniqueViewers: number;
+      lastViewedAt: string | null;
+      recentViewers: Array<{
+        user_id: string;
+        username: string;
+        display_name: string | null;
+        view_count: number;
+        last_viewed_at: string;
+      }>;
+    }> =>
+      ipcRenderer.invoke('location:getViewStats', id),
+    // Migration 34: Get view history for a location
+    getViewHistory: (id: string, limit?: number): Promise<Array<{
+      view_id: string;
+      locid: string;
+      user_id: string;
+      username?: string;
+      display_name?: string;
+      viewed_at: string;
+    }>> =>
+      ipcRenderer.invoke('location:getViewHistory', id, limit),
   },
 
   stats: {
@@ -459,6 +486,8 @@ const api = {
       created_by: string | null;
       modified_date: string | null;
       modified_by: string | null;
+      akanam: string | null;
+      historicalName: string | null;
     } | null> =>
       ipcRenderer.invoke('sublocation:findById', subid),
     findByLocation: (locid: string): Promise<Array<{
@@ -475,6 +504,8 @@ const api = {
       created_by: string | null;
       modified_date: string | null;
       modified_by: string | null;
+      akanam: string | null;
+      historicalName: string | null;
     }>> =>
       ipcRenderer.invoke('sublocation:findByLocation', locid),
     findWithHeroImages: (locid: string): Promise<Array<{
@@ -492,6 +523,8 @@ const api = {
       modified_date: string | null;
       modified_by: string | null;
       hero_thumb_path?: string;
+      akanam: string | null;
+      historicalName: string | null;
     }>> =>
       ipcRenderer.invoke('sublocation:findWithHeroImages', locid),
     update: (subid: string, updates: {
@@ -502,6 +535,8 @@ const api = {
       hero_imgsha?: string | null;
       is_primary?: boolean;
       modified_by?: string | null;
+      akanam?: string | null;
+      historicalName?: string | null;
     }): Promise<{
       subid: string;
       sub12: string;
@@ -516,6 +551,8 @@ const api = {
       created_by: string | null;
       modified_date: string | null;
       modified_by: string | null;
+      akanam: string | null;
+      historicalName: string | null;
     } | null> =>
       ipcRenderer.invoke('sublocation:update', subid, updates),
     delete: (subid: string): Promise<void> =>

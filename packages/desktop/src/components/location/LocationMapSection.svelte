@@ -24,6 +24,16 @@
     gps_source: string | null;
   }
 
+  /**
+   * Campus map: Sub-location with GPS for campus mini map
+   */
+  interface CampusSubLocation {
+    subid: string;
+    subnam: string;
+    gps_lat: number;
+    gps_lng: number;
+  }
+
   interface Props {
     location: Location;
     onSave: (updates: Partial<LocationInput>, addressVerified: boolean, gpsVerified: boolean, culturalRegion: string | null) => Promise<void>;
@@ -34,9 +44,13 @@
     subLocation?: SubLocationGps | null;
     /** Migration 31: Callback to save sub-location GPS */
     onSubLocationGpsSave?: (lat: number, lng: number) => Promise<void>;
+    /** Campus map: Sub-locations with GPS to show on mini map */
+    campusSubLocations?: CampusSubLocation[];
+    /** Campus map: Callback when clicking a sub-location marker */
+    onCampusSubLocationClick?: (subid: string) => void;
   }
 
-  let { location, onSave, onNavigateFilter, isHostLocation = false, subLocation = null, onSubLocationGpsSave }: Props = $props();
+  let { location, onSave, onNavigateFilter, isHostLocation = false, subLocation = null, onSubLocationGpsSave, campusSubLocations = [], onCampusSubLocationClick }: Props = $props();
 
   // Edit modal state
   let showEditModal = $state(false);
@@ -239,9 +253,7 @@
 <div class="bg-white rounded-lg shadow-md">
   <!-- Header: Location with verification status and edit button (DECISION-013: No border) -->
   <div class="flex items-start justify-between px-8 pt-6 pb-4">
-    <h2 class="text-2xl font-semibold text-foreground leading-none">
-      {subLocation ? 'Building GPS' : 'Location'}
-    </h2>
+    <h2 class="text-2xl font-semibold text-foreground leading-none">Location</h2>
     <button
       onclick={handleEditClick}
       class="text-sm text-accent hover:underline leading-none mt-1"
@@ -326,15 +338,19 @@
   </div>
 
   <!-- SECTION 3: Mini Map (full width, smaller) -->
+  <!-- Campus map shows host location + all sub-locations with GPS -->
   <div class="px-8 mt-5">
     <div class="relative rounded-lg overflow-hidden border border-gray-200 group" style="aspect-ratio: 2 / 1;">
       <Map
         locations={[mapLocation]}
         zoom={mapZoom}
         limitedInteraction={true}
+        allowFullZoomIn={campusSubLocations.length > 0}
         hideAttribution={true}
         defaultLayer="satellite-labels"
         extraZoomOut={isHostLocation}
+        {campusSubLocations}
+        {onCampusSubLocationClick}
       />
 
       <!-- Expand to Atlas button -->

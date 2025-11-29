@@ -83,6 +83,9 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
         hero_imgsha: z.string().nullable().optional(),
         is_primary: z.boolean().optional(),
         modified_by: z.string().nullable().optional(),
+        // Migration 32: AKA and historical name
+        akanam: z.string().nullable().optional(),
+        historicalName: z.string().nullable().optional(),
       });
       const validatedUpdates = UpdateSchema.parse(updates);
       return await sublocRepo.update(validatedId, validatedUpdates);
