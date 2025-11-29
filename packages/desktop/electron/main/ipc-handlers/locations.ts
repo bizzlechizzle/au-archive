@@ -462,5 +462,29 @@ export function registerLocationHandlers(db: Kysely<Database>) {
     }
   });
 
+  /**
+   * Dashboard: Find recently viewed locations with hero thumbnails
+   */
+  ipcMain.handle('location:findRecentlyViewed', async (_event, limit?: number) => {
+    try {
+      return await locationRepo.findRecentlyViewed(limit ?? 5);
+    } catch (error) {
+      console.error('Error finding recently viewed locations:', error);
+      throw error;
+    }
+  });
+
+  /**
+   * Dashboard: Find project locations with hero thumbnails
+   */
+  ipcMain.handle('location:findProjects', async (_event, limit?: number) => {
+    try {
+      return await locationRepo.findProjects(limit ?? 5);
+    } catch (error) {
+      console.error('Error finding project locations:', error);
+      throw error;
+    }
+  });
+
   return locationRepo;
 }

@@ -57,11 +57,22 @@ const api = {
     // Autocomplete helpers for Type/Sub-Type
     getDistinctTypes: () => ipcRenderer.invoke("location:getDistinctTypes"),
     getDistinctSubTypes: () => ipcRenderer.invoke("location:getDistinctSubTypes"),
+    // Migration 34: View tracking
+    trackView: (id) => ipcRenderer.invoke("location:trackView", id),
+    getViewStats: (id) => ipcRenderer.invoke("location:getViewStats", id),
+    getViewHistory: (id, limit) => ipcRenderer.invoke("location:getViewHistory", id, limit),
+    // Dashboard: Recently viewed locations with hero thumbnails
+    findRecentlyViewed: (limit) => ipcRenderer.invoke("location:findRecentlyViewed", limit),
+    // Dashboard: Project locations with hero thumbnails
+    findProjects: (limit) => ipcRenderer.invoke("location:findProjects", limit),
   },
 
   stats: {
     topStates: (limit) => ipcRenderer.invoke("stats:topStates", limit),
     topTypes: (limit) => ipcRenderer.invoke("stats:topTypes", limit),
+    // Dashboard: Top types/states with hero thumbnails
+    topTypesWithHero: (limit) => ipcRenderer.invoke("stats:topTypesWithHero", limit),
+    topStatesWithHero: (limit) => ipcRenderer.invoke("stats:topStatesWithHero", limit),
   },
 
   settings: {

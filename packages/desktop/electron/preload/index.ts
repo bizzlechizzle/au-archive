@@ -104,6 +104,14 @@ const api = {
       viewed_at: string;
     }>> =>
       ipcRenderer.invoke('location:getViewHistory', id, limit),
+    // Dashboard: Recently viewed locations with hero thumbnails
+    findRecentlyViewed: (limit?: number): Promise<Array<{
+      locid: string;
+      locnam: string;
+      address?: { state?: string };
+      heroThumbPath?: string;
+    }>> =>
+      ipcRenderer.invoke('location:findRecentlyViewed', limit),
   },
 
   stats: {
@@ -111,6 +119,12 @@ const api = {
       ipcRenderer.invoke('stats:topStates', limit),
     topTypes: (limit?: number): Promise<Array<{ type: string; count: number }>> =>
       ipcRenderer.invoke('stats:topTypes', limit),
+    // Dashboard: Top types with hero thumbnails
+    topTypesWithHero: (limit?: number): Promise<Array<{ type: string; count: number; heroThumbPath?: string }>> =>
+      ipcRenderer.invoke('stats:topTypesWithHero', limit),
+    // Dashboard: Top states with hero thumbnails
+    topStatesWithHero: (limit?: number): Promise<Array<{ state: string; count: number; heroThumbPath?: string }>> =>
+      ipcRenderer.invoke('stats:topStatesWithHero', limit),
     // Migration 25 - Phase 4: Per-user stats
     userContributions: (userId: string): Promise<{
       locationsCreated: number;

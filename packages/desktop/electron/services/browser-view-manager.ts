@@ -1,4 +1,4 @@
-import { BrowserView, BrowserWindow, ipcMain, shell } from 'electron';
+import { BrowserView, BrowserWindow, ipcMain, shell, session } from 'electron';
 
 /**
  * BrowserViewManager - Manages an embedded browser view for the application.
@@ -136,6 +136,9 @@ export class BrowserViewManager {
   }
 
   private createBrowserView(): void {
+    // Use isolated session partition to prevent conflicts with main window
+    const browserPartition = 'persist:browser';
+
     this.browserView = new BrowserView({
       webPreferences: {
         nodeIntegration: false,
@@ -144,13 +147,34 @@ export class BrowserViewManager {
         // Disable features that could be security risks
         webviewTag: false,
         allowRunningInsecureContent: false,
+        // Isolated session prevents cookie/state conflicts with main app
+        partition: browserPartition,
       },
     });
 
-    // FIX: Set user agent to a standard Chrome user agent
-    // Cloudflare may block Electron's default user agent causing 522 errors
-    const chromeUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    // FIX: Set user agent to current Chrome on macOS
+    // Cloudflare and other services check User-Agent for bot detection
+    const chromeUserAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
     this.browserView.webContents.setUserAgent(chromeUserAgent);
+
+    // FIX: Add Client Hints and Accept headers to mimic real Chrome browser
+    // Cloudflare's bot detection checks for these headers
+    const browserSession = session.fromPartition(browserPartition);
+    browserSession.webRequest.onBeforeSendHeaders((details, callback) => {
+      const headers = details.requestHeaders;
+      // Client Hints - Modern Chrome sends these
+      headers['sec-ch-ua'] = '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"';
+      headers['sec-ch-ua-mobile'] = '?0';
+      headers['sec-ch-ua-platform'] = '"macOS"';
+      // Standard Accept headers
+      if (!headers['Accept-Language']) {
+        headers['Accept-Language'] = 'en-US,en;q=0.9';
+      }
+      if (!headers['Accept']) {
+        headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8';
+      }
+      callback({ requestHeaders: headers });
+    });
 
     // Forward navigation events to renderer
     this.browserView.webContents.on('did-navigate', (_event, url) => {

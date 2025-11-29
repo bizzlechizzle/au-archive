@@ -570,7 +570,10 @@
 
 <div class="p-8">
   <div class="mb-8">
-    <h1 class="text-3xl font-bold text-foreground mb-2">Settings</h1>
+    <div class="flex items-baseline justify-between">
+      <h1 class="text-3xl font-bold text-foreground mb-2">Settings</h1>
+      <span class="text-sm text-gray-400">v0.1.0</span>
+    </div>
     <p class="text-gray-600">Configure application preferences</p>
   </div>
 

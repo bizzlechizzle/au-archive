@@ -683,4 +683,70 @@ export class SQLiteLocationRepository implements LocationRepository {
 
     return result?.view_count ?? 0;
   }
+
+  /**
+   * Find project locations (project flag set) with hero thumbnails for dashboard
+   */
+  async findProjects(limit: number = 5): Promise<Array<Location & { heroThumbPath?: string }>> {
+    const rows = await this.db
+      .selectFrom('locs')
+      .selectAll()
+      .where('project', '=', 1)
+      .orderBy('locup', 'desc')
+      .limit(limit)
+      .execute();
+
+    const results: Array<Location & { heroThumbPath?: string }> = [];
+    for (const row of rows) {
+      let heroThumbPath: string | undefined;
+      if (row.hero_imgsha) {
+        const img = await this.db
+          .selectFrom('imgs')
+          .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
+          .where('imgsha', '=', row.hero_imgsha)
+          .executeTakeFirst();
+        heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
+      }
+      results.push({
+        ...this.mapRowToLocation(row),
+        heroThumbPath,
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Find recently viewed locations ordered by last_viewed_at
+   * Returns locations with hero thumbnail path for dashboard display
+   */
+  async findRecentlyViewed(limit: number = 5): Promise<Array<Location & { heroThumbPath?: string }>> {
+    const rows = await this.db
+      .selectFrom('locs')
+      .selectAll()
+      .where('last_viewed_at', 'is not', null)
+      .orderBy('last_viewed_at', 'desc')
+      .limit(limit)
+      .execute();
+
+    // Get hero thumbnail paths for each location
+    const results: Array<Location & { heroThumbPath?: string }> = [];
+    for (const row of rows) {
+      let heroThumbPath: string | undefined;
+      if (row.hero_imgsha) {
+        const img = await this.db
+          .selectFrom('imgs')
+          .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
+          .where('imgsha', '=', row.hero_imgsha)
+          .executeTakeFirst();
+        heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
+      }
+      results.push({
+        ...this.mapRowToLocation(row),
+        heroThumbPath,
+      });
+    }
+
+    return results;
+  }
 }

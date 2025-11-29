@@ -15,6 +15,8 @@ export interface ImportRecord {
   // Joined location data
   locnam?: string;
   address_state?: string;
+  // Hero thumbnail for dashboard display
+  heroThumbPath?: string;
 }
 
 export interface ImportInput {
@@ -82,11 +84,33 @@ export class SQLiteImportRepository {
         (eb) => eb.fn.max('imports.notes').as('notes'),
         'locs.locnam',
         'locs.address_state',
+        'locs.hero_imgsha',
       ])
-      .groupBy(['imports.locid', 'locs.locnam', 'locs.address_state'])
+      .groupBy(['imports.locid', 'locs.locnam', 'locs.address_state', 'locs.hero_imgsha'])
       .orderBy('import_date', 'desc')
       .limit(limit)
       .execute();
+
+    // Get hero thumbnail paths for each unique hero_imgsha
+    const heroShas = rows
+      .map(r => (r as any).hero_imgsha)
+      .filter((sha): sha is string => !!sha);
+
+    const thumbMap = new Map<string, string>();
+    if (heroShas.length > 0) {
+      const thumbRows = await this.db
+        .selectFrom('imgs')
+        .select(['imgsha', 'thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
+        .where('imgsha', 'in', heroShas)
+        .execute();
+
+      for (const thumb of thumbRows) {
+        const path = thumb.thumb_path_sm || thumb.thumb_path_lg || thumb.thumb_path;
+        if (path) {
+          thumbMap.set(thumb.imgsha, path);
+        }
+      }
+    }
 
     // Map to ensure proper types
     return rows.map(row => ({
@@ -101,6 +125,7 @@ export class SQLiteImportRepository {
       notes: row.notes as string | null,
       locnam: row.locnam ?? undefined,
       address_state: row.address_state ?? undefined,
+      heroThumbPath: (row as any).hero_imgsha ? thumbMap.get((row as any).hero_imgsha) : undefined,
     }));
   }
 

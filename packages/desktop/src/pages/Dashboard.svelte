@@ -1,19 +1,17 @@
 <script lang="ts">
   /**
-   * Dashboard.svelte - Main dashboard per page_dashboard.md spec
+   * Dashboard.svelte - Main dashboard
    *
-   * Per spec:
-   * - projects - recents (means pinned/favorites and recents sections)
-   * - imports (show top 5 recent imports)
-   * - recents (show top 5 recently interacted with)
-   * - states - types (show top 5 states and types by locations)
-   * - recents rows/buttons: favorites, random, un-documented, historical
+   * Layout:
+   * - Projects (pinned/favorite locations)
+   * - Stats row (centered below Projects)
+   * - Recent Locations / Recent Imports (2-col)
+   * - Top Type / Top State (2-col, no thumbnails)
    */
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
-  import { importStore, isImporting, importProgress, recentImports as storeRecentImports } from '../stores/import-store';
-  import { openImportModal } from '../stores/import-modal-store';
-  import type { Location } from '@au-archive/core';
+  import { isImporting, importProgress, recentImports as storeRecentImports } from '../stores/import-store';
+  import { thumbnailCache } from '../stores/thumbnail-cache-store';
 
   interface ImportRecord {
     import_id: string;
@@ -27,72 +25,122 @@
     notes: string | null;
     locnam?: string;
     address_state?: string;
+    heroThumbPath?: string;
   }
 
-  let recentLocations = $state<Location[]>([]);
+  interface LocationWithHero {
+    locid: string;
+    locnam: string;
+    address?: { state?: string };
+    heroThumbPath?: string;
+  }
+
+  interface TypeStat {
+    type: string;
+    count: number;
+  }
+
+  interface StateStat {
+    state: string;
+    count: number;
+  }
+
+  // Stats
+  let totalLocations = $state(0);
+  let totalImages = $state(0);
+  let totalVideos = $state(0);
+  let totalDocuments = $state(0);
+  let totalBookmarks = $state(0);
+
+  // Sections
+  let projects = $state<LocationWithHero[]>([]);
+  let recentLocations = $state<LocationWithHero[]>([]);
   let recentImports = $state<ImportRecord[]>([]);
-  // Per spec: "projects" means pinned/favorite items
-  let pinnedLocations = $state<Location[]>([]);
-  let topStates = $state<Array<{ state: string; count: number }>>([]);
-  let topTypes = $state<Array<{ type: string; count: number }>>([]);
-  let totalCount = $state(0);
+  let topTypes = $state<TypeStat[]>([]);
+  let topStates = $state<StateStat[]>([]);
+
   let loading = $state(true);
 
-  // Removed duplicate location form - Dashboard "New Location" navigates to /imports
+  // Cache version for busting browser cache after thumbnail regeneration
+  const cacheVersion = $derived($thumbnailCache);
 
   onMount(async () => {
-    try {
-      if (!window.electronAPI?.locations) {
-        console.error('Electron API not available - preload script may have failed to load');
-        return;
-      }
-      // Per spec: projects means favorites/pinned, not a separate projects entity
-      const [locations, imports, favorites, states, types, count] = await Promise.all([
-        window.electronAPI.locations.findAll(),
-        window.electronAPI.imports.findRecent(5) as Promise<ImportRecord[]>,
-        window.electronAPI.locations.favorites(),
-        window.electronAPI.stats.topStates(5),
-        window.electronAPI.stats.topTypes(5),
-        window.electronAPI.locations.count(),
-      ]);
-
-      recentLocations = locations.slice(0, 5);
-      recentImports = imports;
-      pinnedLocations = favorites.slice(0, 5);
-      topStates = states;
-      topTypes = types;
-      totalCount = count;
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-    } finally {
+    if (!window.electronAPI?.locations) {
+      console.error('Electron API not available');
       loading = false;
+      return;
     }
+
+    // Fetch each section independently so one failure doesn't blank the whole dashboard
+    try {
+      totalLocations = await window.electronAPI.locations.count();
+    } catch (e) {
+      console.error('Failed to load location count:', e);
+    }
+
+    try {
+      const mediaCounts = await window.electronAPI.imports.getTotalMediaCount();
+      totalImages = mediaCounts.images;
+      totalVideos = mediaCounts.videos;
+      totalDocuments = mediaCounts.documents;
+    } catch (e) {
+      console.error('Failed to load media counts:', e);
+    }
+
+    try {
+      totalBookmarks = await window.electronAPI.bookmarks.count();
+    } catch (e) {
+      console.error('Failed to load bookmark count:', e);
+    }
+
+    try {
+      // Projects = locations with project flag set, includes hero thumbnails
+      projects = await window.electronAPI.locations.findProjects(5);
+    } catch (e) {
+      console.error('Failed to load projects:', e);
+    }
+
+    try {
+      recentLocations = await window.electronAPI.locations.findRecentlyViewed(5);
+    } catch (e) {
+      console.error('Failed to load recent locations:', e);
+    }
+
+    try {
+      recentImports = await window.electronAPI.imports.findRecent(5) as ImportRecord[];
+    } catch (e) {
+      console.error('Failed to load recent imports:', e);
+    }
+
+    try {
+      topTypes = await window.electronAPI.stats.topTypes(5);
+    } catch (e) {
+      console.error('Failed to load top types:', e);
+    }
+
+    try {
+      topStates = await window.electronAPI.stats.topStates(5);
+    } catch (e) {
+      console.error('Failed to load top states:', e);
+    }
+
+    loading = false;
   });
 
   function formatDate(isoDate: string): string {
     const date = new Date(isoDate);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 </script>
 
 <div class="p-8">
-  <!-- Header with Add Location button on the right -->
-  <div class="flex justify-between items-center mb-8">
-    <h1 class="text-3xl font-bold text-foreground">Dashboard</h1>
-    <button
-      onclick={() => openImportModal()}
-      class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
-    >
-      + New Location
-    </button>
-  </div>
+  <h1 class="text-3xl font-bold text-foreground mb-6">Dashboard</h1>
 
   {#if loading}
     <div class="text-center py-12">
       <p class="text-gray-500">Loading...</p>
     </div>
   {:else}
-
     <!-- Active Import Status -->
     {#if $isImporting && $importProgress}
       <div class="mb-6">
@@ -121,13 +169,13 @@
             ></div>
           </div>
           <p class="text-xs text-gray-500 mt-2">
-            {$importProgress.percent}% complete - You can continue using the app
+            {$importProgress.percent}% complete
           </p>
         </div>
       </div>
     {/if}
 
-    <!-- Recent Background Imports (from store) -->
+    <!-- Recent Background Imports -->
     {#if $storeRecentImports.length > 0}
       <div class="mb-6">
         <div class="bg-white rounded-lg shadow p-6">
@@ -157,217 +205,190 @@
       </div>
     {/if}
 
-    <!-- Row 2: Pinned (full width) -->
+    <!-- Projects (Pinned Locations) -->
     <div class="mb-6">
       <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-start mb-3">
-          <div>
-            <h3 class="text-lg font-semibold text-foreground">Pinned Locations</h3>
-            <p class="text-gray-500 text-sm">Your favorite locations</p>
-          </div>
-          <button onclick={() => router.navigate('/locations', undefined, { filter: 'favorites' })} class="text-xs text-accent hover:underline">
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-lg font-semibold text-foreground">Projects</h3>
+          <button onclick={() => router.navigate('/locations', undefined, { project: true })} class="text-xs text-accent hover:underline">
             show all
           </button>
         </div>
-        {#if pinnedLocations.length > 0}
-          <div class="flex flex-wrap gap-3">
-            {#each pinnedLocations as location}
+        {#if projects.length > 0}
+          <div class="space-y-3">
+            {#each projects as location}
               <button
                 onclick={() => router.navigate(`/location/${location.locid}`)}
-                class="px-3 py-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition text-left"
+                class="flex items-center gap-4 w-full text-left px-3 py-3 rounded-lg hover:bg-gray-50 transition"
               >
-                <span class="text-sm text-accent font-medium">{location.locnam}</span>
-                {#if location.address?.state}
-                  <span class="text-xs text-gray-400 ml-2">{location.address.state}</span>
-                {/if}
+                <div class="w-32 h-20 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
+                  {#if location.heroThumbPath}
+                    <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" />
+                  {/if}
+                </div>
+                <div class="min-w-0">
+                  <span class="text-base text-accent font-medium truncate block">{location.locnam}</span>
+                  {#if location.address?.state}
+                    <span class="text-sm text-gray-400">{location.address.state}</span>
+                  {/if}
+                </div>
               </button>
             {/each}
           </div>
         {:else}
-          <p class="text-sm text-gray-400">No pinned locations yet. Star locations to see them here.</p>
+          <p class="text-sm text-gray-400">No pinned locations yet</p>
         {/if}
       </div>
     </div>
 
-    <!-- Row 3: Recent Imports + Recent Locations -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <!-- Recent Imports -->
-      <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-start mb-3">
-          <div>
-            <h3 class="text-lg font-semibold text-foreground">Recent Imports</h3>
-            <p class="text-gray-500 text-sm">Latest media imports</p>
-          </div>
-          <button onclick={() => router.navigate('/imports')} class="text-xs text-accent hover:underline">
-            show all
-          </button>
-        </div>
-        {#if recentImports.length > 0}
-          <ul class="space-y-2">
-            {#each recentImports as importRecord}
-              <li class="text-sm">
-                {#if importRecord.locid && importRecord.locnam}
-                  <button
-                    onclick={() => router.navigate(`/location/${importRecord.locid}`)}
-                    class="text-accent hover:underline"
-                  >
-                    {importRecord.locnam}
-                  </button>
-                {:else}
-                  <span class="text-gray-600">Import #{importRecord.import_id.slice(0, 8)}</span>
-                {/if}
-                <div class="text-xs text-gray-400 mt-1">
-                  <span>{formatDate(importRecord.import_date)}</span>
-                  {#if importRecord.img_count > 0}
-                    <span class="ml-2">{importRecord.img_count} img</span>
-                  {/if}
-                  {#if importRecord.vid_count > 0}
-                    <span class="ml-2">{importRecord.vid_count} vid</span>
-                  {/if}
-                  {#if importRecord.doc_count > 0}
-                    <span class="ml-2">{importRecord.doc_count} doc</span>
-                  {/if}
-                </div>
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <div class="text-center text-gray-400 py-4">
-            <p class="text-sm">No imports yet</p>
-            <button
-              onclick={() => router.navigate('/imports')}
-              class="mt-2 text-xs text-accent hover:underline"
-            >
-              Import Media
-            </button>
-          </div>
-        {/if}
+    <!-- Stats Row (centered below Projects) -->
+    <div class="flex justify-center gap-8 mb-8">
+      <div class="text-center">
+        <div class="text-2xl font-bold text-accent">{totalLocations}</div>
+        <div class="text-xs text-gray-500">locations</div>
       </div>
+      <div class="text-center">
+        <div class="text-2xl font-bold text-accent">{totalImages}</div>
+        <div class="text-xs text-gray-500">images</div>
+      </div>
+      <div class="text-center">
+        <div class="text-2xl font-bold text-accent">{totalVideos}</div>
+        <div class="text-xs text-gray-500">videos</div>
+      </div>
+      <div class="text-center">
+        <div class="text-2xl font-bold text-accent">{totalDocuments}</div>
+        <div class="text-xs text-gray-500">documents</div>
+      </div>
+      <div class="text-center">
+        <div class="text-2xl font-bold text-accent">{totalBookmarks}</div>
+        <div class="text-xs text-gray-500">bookmarks</div>
+      </div>
+    </div>
 
+    <!-- Recent Locations + Recent Imports -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
       <!-- Recent Locations -->
       <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-start mb-3">
-          <div>
-            <h3 class="text-lg font-semibold text-foreground">Recent Locations</h3>
-            <p class="text-gray-500 text-sm">Last 5 added</p>
-          </div>
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-lg font-semibold text-foreground">Recent Locations</h3>
           <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
             show all
           </button>
         </div>
         {#if recentLocations.length > 0}
-          <ul class="space-y-2">
+          <div class="space-y-3">
             {#each recentLocations as location}
-              <li class="text-sm">
-                <button
-                  onclick={() => router.navigate(`/location/${location.locid}`)}
-                  class="text-accent hover:underline"
-                >
-                  {location.locnam}
-                </button>
-                {#if location.address?.state}
-                  <span class="text-gray-400 text-xs ml-2">{location.address.state}</span>
-                {/if}
-              </li>
+              <button
+                onclick={() => router.navigate(`/location/${location.locid}`)}
+                class="flex items-center gap-4 w-full text-left px-2 py-2 rounded-lg hover:bg-gray-50 transition"
+              >
+                <div class="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
+                  {#if location.heroThumbPath}
+                    <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" />
+                  {/if}
+                </div>
+                <div class="min-w-0">
+                  <span class="text-sm text-accent font-medium truncate block">{location.locnam}</span>
+                  {#if location.address?.state}
+                    <span class="text-xs text-gray-400">{location.address.state}</span>
+                  {/if}
+                </div>
+              </button>
             {/each}
-          </ul>
-        {:else}
-          <div class="mt-4 text-center text-gray-400">
-            No locations yet
           </div>
+        {:else}
+          <p class="text-sm text-gray-400">No recent locations</p>
+        {/if}
+      </div>
+
+      <!-- Recent Imports -->
+      <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-lg font-semibold text-foreground">Recent Imports</h3>
+          <button onclick={() => router.navigate('/imports')} class="text-xs text-accent hover:underline">
+            show all
+          </button>
+        </div>
+        {#if recentImports.length > 0}
+          <div class="space-y-3">
+            {#each recentImports as importRecord}
+              <button
+                onclick={() => importRecord.locid && router.navigate(`/location/${importRecord.locid}`)}
+                class="flex items-center gap-4 w-full text-left px-2 py-2 rounded-lg hover:bg-gray-50 transition"
+                disabled={!importRecord.locid}
+              >
+                <div class="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center text-gray-400 text-lg font-medium">
+                  {#if importRecord.heroThumbPath}
+                    <img src={`media://${importRecord.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" />
+                  {:else}
+                    {importRecord.img_count + importRecord.vid_count + importRecord.doc_count}
+                  {/if}
+                </div>
+                <div class="min-w-0">
+                  <span class="text-sm text-accent font-medium truncate block">
+                    {importRecord.locnam || `Import #${importRecord.import_id.slice(0, 8)}`}
+                  </span>
+                  <span class="text-xs text-gray-400">{formatDate(importRecord.import_date)}</span>
+                </div>
+              </button>
+            {/each}
+          </div>
+        {:else}
+          <p class="text-sm text-gray-400">No imports yet</p>
         {/if}
       </div>
     </div>
 
-    <!-- Row 4: Top Types + Top States -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <!-- Top Types -->
+    <!-- Top Type + Top State (no thumbnails) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Top Type -->
       <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-start mb-3">
-          <div>
-            <h3 class="text-lg font-semibold text-foreground">Top Types</h3>
-            <p class="text-gray-500 text-sm">By location count</p>
-          </div>
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-lg font-semibold text-foreground">Top Type</h3>
           <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
             show all
           </button>
         </div>
         {#if topTypes.length > 0}
-          <ul class="space-y-2">
+          <div class="space-y-2">
             {#each topTypes as stat}
-              <li class="flex justify-between text-sm">
-                <button
-                  onclick={() => router.navigate('/locations', undefined, { type: stat.type })}
-                  class="text-accent hover:underline"
-                  title="View all {stat.type} locations"
-                >
-                  {stat.type}
-                </button>
-                <span class="text-gray-500">{stat.count}</span>
-              </li>
+              <button
+                onclick={() => router.navigate('/locations', undefined, { type: stat.type })}
+                class="flex items-center justify-between w-full text-left px-2 py-2 rounded hover:bg-gray-50 transition"
+              >
+                <span class="text-sm text-accent font-medium truncate">{stat.type}</span>
+                <span class="text-xs text-gray-500">{stat.count}</span>
+              </button>
             {/each}
-          </ul>
-        {:else}
-          <div class="mt-4 text-center text-gray-400">
-            No data yet
           </div>
+        {:else}
+          <p class="text-sm text-gray-400">No data yet</p>
         {/if}
       </div>
 
-      <!-- Top States -->
+      <!-- Top State -->
       <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-start mb-3">
-          <div>
-            <h3 class="text-lg font-semibold text-foreground">Top States</h3>
-            <p class="text-gray-500 text-sm">By location count</p>
-          </div>
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-lg font-semibold text-foreground">Top State</h3>
           <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
             show all
           </button>
         </div>
         {#if topStates.length > 0}
-          <ul class="space-y-2">
+          <div class="space-y-2">
             {#each topStates as stat}
-              <li class="flex justify-between text-sm">
-                <button
-                  onclick={() => router.navigate('/locations', undefined, { state: stat.state })}
-                  class="text-accent hover:underline"
-                  title="View all locations in {stat.state}"
-                >
-                  {stat.state}
-                </button>
-                <span class="text-gray-500">{stat.count}</span>
-              </li>
+              <button
+                onclick={() => router.navigate('/locations', undefined, { state: stat.state })}
+                class="flex items-center justify-between w-full text-left px-2 py-2 rounded hover:bg-gray-50 transition"
+              >
+                <span class="text-sm text-accent font-medium truncate">{stat.state}</span>
+                <span class="text-xs text-gray-500">{stat.count}</span>
+              </button>
             {/each}
-          </ul>
-        {:else}
-          <div class="mt-4 text-center text-gray-400">
-            No data yet
           </div>
+        {:else}
+          <p class="text-sm text-gray-400">No data yet</p>
         {/if}
-      </div>
-    </div>
-
-    <!-- Stats Box -->
-    <div class="bg-white rounded-lg shadow p-6">
-      <h2 class="text-xl font-semibold mb-3 text-foreground">Archive Stats</h2>
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
-        <div class="text-center">
-          <div class="text-3xl font-bold text-accent">{totalCount}</div>
-          <div class="text-sm text-gray-500">Total Locations</div>
-        </div>
-        <div class="text-center">
-          <div class="text-3xl font-bold text-accent">{topStates.length > 0 ? topStates.reduce((sum, s) => sum + s.count, 0) : 0}</div>
-          <div class="text-sm text-gray-500">With GPS Data</div>
-        </div>
-        <div class="text-center">
-          <div class="text-3xl font-bold text-accent">{pinnedLocations.length}</div>
-          <div class="text-sm text-gray-500">Pinned</div>
-        </div>
-        <div class="text-center">
-          <div class="text-3xl font-bold text-accent">{recentImports.length}</div>
-          <div class="text-sm text-gray-500">Recent Imports</div>
-        </div>
       </div>
     </div>
   {/if}

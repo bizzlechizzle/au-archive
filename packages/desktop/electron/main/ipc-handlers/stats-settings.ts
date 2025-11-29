@@ -50,6 +50,112 @@ export function registerStatsHandlers(db: Kysely<Database>) {
     }
   });
 
+  /**
+   * Dashboard: Top types with hero thumbnail from a representative location
+   */
+  ipcMain.handle('stats:topTypesWithHero', async (_event, limit: unknown = 5) => {
+    try {
+      const validatedLimit = validate(LimitSchema, limit);
+      // Get top types with count
+      const types = await db
+        .selectFrom('locs')
+        .select(['type', (eb) => eb.fn.count('locid').as('count')])
+        .where('type', 'is not', null)
+        .groupBy('type')
+        .orderBy('count', 'desc')
+        .limit(validatedLimit)
+        .execute();
+
+      // For each type, get a representative location's hero image
+      const results = await Promise.all(
+        types.map(async (t) => {
+          // Find a location with hero image for this type
+          const loc = await db
+            .selectFrom('locs')
+            .select(['locid', 'hero_imgsha'])
+            .where('type', '=', t.type)
+            .where('hero_imgsha', 'is not', null)
+            .limit(1)
+            .executeTakeFirst();
+
+          let heroThumbPath: string | undefined;
+          if (loc?.hero_imgsha) {
+            const img = await db
+              .selectFrom('imgs')
+              .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
+              .where('imgsha', '=', loc.hero_imgsha)
+              .executeTakeFirst();
+            heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
+          }
+
+          return {
+            type: t.type,
+            count: Number(t.count),
+            heroThumbPath,
+          };
+        })
+      );
+
+      return results;
+    } catch (error) {
+      console.error('Error getting top types with hero:', error);
+      throw error;
+    }
+  });
+
+  /**
+   * Dashboard: Top states with hero thumbnail from a representative location
+   */
+  ipcMain.handle('stats:topStatesWithHero', async (_event, limit: unknown = 5) => {
+    try {
+      const validatedLimit = validate(LimitSchema, limit);
+      // Get top states with count
+      const states = await db
+        .selectFrom('locs')
+        .select(['address_state as state', (eb) => eb.fn.count('locid').as('count')])
+        .where('address_state', 'is not', null)
+        .groupBy('address_state')
+        .orderBy('count', 'desc')
+        .limit(validatedLimit)
+        .execute();
+
+      // For each state, get a representative location's hero image
+      const results = await Promise.all(
+        states.map(async (s) => {
+          // Find a location with hero image for this state
+          const loc = await db
+            .selectFrom('locs')
+            .select(['locid', 'hero_imgsha'])
+            .where('address_state', '=', s.state)
+            .where('hero_imgsha', 'is not', null)
+            .limit(1)
+            .executeTakeFirst();
+
+          let heroThumbPath: string | undefined;
+          if (loc?.hero_imgsha) {
+            const img = await db
+              .selectFrom('imgs')
+              .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
+              .where('imgsha', '=', loc.hero_imgsha)
+              .executeTakeFirst();
+            heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
+          }
+
+          return {
+            state: s.state,
+            count: Number(s.count),
+            heroThumbPath,
+          };
+        })
+      );
+
+      return results;
+    } catch (error) {
+      console.error('Error getting top states with hero:', error);
+      throw error;
+    }
+  });
+
   // ==================== Migration 25 - Phase 4: Per-User Stats ====================
 
   /**
