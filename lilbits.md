@@ -4,6 +4,36 @@ Canonical registry of scripts and utilities. Each script should be under 300 LOC
 
 ## Scripts
 
+### `scripts/setup.sh`
+
+**Purpose:** Full setup script for AU Archive - installs all dependencies including Research Browser
+
+**Usage:**
+```bash
+./scripts/setup.sh              # Full setup
+./scripts/setup.sh --skip-optional  # Skip libpostal, exiftool, ffmpeg
+./scripts/setup.sh --skip-browser   # Skip Ungoogled Chromium download (~150MB)
+./scripts/setup.sh --help           # Show all options
+```
+
+**Description:**
+7-phase installation script:
+1. Check required tools (Node.js, pnpm, git)
+2. Install Node.js dependencies via pnpm
+3. Build native modules (better-sqlite3, sharp) for Electron
+4. Install optional dependencies (libpostal, exiftool, ffmpeg)
+5. Download and install Research Browser (Ungoogled Chromium)
+6. Build the application
+7. Verify installation
+
+Supports macOS (arm64/x64), Linux (x64), and Windows (manual browser install).
+
+**Lines:** ~500 LOC
+
+**Updated:** 2025-11-29 (Added Research Browser download)
+
+---
+
 ### `scripts/test-region-gaps.ts`
 
 **Purpose:** Test region gap coverage across all 50 states + DC + territories

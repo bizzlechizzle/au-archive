@@ -17,6 +17,7 @@ NC='\033[0m' # No Color
 
 # Flags
 SKIP_OPTIONAL=false
+SKIP_BROWSER=false
 VERBOSE=false
 
 # Parse arguments
@@ -24,6 +25,10 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --skip-optional)
       SKIP_OPTIONAL=true
+      shift
+      ;;
+    --skip-browser)
+      SKIP_BROWSER=true
       shift
       ;;
     --verbose|-v)
@@ -36,7 +41,8 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: ./scripts/setup.sh [options]"
       echo ""
       echo "Options:"
-      echo "  --skip-optional  Skip optional dependencies (libpostal)"
+      echo "  --skip-optional  Skip optional dependencies (libpostal, exiftool, ffmpeg)"
+      echo "  --skip-browser   Skip Research Browser download (~150MB Ungoogled Chromium)"
       echo "  --verbose, -v    Show detailed output"
       echo "  --help, -h       Show this help message"
       echo ""
@@ -44,7 +50,9 @@ while [[ $# -gt 0 ]]; do
       echo "  1. Check for required tools (Node.js, pnpm)"
       echo "  2. Install Node.js dependencies"
       echo "  3. Build native modules for Electron"
-      echo "  4. Install optional dependencies (libpostal)"
+      echo "  4. Install optional dependencies (libpostal, exiftool, ffmpeg)"
+      echo "  5. Install Research Browser (Ungoogled Chromium ~150MB)"
+      echo "  6. Build the application"
       exit 0
       ;;
     *)
@@ -269,10 +277,139 @@ install_optional_dependencies() {
 }
 
 # ============================================================================
-# PHASE 5: Build Application
+# PHASE 5: Install Research Browser (Ungoogled Chromium)
+# ============================================================================
+install_research_browser() {
+  if [ "$SKIP_BROWSER" = true ]; then
+    log_section "Phase 5: Skipping Research Browser (--skip-browser)"
+    return
+  fi
+
+  log_section "Phase 5: Installing Research Browser (Ungoogled Chromium)"
+
+  local platform=$(detect_platform)
+  local arch=$(uname -m)
+  local browser_dir="resources/browsers/ungoogled-chromium"
+
+  # Skip if already installed
+  if [ -d "$browser_dir" ] && [ "$(ls -A $browser_dir 2>/dev/null)" ]; then
+    log_success "Ungoogled Chromium already installed"
+    return
+  fi
+
+  mkdir -p "$browser_dir"
+
+  # Ungoogled Chromium release URLs (update version as needed)
+  # Version 142.0.7444.175
+  local UC_VERSION="142.0.7444.175-1.1"
+  local UC_BASE="https://github.com/ungoogled-software/ungoogled-chromium-macos/releases/download"
+
+  if [ "$platform" = "macos" ]; then
+    if [ "$arch" = "arm64" ]; then
+      log_info "Downloading Ungoogled Chromium for macOS ARM64..."
+      local download_url="${UC_BASE}/${UC_VERSION}/ungoogled-chromium_${UC_VERSION}_arm64-macos.dmg"
+      local target_dir="$browser_dir/mac-arm64"
+    else
+      log_info "Downloading Ungoogled Chromium for macOS x64..."
+      local download_url="${UC_BASE}/${UC_VERSION}/ungoogled-chromium_${UC_VERSION}_x86-64-macos.dmg"
+      local target_dir="$browser_dir/mac-x64"
+    fi
+
+    mkdir -p "$target_dir"
+    local dmg_file="/tmp/ungoogled-chromium.dmg"
+
+    # Download
+    if command_exists curl; then
+      curl -L -o "$dmg_file" "$download_url" || {
+        log_warn "Failed to download Ungoogled Chromium"
+        log_info "Download manually from: https://ungoogled-software.github.io/ungoogled-chromium-binaries/"
+        return
+      }
+    elif command_exists wget; then
+      wget -O "$dmg_file" "$download_url" || {
+        log_warn "Failed to download Ungoogled Chromium"
+        return
+      }
+    else
+      log_warn "Neither curl nor wget found. Please download manually."
+      return
+    fi
+
+    # Mount and copy
+    log_info "Extracting Chromium.app..."
+    local mount_point="/Volumes/Chromium"
+
+    # Unmount if already mounted
+    hdiutil detach "$mount_point" 2>/dev/null || true
+
+    hdiutil attach "$dmg_file" -mountpoint "$mount_point" -nobrowse -quiet || {
+      log_error "Failed to mount DMG"
+      rm -f "$dmg_file"
+      return
+    }
+
+    # Copy Chromium.app
+    cp -R "$mount_point/Chromium.app" "$target_dir/" || {
+      log_error "Failed to copy Chromium.app"
+      hdiutil detach "$mount_point" -quiet
+      rm -f "$dmg_file"
+      return
+    }
+
+    # Cleanup
+    hdiutil detach "$mount_point" -quiet
+    rm -f "$dmg_file"
+
+    # Remove quarantine attribute (macOS security)
+    xattr -cr "$target_dir/Chromium.app" 2>/dev/null || true
+
+    log_success "Ungoogled Chromium installed to $target_dir"
+
+  elif [ "$platform" = "linux" ]; then
+    log_info "Downloading Ungoogled Chromium for Linux x64..."
+    local UC_LINUX_VERSION="142.0.7444.175"
+    local download_url="https://github.com/nickel-chromium/nickel-chromium/releases/download/${UC_LINUX_VERSION}/nickel-chromium-${UC_LINUX_VERSION}-linux64.tar.gz"
+    local target_dir="$browser_dir/linux-x64"
+
+    mkdir -p "$target_dir"
+    local tar_file="/tmp/ungoogled-chromium.tar.gz"
+
+    # Download
+    if command_exists curl; then
+      curl -L -o "$tar_file" "$download_url" || {
+        log_warn "Failed to download. Try manual download from:"
+        log_info "  https://ungoogled-software.github.io/ungoogled-chromium-binaries/"
+        return
+      }
+    elif command_exists wget; then
+      wget -O "$tar_file" "$download_url"
+    fi
+
+    # Extract
+    tar -xzf "$tar_file" -C "$target_dir" --strip-components=1 || {
+      log_error "Failed to extract"
+      rm -f "$tar_file"
+      return
+    }
+
+    rm -f "$tar_file"
+    chmod +x "$target_dir/chrome"
+    log_success "Ungoogled Chromium installed to $target_dir"
+
+  elif [ "$platform" = "windows" ]; then
+    log_warn "Windows: Download Ungoogled Chromium manually from:"
+    log_info "  https://ungoogled-software.github.io/ungoogled-chromium-binaries/"
+    log_info "  Extract to: resources/browsers/ungoogled-chromium/win-x64/"
+  else
+    log_warn "Unknown platform. Download Ungoogled Chromium manually."
+  fi
+}
+
+# ============================================================================
+# PHASE 6: Build Application
 # ============================================================================
 build_application() {
-  log_section "Phase 5: Building Application"
+  log_section "Phase 6: Building Application"
 
   log_info "Building core package..."
   pnpm --filter @au-archive/core build
@@ -284,10 +421,10 @@ build_application() {
 }
 
 # ============================================================================
-# PHASE 6: Verify Installation
+# PHASE 7: Verify Installation
 # ============================================================================
 verify_installation() {
-  log_section "Phase 6: Verification"
+  log_section "Phase 7: Verification"
 
   echo ""
   echo "Dependency Status:"
@@ -316,6 +453,23 @@ verify_installation() {
   printf "  %-20s" "ffmpeg"
   command_exists ffmpeg && echo -e "${GREEN}✓${NC} Installed" || echo -e "${YELLOW}○${NC} Not found"
 
+  # Research Browser
+  printf "  %-20s" "Research Browser"
+  local browser_dir="resources/browsers/ungoogled-chromium"
+  if [ -d "$browser_dir" ] && [ "$(ls -A $browser_dir 2>/dev/null)" ]; then
+    echo -e "${GREEN}✓${NC} Ungoogled Chromium installed"
+  else
+    echo -e "${YELLOW}○${NC} Not installed (Research feature unavailable)"
+  fi
+
+  # Browser Extension
+  printf "  %-20s" "Browser Extension"
+  if [ -f "resources/extension/manifest.json" ]; then
+    echo -e "${GREEN}✓${NC} AU Archive Clipper ready"
+  else
+    echo -e "${RED}✗${NC} Extension files missing"
+  fi
+
   echo ""
   echo "─────────────────────────────────────────────────"
   echo ""
@@ -343,6 +497,7 @@ main() {
   install_node_dependencies
   build_native_modules
   install_optional_dependencies
+  install_research_browser
   build_application
   verify_installation
 

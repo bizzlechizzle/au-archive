@@ -49,3 +49,7 @@ logseq/
 # Thumbnails and previews (generated)
 thumbs/
 previews/
+# Research Browser binaries (user downloads via setup.sh)
+resources/browsers/ungoogled-chromium/*/Chromium.app/
+resources/browsers/ungoogled-chromium/*/chrome
+resources/browsers/ungoogled-chromium/*/chrome.exe

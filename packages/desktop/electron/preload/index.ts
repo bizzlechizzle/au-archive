@@ -828,6 +828,16 @@ const api = {
     },
   },
 
+  // Research Browser - external Ungoogled Chromium
+  research: {
+    launch: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('research:launch'),
+    close: (): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('research:close'),
+    status: (): Promise<{ running: boolean; pages?: number }> =>
+      ipcRenderer.invoke('research:status'),
+  },
+
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

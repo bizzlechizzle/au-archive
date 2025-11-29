@@ -4,6 +4,7 @@
   import logo from '../assets/abandoned-upstate-logo.png';
 
   let currentRoute = $state('/dashboard');
+  let researchBrowserRunning = $state(false);
 
   $effect(() => {
     const unsubscribe = router.subscribe((route) => {
@@ -12,12 +13,12 @@
     return () => unsubscribe();
   });
 
-  // Navigation order: Dashboard, Locations, Browser, Atlas
+  // Navigation order: Dashboard, Locations, Research (external), Atlas
   // Search and Settings moved to bottom icon bar
   const menuItems = [
     { path: '/dashboard', label: 'Dashboard' },
     { path: '/locations', label: 'Locations' },
-    { path: '/browser', label: 'Browser' },
+    // Research is handled separately (launches external browser)
     { path: '/atlas', label: 'Atlas' },
   ];
 
@@ -28,6 +29,34 @@
   function isActive(path: string): boolean {
     return currentRoute === path;
   }
+
+  async function launchResearch() {
+    if (!window.electronAPI?.research) {
+      console.error('Research API not available');
+      return;
+    }
+
+    const result = await window.electronAPI.research.launch();
+    if (result.success) {
+      researchBrowserRunning = true;
+    } else {
+      console.error('Failed to launch research browser:', result.error);
+    }
+  }
+
+  // Check browser status periodically
+  $effect(() => {
+    const checkStatus = async () => {
+      if (window.electronAPI?.research) {
+        const status = await window.electronAPI.research.status();
+        researchBrowserRunning = status.running;
+      }
+    };
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 5000);
+    return () => clearInterval(interval);
+  });
 </script>
 
 <nav class="w-64 h-screen bg-background text-foreground flex flex-col border-r border-gray-200">
@@ -51,7 +80,33 @@
 
   <div class="flex-1 overflow-y-auto">
     <ul class="py-4">
-      {#each menuItems as item}
+      <!-- Dashboard and Locations -->
+      {#each menuItems.slice(0, 2) as item}
+        <li>
+          <button
+            onclick={() => navigate(item.path)}
+            class="w-full px-6 py-3 text-left hover:bg-gray-100 transition-colors {isActive(item.path) ? 'bg-gray-100 border-l-4 border-accent' : ''}"
+          >
+            <span class="text-sm font-medium">{item.label}</span>
+          </button>
+        </li>
+      {/each}
+
+      <!-- Research Browser - Special handling (launches external browser) -->
+      <li>
+        <button
+          onclick={launchResearch}
+          class="w-full px-6 py-3 text-left hover:bg-gray-100 transition-colors flex items-center justify-between"
+        >
+          <span class="text-sm font-medium">Research</span>
+          {#if researchBrowserRunning}
+            <span class="w-2 h-2 bg-green-500 rounded-full" title="Browser running"></span>
+          {/if}
+        </button>
+      </li>
+
+      <!-- Atlas -->
+      {#each menuItems.slice(2) as item}
         <li>
           <button
             onclick={() => navigate(item.path)}

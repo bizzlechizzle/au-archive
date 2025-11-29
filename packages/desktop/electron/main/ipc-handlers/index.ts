@@ -20,6 +20,7 @@
  * - database.ts: database:* handlers
  * - health.ts: health:* handlers
  * - geocode.ts: geocode:* handlers
+ * - research-browser.ts: research:* handlers (external browser)
  */
 
 import { getDatabase } from '../database';
@@ -38,6 +39,7 @@ import { registerDatabaseHandlers } from './database';
 import { registerHealthHandlers } from './health';
 import { registerGeocodeHandlers } from './geocode';
 import { registerSubLocationHandlers } from './sublocations';
+import { registerResearchBrowserHandlers } from './research-browser';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -83,6 +85,9 @@ export function registerIpcHandlers() {
 
   // Kanye11: Address parsing with libpostal
   registerLibpostalHandlers();
+
+  // Research browser (external Ungoogled Chromium)
+  registerResearchBrowserHandlers();
 
   console.log('IPC handlers registered (modular)');
 }

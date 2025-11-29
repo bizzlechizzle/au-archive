@@ -31,6 +31,9 @@ const baseLocation = {
   // Migration 22: Hero focal point
   hero_focal_x: 0.5,
   hero_focal_y: 0.5,
+  // Per-user view tracking
+  viewCount: 0,
+  lastViewedAt: undefined,
 };
 
 describe('LocationEntity', () => {

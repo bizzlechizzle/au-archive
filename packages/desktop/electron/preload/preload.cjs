@@ -273,6 +273,13 @@ const api = {
       return () => ipcRenderer.removeListener("browser:loadingChanged", listener);
     },
   },
+
+  // Research Browser - external Ungoogled Chromium
+  research: {
+    launch: () => ipcRenderer.invoke("research:launch"),
+    close: () => ipcRenderer.invoke("research:close"),
+    status: () => ipcRenderer.invoke("research:status"),
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

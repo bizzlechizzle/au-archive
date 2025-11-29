@@ -10,6 +10,10 @@ import { getConfigService } from '../services/config-service';
 import { getLogger } from '../services/logger-service';
 import { getBackupScheduler } from '../services/backup-scheduler';
 import { initBrowserViewManager, destroyBrowserViewManager } from '../services/browser-view-manager';
+import { startBookmarkAPIServer, stopBookmarkAPIServer } from '../services/bookmark-api-server';
+import { closeResearchBrowser } from '../services/research-browser-service';
+import { SQLiteBookmarksRepository } from '../repositories/sqlite-bookmarks-repository';
+import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -225,6 +229,19 @@ async function startupOrchestrator(): Promise<void> {
     registerIpcHandlers();
     logger.info('Main', 'IPC handlers registered successfully');
 
+    // Step 5b: Start Bookmark API Server for Research Browser extension
+    logger.info('Main', 'Starting Bookmark API Server');
+    const db = getDatabase();
+    const bookmarksRepo = new SQLiteBookmarksRepository(db);
+    const locationsRepo = new SQLiteLocationRepository(db);
+    try {
+      await startBookmarkAPIServer(bookmarksRepo, locationsRepo);
+      logger.info('Main', 'Bookmark API Server started successfully');
+    } catch (error) {
+      // Non-fatal: log warning but continue startup (research browser feature may not work)
+      logger.warn('Main', 'Failed to start Bookmark API Server', error as Error);
+    }
+
     // FIX 5.1: Step 6 - Auto backup on startup (if enabled)
     const config = configService.get();
     const backupScheduler = getBackupScheduler();
@@ -339,6 +356,22 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  // Close research browser (external Ungoogled Chromium)
+  try {
+    await closeResearchBrowser();
+    console.log('Research browser closed successfully');
+  } catch (error) {
+    console.error('Failed to close research browser:', error);
+  }
+
+  // Stop Bookmark API Server
+  try {
+    await stopBookmarkAPIServer();
+    console.log('Bookmark API Server stopped successfully');
+  } catch (error) {
+    console.error('Failed to stop Bookmark API Server:', error);
+  }
+
   // Destroy browser view manager
   try {
     destroyBrowserViewManager();
