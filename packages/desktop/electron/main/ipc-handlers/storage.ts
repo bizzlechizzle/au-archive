@@ -60,10 +60,12 @@ export function registerStorageHandlers() {
     try {
       const db = getDatabase();
 
-      // Get archive path from settings
-      const archivePathRow = db.prepare(
-        "SELECT value FROM settings WHERE key = 'archive_path'"
-      ).get() as { value: string } | undefined;
+      // Get archive path from settings using Kysely
+      const archivePathRow = await db
+        .selectFrom('settings')
+        .select('value')
+        .where('key', '=', 'archive_folder')
+        .executeTakeFirst();
 
       const archivePath = archivePathRow?.value;
 

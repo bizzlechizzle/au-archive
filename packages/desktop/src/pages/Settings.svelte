@@ -19,7 +19,6 @@
   let importMap = $state(true);
   let mapImport = $state(true);
   let loading = $state(true);
-  let saving = $state(false);
   let saveMessage = $state('');
 
   // Migration 24: User management state
@@ -434,30 +433,6 @@
     }
   }
 
-  async function saveSettings() {
-    if (!window.electronAPI?.settings) return;
-    try {
-      saving = true;
-      saveMessage = '';
-
-      await Promise.all([
-        window.electronAPI.settings.set('archive_folder', archivePath),
-        window.electronAPI.settings.set('delete_on_import', deleteOriginals.toString()),
-        window.electronAPI.settings.set('import_map', importMap.toString()),
-        window.electronAPI.settings.set('map_import', mapImport.toString()),
-      ]);
-
-      saveMessage = 'Settings saved successfully';
-      setTimeout(() => {
-        saveMessage = '';
-      }, 3000);
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      saveMessage = 'Error saving settings';
-    } finally {
-      saving = false;
-    }
-  }
 
   /**
    * Kanye6: Regenerate thumbnails for all images missing multi-tier thumbnails
@@ -1955,13 +1930,110 @@
             {/if}
           </div>
 
-          <!-- Maps Repair Sub-Accordion -->
+          <!-- Maps Sub-Accordion (Reference Maps) -->
+          <div>
+            <button
+              onclick={() => mapsExpanded = !mapsExpanded}
+              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
+            >
+              <span class="text-sm font-medium text-gray-700">Maps</span>
+              <svg
+                class="w-4 h-4 text-accent transition-transform duration-200 {mapsExpanded ? 'rotate-180' : ''}"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {#if mapsExpanded}
+            <div class="py-3">
+              <p class="text-xs text-gray-500 mb-3">
+                Import map files to display as reference points on the Atlas. Supports KML, KMZ, GPX, GeoJSON, and CSV files.
+              </p>
+
+              <!-- Stats -->
+              {#if refMapStats}
+                <div class="bg-gray-50 rounded-lg p-3 mb-3">
+                  <div class="flex gap-6 text-sm">
+                    <div>
+                      <span class="text-gray-500">Imported maps:</span>
+                      <span class="font-medium ml-1">{refMapStats.mapCount}</span>
+                    </div>
+                    <div>
+                      <span class="text-gray-500">Total points:</span>
+                      <span class="font-medium ml-1">{refMapStats.pointCount.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Map List -->
+              {#if refMaps.length > 0}
+                <div class="space-y-2 mb-3 max-h-48 overflow-y-auto">
+                  {#each refMaps as map}
+                    <div class="flex items-center justify-between border border-gray-200 rounded-lg p-2">
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                          <span class="text-sm font-medium text-foreground truncate">{map.mapName}</span>
+                          <span class="text-xs bg-gray-100 text-gray-600 px-1 py-0.5 rounded uppercase">{map.fileType}</span>
+                        </div>
+                        <p class="text-xs text-gray-500">
+                          {map.pointCount} points - {new Date(map.importedAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <button
+                        onclick={() => deleteRefMap(map.mapId)}
+                        class="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                        title="Delete map"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              <!-- Buttons -->
+              <div class="flex flex-wrap gap-2">
+                <button
+                  onclick={importRefMap}
+                  disabled={importingRefMap}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  {importingRefMap ? 'Importing...' : 'Import Map'}
+                </button>
+                {#if cataloguedCount > 0}
+                  <button
+                    onclick={purgeCataloguedPoints}
+                    disabled={purgingPoints}
+                    class="px-3 py-1.5 text-sm bg-gray-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                    title="Remove reference points that are already in your locations database"
+                  >
+                    {purgingPoints ? 'Purging...' : `Purge ${cataloguedCount} Catalogued`}
+                  </button>
+                {/if}
+              </div>
+              {#if refMapMessage}
+                <p class="text-sm text-gray-600 mt-2">{refMapMessage}</p>
+              {/if}
+              {#if purgeMessage}
+                <p class="text-sm text-gray-600 mt-2">{purgeMessage}</p>
+              {/if}
+            </div>
+            {/if}
+          </div>
+
+          <!-- Repair Sub-Accordion -->
           <div>
             <button
               onclick={() => maintenanceExpanded = !maintenanceExpanded}
               class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
             >
-              <span class="text-sm font-medium text-gray-700">Maps Repair</span>
+              <span class="text-sm font-medium text-gray-700">Repair</span>
               <svg
                 class="w-4 h-4 text-accent transition-transform duration-200 {maintenanceExpanded ? 'rotate-180' : ''}"
                 fill="none"
@@ -2032,21 +2104,23 @@
             {/if}
           </div>
 
-          <!-- Storage Bar (at bottom) -->
+          <!-- Storage Section (at bottom) -->
           <div class="py-3 mt-2">
             <span class="text-sm font-medium text-gray-700 mb-2 block">Storage</span>
             {#if storageStats}
               {@const archivePercent = (storageStats.archiveBytes / storageStats.totalBytes) * 100}
               {@const otherUsedBytes = storageStats.totalBytes - storageStats.availableBytes - storageStats.archiveBytes}
               {@const otherUsedPercent = Math.max(0, (otherUsedBytes / storageStats.totalBytes) * 100)}
+              <!-- Stats above bar -->
+              <div class="text-xs text-gray-600 mb-2 space-y-0.5">
+                <div>Total Storage: {formatBytes(storageStats.totalBytes)}</div>
+                <div>Available Storage: {formatBytes(storageStats.availableBytes)}</div>
+                <div>Archive Used: {formatBytes(storageStats.archiveBytes)}</div>
+              </div>
+              <!-- Storage bar -->
               <div class="h-4 bg-gray-200 rounded-full overflow-hidden flex">
                 <div class="bg-accent" style="width: {archivePercent}%"></div>
                 <div class="bg-gray-400" style="width: {otherUsedPercent}%"></div>
-              </div>
-              <div class="flex justify-between text-xs text-gray-500 mt-1">
-                <span>Total: {formatBytes(storageStats.totalBytes)}</span>
-                <span>Available: {formatBytes(storageStats.availableBytes)}</span>
-                <span>Archive: {formatBytes(storageStats.archiveBytes)}</span>
               </div>
             {:else if loadingStorage}
               <div class="h-4 bg-gray-200 rounded-full animate-pulse"></div>
