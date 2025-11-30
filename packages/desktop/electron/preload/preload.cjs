@@ -327,6 +327,8 @@ const api = {
     // Phase 4: Purge catalogued points
     findCataloguedPoints: () => ipcRenderer.invoke("refMaps:findCataloguedPoints"),
     purgeCataloguedPoints: () => ipcRenderer.invoke("refMaps:purgeCataloguedPoints"),
+    // Phase 5: Delete single point from map popup
+    deletePoint: (pointId) => ipcRenderer.invoke("refMaps:deletePoint", pointId),
   },
 };
 

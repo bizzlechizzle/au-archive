@@ -550,6 +550,12 @@ export interface ElectronAPI {
       error?: string;
       message?: string;
     }>;
+    // Phase 5: Delete single point from map popup
+    deletePoint: (pointId: string) => Promise<{
+      success: boolean;
+      deleted?: number;
+      error?: string;
+    }>;
   };
 
 }

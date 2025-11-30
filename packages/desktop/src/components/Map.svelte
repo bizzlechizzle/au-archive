@@ -195,6 +195,8 @@
     showRefMapLayer?: boolean;
     // Callback when user clicks "Create Location" on a reference point popup
     onCreateFromRefPoint?: (data: { name: string; lat: number; lng: number; state: string | null }) => void;
+    // Callback when user clicks "Delete" on a reference point popup
+    onDeleteRefPoint?: (pointId: string, name: string) => void;
   }
 
   let {
@@ -219,7 +221,8 @@
     onCampusSubLocationClick,
     refMapPoints = [],
     showRefMapLayer = false,
-    onCreateFromRefPoint
+    onCreateFromRefPoint,
+    onDeleteRefPoint
   }: Props = $props();
 
   /**
@@ -258,6 +261,8 @@
   let viewDetailsClickHandler: ((e: MouseEvent) => void) | null = null;
   // Event handler for "Create Location" button on reference point popups
   let createFromRefClickHandler: ((e: MouseEvent) => void) | null = null;
+  // Event handler for "Delete" button on reference point popups
+  let deleteRefClickHandler: ((e: MouseEvent) => void) | null = null;
 
   /**
    * Kanye9: Generate hash from location IDs and GPS coordinates
@@ -517,6 +522,21 @@
         }
       };
       document.addEventListener('click', createFromRefClickHandler);
+
+      // Event delegation for "Delete" button on reference point popups
+      deleteRefClickHandler = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('delete-ref-btn')) {
+          e.preventDefault();
+          e.stopPropagation();
+          const pointId = target.getAttribute('data-point-id');
+          const name = target.getAttribute('data-name') || 'Unnamed Point';
+          if (onDeleteRefPoint && pointId) {
+            onDeleteRefPoint(pointId, name);
+          }
+        }
+      };
+      document.addEventListener('click', deleteRefClickHandler);
 
       map.on('zoomend moveend', () => {
         updateClusters(L);
@@ -821,15 +841,26 @@
               <strong style="font-size: 13px;">${escapeHtml(name)}</strong>
               ${desc}
               ${category}
-              <button
-                class="create-from-ref-btn"
-                data-name="${escapeHtml(name)}"
-                data-lat="${point.lat}"
-                data-lng="${point.lng}"
-                data-state="${point.state || ''}"
-              >
-                + Create Location
-              </button>
+              <div style="display: flex; gap: 6px; margin-top: 8px;">
+                <button
+                  class="create-from-ref-btn"
+                  data-point-id="${point.pointId}"
+                  data-name="${escapeHtml(name)}"
+                  data-lat="${point.lat}"
+                  data-lng="${point.lng}"
+                  data-state="${point.state || ''}"
+                >
+                  + Create Location
+                </button>
+                <button
+                  class="delete-ref-btn"
+                  data-point-id="${point.pointId}"
+                  data-name="${escapeHtml(name)}"
+                  title="Delete this reference point"
+                >
+                  ×
+                </button>
+              </div>
             </div>
           `);
 
@@ -857,6 +888,11 @@
     if (createFromRefClickHandler) {
       document.removeEventListener('click', createFromRefClickHandler);
       createFromRefClickHandler = null;
+    }
+    // Clean up delete reference point button listener
+    if (deleteRefClickHandler) {
+      document.removeEventListener('click', deleteRefClickHandler);
+      deleteRefClickHandler = null;
     }
     locationLookup.clear();
     if (map) {
@@ -922,7 +958,6 @@
   }
 
   :global(.create-from-ref-btn) {
-    margin-top: 8px;
     padding: 4px 8px;
     background: #b9975c;
     color: white;
@@ -930,10 +965,27 @@
     border-radius: 4px;
     cursor: pointer;
     font-size: 11px;
-    width: 100%;
+    flex: 1;
   }
 
   :global(.create-from-ref-btn:hover) {
     background: #a68550;
+  }
+
+  :global(.delete-ref-btn) {
+    padding: 4px 8px;
+    background: #e5e5e5;
+    color: #666;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: bold;
+    line-height: 1;
+  }
+
+  :global(.delete-ref-btn:hover) {
+    background: #dc3545;
+    color: white;
   }
 </style>

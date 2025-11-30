@@ -583,4 +583,30 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
       };
     }
   });
+
+  /**
+   * Delete a single reference point by ID.
+   * Used from map popup delete button.
+   */
+  ipcMain.handle('refMaps:deletePoint', async (_event, pointId: string) => {
+    try {
+      if (!pointId) {
+        return { success: false, error: 'Point ID is required' };
+      }
+
+      const deleted = await dedupService.deleteRefPoints([pointId]);
+
+      return {
+        success: true,
+        deleted,
+      };
+    } catch (error) {
+      console.error('Error deleting reference point:', error);
+      return {
+        success: false,
+        deleted: 0,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
 }

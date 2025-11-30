@@ -214,6 +214,27 @@
     });
   }
 
+  // Handle deleting a reference point from popup
+  async function handleDeleteRefPoint(pointId: string, name: string) {
+    // Show confirmation dialog
+    const confirmed = confirm(`Delete reference point "${name}"?\n\nThis cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      const result = await window.electronAPI.refMaps.deletePoint(pointId);
+      if (result.success) {
+        toasts.success(`Deleted "${name}"`);
+        // Refresh reference points to update map
+        await loadRefMapPoints();
+      } else {
+        toasts.error(result.error || 'Failed to delete point');
+      }
+    } catch (err) {
+      console.error('Error deleting reference point:', err);
+      toasts.error('Failed to delete reference point');
+    }
+  }
+
   // FEAT-P2: Save current map view as default
   async function saveDefaultView() {
     if (!window.electronAPI?.settings) return;
@@ -352,6 +373,7 @@
       refMapPoints={refMapPoints}
       showRefMapLayer={showRefMapLayer}
       onCreateFromRefPoint={handleCreateFromRefPoint}
+      onDeleteRefPoint={handleDeleteRefPoint}
     />
     {#if loading}
       <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded shadow-lg z-10">
