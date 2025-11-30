@@ -737,6 +737,129 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // Location-specific image fix: thumbnails + rotations + DNG quality for one location
+  ipcMain.handle('media:fixLocationImages', async (_event, locid: unknown) => {
+    try {
+      const validLocid = z.string().uuid().parse(locid);
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+      const thumbnailService = new ThumbnailService(mediaPathService);
+      const previewService = new PreviewExtractorService(mediaPathService, exifToolService);
+
+      // Get images for this location only
+      const images = await mediaRepo.getImagesByLocation(validLocid);
+      let fixed = 0;
+      let errors = 0;
+
+      console.log(`[media:fixLocationImages] Processing ${images.length} images for location ${validLocid}...`);
+
+      for (const img of images) {
+        try {
+          let sourcePath = img.imgloc;
+          const needsPreviewExtraction = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr|heic|heif)$/i.test(img.imgloc);
+
+          if (needsPreviewExtraction) {
+            const preview = await previewService.extractPreview(img.imgloc, img.imgsha, true);
+            if (preview) {
+              sourcePath = preview;
+              await mediaRepo.updateImagePreviewPath(img.imgsha, preview);
+            }
+          }
+
+          const result = await thumbnailService.generateAllSizes(sourcePath, img.imgsha, true);
+
+          if (result.thumb_sm) {
+            await db
+              .updateTable('imgs')
+              .set({
+                thumb_path_sm: result.thumb_sm,
+                thumb_path_lg: result.thumb_lg,
+                preview_path: needsPreviewExtraction ? (sourcePath !== img.imgloc ? sourcePath : img.preview_path) : (result.preview || img.preview_path),
+              })
+              .where('imgsha', '=', img.imgsha)
+              .execute();
+            fixed++;
+          } else {
+            errors++;
+          }
+        } catch (err) {
+          console.error(`[media:fixLocationImages] Failed for ${img.imgsha}:`, err);
+          errors++;
+        }
+      }
+
+      console.log(`[media:fixLocationImages] Complete: ${fixed} fixed, ${errors} errors`);
+      return { fixed, errors, total: images.length };
+    } catch (error) {
+      console.error('Error fixing location images:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  // Location-specific video fix: poster frames + thumbnails for one location
+  ipcMain.handle('media:fixLocationVideos', async (_event, locid: unknown) => {
+    try {
+      const validLocid = z.string().uuid().parse(locid);
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+      const thumbnailService = new ThumbnailService(mediaPathService);
+      const posterService = new PosterFrameService(mediaPathService, ffmpegService);
+
+      // Get videos for this location only
+      const videos = await mediaRepo.getVideosByLocation(validLocid);
+      let fixed = 0;
+      let errors = 0;
+
+      console.log(`[media:fixLocationVideos] Processing ${videos.length} videos for location ${validLocid}...`);
+
+      for (const vid of videos) {
+        try {
+          // Generate poster frame
+          const posterPath = await posterService.generatePoster(vid.vidloc, vid.vidsha);
+
+          if (!posterPath) {
+            console.warn(`[media:fixLocationVideos] No poster generated for ${vid.vidsha}`);
+            errors++;
+            continue;
+          }
+
+          // Generate thumbnails from poster
+          const result = await thumbnailService.generateAllSizes(posterPath, vid.vidsha, true);
+
+          if (result.thumb_sm) {
+            await db
+              .updateTable('vids')
+              .set({
+                thumb_path_sm: result.thumb_sm,
+                thumb_path_lg: result.thumb_lg,
+                preview_path: result.preview,
+              })
+              .where('vidsha', '=', vid.vidsha)
+              .execute();
+            fixed++;
+          } else {
+            errors++;
+          }
+        } catch (err) {
+          console.error(`[media:fixLocationVideos] Failed for ${vid.vidsha}:`, err);
+          errors++;
+        }
+      }
+
+      console.log(`[media:fixLocationVideos] Complete: ${fixed} fixed, ${errors} errors`);
+      return { fixed, errors, total: videos.length };
+    } catch (error) {
+      console.error('Error fixing location videos:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
   // Generate proxies for all videos in a location (background batch)
   ipcMain.handle('media:generateProxiesForLocation', async (event, locid: unknown) => {
     try {

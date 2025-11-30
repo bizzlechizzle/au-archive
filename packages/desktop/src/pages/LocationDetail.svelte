@@ -955,7 +955,7 @@
             onOpenDocument={openMediaFile}
           />
         </div>
-        <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} />
+        <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} onEdit={() => isEditing = true} />
       {/if}
     </div>
   {/if}

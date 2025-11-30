@@ -267,6 +267,18 @@ export class SQLiteMediaRepository {
   }
 
   /**
+   * Get images for a specific location (for location-specific fixes)
+   */
+  async getImagesByLocation(locid: string): Promise<Array<{ imgsha: string; imgloc: string; preview_path: string | null }>> {
+    const rows = await this.db
+      .selectFrom('imgs')
+      .select(['imgsha', 'imgloc', 'preview_path'])
+      .where('locid', '=', locid)
+      .execute();
+    return rows;
+  }
+
+  /**
    * Kanye9: Get RAW images that are missing preview extraction
    * These are files that have thumbnails but no preview (browser can't display RAW)
    */
@@ -390,6 +402,18 @@ export class SQLiteMediaRepository {
     const rows = await this.db
       .selectFrom('vids')
       .select(['vidsha', 'vidloc'])
+      .execute();
+    return rows;
+  }
+
+  /**
+   * Get videos for a specific location (for location-specific fixes)
+   */
+  async getVideosByLocation(locid: string): Promise<Array<{ vidsha: string; vidloc: string }>> {
+    const rows = await this.db
+      .selectFrom('vids')
+      .select(['vidsha', 'vidloc'])
+      .where('locid', '=', locid)
       .execute();
     return rows;
   }

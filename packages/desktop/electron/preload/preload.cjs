@@ -152,6 +152,10 @@ const api = {
     setHidden: (input) => ipcRenderer.invoke("media:setHidden", input),
     detectLivePhotosAndSDR: (locid) => ipcRenderer.invoke("media:detectLivePhotosAndSDR", locid),
 
+    // Location-specific media fixes
+    fixLocationImages: (locid) => ipcRenderer.invoke("media:fixLocationImages", locid),
+    fixLocationVideos: (locid) => ipcRenderer.invoke("media:fixLocationVideos", locid),
+
     // Video Proxy System (Migration 36)
     // Generate optimized H.264 proxy for smooth playback
     generateProxy: (vidsha, sourcePath, metadata) =>

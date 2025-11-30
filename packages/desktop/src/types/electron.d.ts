@@ -236,6 +236,12 @@ export interface ElectronAPI {
       description?: string;
     }) => Promise<{ success: boolean }>;
     regenerateAllThumbnails: (options?: { force?: boolean }) => Promise<{ generated: number; failed: number; total: number; rawTotal?: number; previewsExtracted?: number; previewsFailed?: number }>;
+    regenerateVideoThumbnails: (options?: { force?: boolean }) => Promise<{ generated: number; failed: number; total: number }>;
+    regenerateDngPreviews: () => Promise<{ success: boolean; rendered: number; failed: number; total: number }>;
+
+    // Location-specific media fixes
+    fixLocationImages: (locid: string) => Promise<{ fixed: number; errors: number; total: number }>;
+    fixLocationVideos: (locid: string) => Promise<{ fixed: number; errors: number; total: number }>;
 
     // Video Proxy System (Migration 36)
     generateProxy: (vidsha: string, sourcePath: string, metadata: { width: number; height: number }) => Promise<{

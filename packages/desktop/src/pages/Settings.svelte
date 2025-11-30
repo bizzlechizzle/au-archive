@@ -408,6 +408,10 @@
   let renderingDng = $state(false);
   let dngMessage = $state('');
 
+  // Video fix state
+  let fixingVideos = $state(false);
+  let videoFixMessage = $state('');
+
   /**
    * Migration 30: Regenerate DNG previews using LibRaw for full-quality rendering
    * This fixes "potato quality" drone shots where embedded preview is tiny (960x720 for 5376x3956)
@@ -440,6 +444,94 @@
       dngMessage = 'DNG rendering failed';
     } finally {
       renderingDng = false;
+    }
+  }
+
+  /**
+   * Fix Images: Combined operation that runs all image repair operations sequentially
+   * 1. Regenerate missing thumbnails
+   * 2. Fix rotations (force regenerate)
+   * 3. Fix DNG quality (LibRaw)
+   */
+  async function fixAllImages() {
+    if (!window.electronAPI?.media?.regenerateAllThumbnails) {
+      regenMessage = 'Image fix not available';
+      return;
+    }
+
+    try {
+      regenerating = true;
+      regenMessage = 'Step 1/3: Regenerating missing thumbnails...';
+
+      // Step 1: Regenerate missing thumbnails
+      const step1 = await window.electronAPI.media.regenerateAllThumbnails({ force: false });
+
+      regenMessage = 'Step 2/3: Fixing rotations...';
+
+      // Step 2: Fix all rotations (force regenerate)
+      const step2 = await window.electronAPI.media.regenerateAllThumbnails({ force: true });
+
+      regenerating = false;
+      renderingDng = true;
+      regenMessage = '';
+      dngMessage = 'Step 3/3: Fixing DNG quality...';
+
+      // Step 3: Fix DNG quality
+      const step3 = await window.electronAPI.media.regenerateDngPreviews?.() ?? { rendered: 0, failed: 0 };
+
+      // Show combined results
+      const totalProcessed = step1.total + step2.total + (step3.total || 0);
+      const totalFailed = step1.failed + step2.failed + (step3.failed || 0);
+
+      dngMessage = totalProcessed > 0
+        ? `Done! Processed ${totalProcessed} images${totalFailed > 0 ? ` (${totalFailed} failed)` : ''}`
+        : 'All images already up to date';
+
+      thumbnailCache.bust();
+
+      setTimeout(() => {
+        dngMessage = '';
+      }, 5000);
+    } catch (error) {
+      console.error('Fix images failed:', error);
+      regenMessage = '';
+      dngMessage = 'Image fix failed';
+    } finally {
+      regenerating = false;
+      renderingDng = false;
+    }
+  }
+
+  /**
+   * Fix Videos: Regenerate poster frames and thumbnails for all videos
+   */
+  async function fixAllVideos() {
+    if (!window.electronAPI?.media?.regenerateVideoThumbnails) {
+      videoFixMessage = 'Video fix not available';
+      return;
+    }
+
+    try {
+      fixingVideos = true;
+      videoFixMessage = 'Regenerating video thumbnails...';
+
+      const result = await window.electronAPI.media.regenerateVideoThumbnails({ force: true });
+
+      if (result.total === 0) {
+        videoFixMessage = 'No videos to process';
+      } else {
+        videoFixMessage = `Done! Processed ${result.generated}/${result.total} videos${result.failed > 0 ? ` (${result.failed} failed)` : ''}`;
+        thumbnailCache.bust();
+      }
+
+      setTimeout(() => {
+        videoFixMessage = '';
+      }, 5000);
+    } catch (error) {
+      console.error('Fix videos failed:', error);
+      videoFixMessage = 'Video fix failed';
+    } finally {
+      fixingVideos = false;
     }
   }
 
@@ -1002,38 +1094,25 @@
       </div>
 
 
-      <!-- Kanye6: Maintenance Section for Thumbnail Regeneration -->
+      <!-- Media Maintenance Section -->
       <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-3 text-foreground">Maintenance</h2>
+        <h2 class="text-lg font-semibold mb-3 text-foreground">Media Maintenance</h2>
         <div class="space-y-3">
           <div>
-            <p class="text-sm text-gray-700 mb-2">
-              Regenerate thumbnails for images imported before the multi-tier system.
-              This creates 400px, 800px, and 1920px versions for better quality display.
-            </p>
             <div class="flex flex-wrap items-center gap-3">
               <button
-                onclick={() => regenerateThumbnails(false)}
-                disabled={regenerating}
+                onclick={fixAllImages}
+                disabled={regenerating || renderingDng}
                 class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
               >
-                {regenerating ? 'Regenerating...' : 'Regenerate Missing'}
+                {regenerating || renderingDng ? 'Processing...' : 'Fix Images'}
               </button>
               <button
-                onclick={() => regenerateThumbnails(true)}
-                disabled={regenerating}
-                class="px-4 py-2 bg-gray-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
-                title="Re-extracts all RAW previews with correct EXIF rotation"
+                onclick={fixAllVideos}
+                disabled={fixingVideos}
+                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
               >
-                {regenerating ? 'Regenerating...' : 'Fix All Rotations'}
-              </button>
-              <button
-                onclick={regenerateDngPreviews}
-                disabled={renderingDng}
-                class="px-4 py-2 bg-orange-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
-                title="Uses LibRaw/dcraw_emu to render full-quality DNG previews (fixes potato quality drone shots)"
-              >
-                {renderingDng ? 'Rendering...' : 'Fix DNG Quality'}
+                {fixingVideos ? 'Processing...' : 'Fix Videos'}
               </button>
               {#if regenMessage}
                 <span class="text-sm text-gray-600">{regenMessage}</span>
@@ -1041,9 +1120,12 @@
               {#if dngMessage}
                 <span class="text-sm text-gray-600">{dngMessage}</span>
               {/if}
+              {#if videoFixMessage}
+                <span class="text-sm text-gray-600">{videoFixMessage}</span>
+              {/if}
             </div>
             <p class="text-xs text-gray-500 mt-2">
-              "Regenerate Missing" processes only images without thumbnails. "Fix All Rotations" re-processes everything to fix sideways DSLR images. "Fix DNG Quality" uses LibRaw to render full-resolution DNG previews for drone shots.
+              Repairs thumbnails, rotations, and previews for all media files.
             </p>
           </div>
 

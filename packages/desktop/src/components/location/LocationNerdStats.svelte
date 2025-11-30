@@ -3,20 +3,34 @@
    * LocationNerdStats - Technical metadata (IDs, timestamps, GPS details, counts)
    * Per LILBITS: ~150 lines, single responsibility
    * Migration 34: Enhanced with per-user view tracking
+   * Location Settings Overhaul: Added PIN-protected settings section
    */
   import type { Location } from '@au-archive/core';
+  import { goto } from '$app/navigation';
 
   interface Props {
     location: Location;
     imageCount: number;
     videoCount: number;
     documentCount: number;
+    onEdit?: () => void;
   }
 
-  let { location, imageCount, videoCount, documentCount }: Props = $props();
+  let { location, imageCount, videoCount, documentCount, onEdit }: Props = $props();
 
   let isOpen = $state(false);
   let copiedField = $state<string | null>(null);
+
+  // Location Settings state
+  let settingsOpen = $state(false);
+  let settingsUnlocked = $state(false);
+  let pinInput = $state('');
+  let pinError = $state('');
+  let fixingImages = $state(false);
+  let fixingVideos = $state(false);
+  let fixMessage = $state('');
+  let showDeleteConfirm = $state(false);
+  let deleting = $state(false);
 
   // Migration 34: Per-user view statistics
   interface ViewStats {
@@ -57,6 +71,110 @@
     setTimeout(() => {
       copiedField = null;
     }, 1500);
+  }
+
+  // PIN verification
+  async function verifyPin() {
+    if (!pinInput) {
+      pinError = 'Please enter your PIN';
+      return;
+    }
+
+    try {
+      // Get current user to verify PIN against
+      const users = await window.electronAPI?.users?.findAll?.() || [];
+      const currentUser = users[0];
+
+      if (!currentUser) {
+        pinError = 'No user found';
+        return;
+      }
+
+      const result = await window.electronAPI?.users?.verifyPin(currentUser.user_id, pinInput);
+      if (result?.success) {
+        settingsUnlocked = true;
+        pinError = '';
+        pinInput = '';
+      } else {
+        pinError = 'Invalid PIN';
+      }
+    } catch (err) {
+      console.error('PIN verification failed:', err);
+      pinError = 'Verification failed';
+    }
+  }
+
+  // Fix images for this location
+  async function fixLocationImages() {
+    if (!window.electronAPI?.media?.fixLocationImages) {
+      fixMessage = 'Not available';
+      return;
+    }
+
+    try {
+      fixingImages = true;
+      fixMessage = 'Fixing images...';
+
+      const result = await window.electronAPI.media.fixLocationImages(location.locid);
+
+      if (result.total === 0) {
+        fixMessage = 'No images to fix';
+      } else {
+        fixMessage = `Fixed ${result.fixed}/${result.total} images${result.errors > 0 ? ` (${result.errors} errors)` : ''}`;
+      }
+
+      setTimeout(() => { fixMessage = ''; }, 5000);
+    } catch (err) {
+      console.error('Fix images failed:', err);
+      fixMessage = 'Failed';
+    } finally {
+      fixingImages = false;
+    }
+  }
+
+  // Fix videos for this location
+  async function fixLocationVideos() {
+    if (!window.electronAPI?.media?.fixLocationVideos) {
+      fixMessage = 'Not available';
+      return;
+    }
+
+    try {
+      fixingVideos = true;
+      fixMessage = 'Fixing videos...';
+
+      const result = await window.electronAPI.media.fixLocationVideos(location.locid);
+
+      if (result.total === 0) {
+        fixMessage = 'No videos to fix';
+      } else {
+        fixMessage = `Fixed ${result.fixed}/${result.total} videos${result.errors > 0 ? ` (${result.errors} errors)` : ''}`;
+      }
+
+      setTimeout(() => { fixMessage = ''; }, 5000);
+    } catch (err) {
+      console.error('Fix videos failed:', err);
+      fixMessage = 'Failed';
+    } finally {
+      fixingVideos = false;
+    }
+  }
+
+  // Delete location
+  async function deleteLocation() {
+    if (!window.electronAPI?.locations?.delete) return;
+
+    try {
+      deleting = true;
+      await window.electronAPI.locations.delete(location.locid);
+      showDeleteConfirm = false;
+      goto('/locations');
+    } catch (err) {
+      console.error('Delete location failed:', err);
+      alert('Failed to delete location');
+    } finally {
+      deleting = false;
+    }
   }
 </script>
 
@@ -230,6 +348,127 @@
       </div>
     {/if}
   </div>
+  </div>
+  {/if}
+</div>
+
+<!-- Location Settings Section (collapsed by default, PIN-protected) -->
+<div class="mt-6 bg-white rounded-lg shadow">
+  <button
+    onclick={() => settingsOpen = !settingsOpen}
+    aria-expanded={settingsOpen}
+    class="w-full p-6 flex items-center justify-between text-left hover:bg-gray-50 transition-colors rounded-lg"
+  >
+    <h2 class="text-xl font-semibold text-foreground">Location Settings</h2>
+    <svg
+      class="w-5 h-5 text-gray-400 transition-transform duration-200 {settingsOpen ? 'rotate-180' : ''}"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+    </svg>
+  </button>
+
+  {#if settingsOpen}
+  <div class="px-6 pb-6">
+    {#if !settingsUnlocked}
+      <!-- PIN Entry -->
+      <div class="flex items-center gap-3">
+        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+        <span class="text-sm text-gray-600">Enter PIN to unlock settings</span>
+      </div>
+      <div class="mt-3 flex items-center gap-3">
+        <input
+          type="password"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          maxlength="6"
+          bind:value={pinInput}
+          placeholder="PIN"
+          onkeydown={(e) => e.key === 'Enter' && verifyPin()}
+          class="w-24 px-3 py-2 text-center border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+        />
+        <button
+          onclick={verifyPin}
+          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+        >
+          Unlock
+        </button>
+        {#if pinError}
+          <span class="text-sm text-red-500">{pinError}</span>
+        {/if}
+      </div>
+    {:else}
+      <!-- Unlocked Settings -->
+      <div class="space-y-4">
+        <!-- Fix Media Buttons -->
+        <div class="flex flex-wrap items-center gap-3">
+          <button
+            onclick={fixLocationImages}
+            disabled={fixingImages || fixingVideos}
+            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+          >
+            {fixingImages ? 'Fixing...' : 'Fix Images'}
+          </button>
+          <button
+            onclick={fixLocationVideos}
+            disabled={fixingImages || fixingVideos}
+            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+          >
+            {fixingVideos ? 'Fixing...' : 'Fix Videos'}
+          </button>
+          {#if onEdit}
+            <button
+              onclick={onEdit}
+              class="px-4 py-2 bg-gray-600 text-white rounded hover:opacity-90 transition"
+            >
+              Edit Location
+            </button>
+          {/if}
+          {#if fixMessage}
+            <span class="text-sm text-gray-600">{fixMessage}</span>
+          {/if}
+        </div>
+
+        <!-- Delete Section -->
+        <div class="pt-4 border-t border-gray-200">
+          {#if !showDeleteConfirm}
+            <button
+              onclick={() => showDeleteConfirm = true}
+              class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
+            >
+              Delete Location
+            </button>
+          {:else}
+            <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p class="font-medium text-red-800 mb-2">Delete "{location.locnam}"?</p>
+              <p class="text-sm text-red-600 mb-4">
+                This action cannot be undone. Media files will remain on disk.
+              </p>
+              <div class="flex gap-3">
+                <button
+                  onclick={() => showDeleteConfirm = false}
+                  disabled={deleting}
+                  class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onclick={deleteLocation}
+                  disabled={deleting}
+                  class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50"
+                >
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
   </div>
   {/if}
 </div>
