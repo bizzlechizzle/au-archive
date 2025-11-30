@@ -42,7 +42,7 @@ function getChromiumPath(): string {
     case 'darwin': {
       // macOS - both arm64 and x64 use .app bundle
       const macArch = arch === 'arm64' ? 'mac-arm64' : 'mac-x64';
-      return path.join(basePath, macArch, 'Chromium.app/Contents/MacOS/Chromium');
+      return path.join(basePath, macArch, 'Archive Browser.app/Contents/MacOS/Chromium');
     }
 
     case 'win32':
