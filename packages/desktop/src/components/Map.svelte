@@ -858,7 +858,10 @@
                   data-name="${escapeHtml(name)}"
                   title="Delete this reference point"
                 >
-                  ×
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
                 </button>
               </div>
             </div>
@@ -973,15 +976,15 @@
   }
 
   :global(.delete-ref-btn) {
-    padding: 4px 8px;
+    padding: 4px 6px;
     background: #e5e5e5;
     color: #666;
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 13px;
-    font-weight: bold;
-    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   :global(.delete-ref-btn:hover) {
