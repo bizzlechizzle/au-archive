@@ -1,38 +1,54 @@
 <script lang="ts">
   /**
    * LocationNerdStats - Technical metadata (IDs, timestamps, GPS details, counts)
-   * Per LILBITS: ~150 lines, single responsibility
-   * Migration 34: Enhanced with per-user view tracking
-   * Location Settings Overhaul: Added PIN-protected settings section
+   * Location Settings: PIN-protected section at bottom for sensitive operations
    */
   import type { Location } from '@au-archive/core';
   import { router } from '../../stores/router';
+  import AutocompleteInput from '../AutocompleteInput.svelte';
+  import { getTypeForSubtype } from '../../lib/type-hierarchy';
 
   interface Props {
     location: Location;
     imageCount: number;
     videoCount: number;
     documentCount: number;
-    onEdit?: () => void;
+    onLocationUpdated?: () => void;
   }
 
-  let { location, imageCount, videoCount, documentCount, onEdit }: Props = $props();
+  let { location, imageCount, videoCount, documentCount, onLocationUpdated }: Props = $props();
 
   let isOpen = $state(false);
   let copiedField = $state<string | null>(null);
 
   // Location Settings state
-  let settingsOpen = $state(false);
   let settingsUnlocked = $state(false);
   let pinInput = $state('');
   let pinError = $state('');
   let fixingImages = $state(false);
   let fixingVideos = $state(false);
   let fixMessage = $state('');
+
+  // Edit Type modal state
+  let showEditType = $state(false);
+  let editType = $state('');
+  let editSubType = $state('');
+  let savingType = $state(false);
+  let typeSuggestions = $state<string[]>([]);
+  let subTypeSuggestions = $state<string[]>([]);
+
+  // Edit Name modal state
+  let showEditName = $state(false);
+  let editName = $state('');
+  let savingName = $state(false);
+
+  // Delete state
   let showDeleteConfirm = $state(false);
+  let deletePin = $state('');
+  let deletePinError = $state('');
   let deleting = $state(false);
 
-  // Migration 34: Per-user view statistics
+  // Per-user view statistics
   interface ViewStats {
     totalViews: number;
     uniqueViewers: number;
@@ -48,22 +64,41 @@
   let viewStats = $state<ViewStats | null>(null);
   let loadingViewStats = $state(false);
 
-  // Fetch view stats when section is opened
+  // Fetch view stats and suggestions when section is opened
   $effect(() => {
     if (isOpen && !viewStats && !loadingViewStats) {
       loadingViewStats = true;
       window.electronAPI?.locations?.getViewStats(location.locid)
-        .then((stats) => {
+        .then((stats: ViewStats) => {
           viewStats = stats;
         })
-        .catch((err) => {
+        .catch((err: Error) => {
           console.warn('[NerdStats] Failed to load view stats:', err);
         })
         .finally(() => {
           loadingViewStats = false;
         });
+
+      // Load type suggestions
+      loadSuggestions();
     }
   });
+
+  async function loadSuggestions() {
+    try {
+      const locations = await window.electronAPI?.locations?.findAll() || [];
+      const types = new Set<string>();
+      const subTypes = new Set<string>();
+      locations.forEach((loc: Location) => {
+        if (loc.type) types.add(loc.type);
+        if (loc.stype) subTypes.add(loc.stype);
+      });
+      typeSuggestions = Array.from(types).sort();
+      subTypeSuggestions = Array.from(subTypes).sort();
+    } catch (err) {
+      console.warn('[NerdStats] Failed to load suggestions:', err);
+    }
+  }
 
   function copyToClipboard(text: string, field: string) {
     navigator.clipboard.writeText(text);
@@ -73,7 +108,7 @@
     }, 1500);
   }
 
-  // PIN verification
+  // PIN verification for settings unlock
   async function verifyPin() {
     if (!pinInput) {
       pinError = 'Please enter your PIN';
@@ -81,9 +116,8 @@
     }
 
     try {
-      // Get current user to verify PIN against
       const users = await window.electronAPI?.users?.findAll?.() || [];
-      const currentUser = users[0];
+      const currentUser = users[0] as { user_id: string } | undefined;
 
       if (!currentUser) {
         pinError = 'No user found';
@@ -160,6 +194,102 @@
     }
   }
 
+  // Open Edit Type modal
+  function openEditType() {
+    editType = location.type || '';
+    editSubType = location.stype || '';
+    showEditType = true;
+  }
+
+  // Auto-fill type when sub-type changes
+  function handleSubTypeChange(value: string) {
+    editSubType = value;
+    if (value && !editType) {
+      const matchedType = getTypeForSubtype(value);
+      if (matchedType) {
+        editType = matchedType;
+      }
+    }
+  }
+
+  // Save type changes
+  async function saveType() {
+    if (!window.electronAPI?.locations?.update) return;
+
+    try {
+      savingType = true;
+      await window.electronAPI.locations.update(location.locid, {
+        type: editType || undefined,
+        stype: editSubType || undefined,
+      });
+      showEditType = false;
+      onLocationUpdated?.();
+    } catch (err) {
+      console.error('Save type failed:', err);
+      alert('Failed to save type');
+    } finally {
+      savingType = false;
+    }
+  }
+
+  // Open Edit Name modal
+  function openEditName() {
+    editName = location.locnam || '';
+    showEditName = true;
+  }
+
+  // Save name changes
+  async function saveName() {
+    if (!window.electronAPI?.locations?.update) return;
+    if (!editName.trim()) {
+      alert('Name is required');
+      return;
+    }
+
+    try {
+      savingName = true;
+      await window.electronAPI.locations.update(location.locid, {
+        locnam: editName.trim(),
+      });
+      showEditName = false;
+      onLocationUpdated?.();
+    } catch (err) {
+      console.error('Save name failed:', err);
+      alert('Failed to save name');
+    } finally {
+      savingName = false;
+    }
+  }
+
+  // Verify PIN for delete (second confirmation)
+  async function verifyDeletePin() {
+    if (!deletePin) {
+      deletePinError = 'Please enter your PIN';
+      return;
+    }
+
+    try {
+      const users = await window.electronAPI?.users?.findAll?.() || [];
+      const currentUser = users[0] as { user_id: string } | undefined;
+
+      if (!currentUser) {
+        deletePinError = 'No user found';
+        return;
+      }
+
+      const result = await window.electronAPI?.users?.verifyPin(currentUser.user_id, deletePin);
+      if (result?.success) {
+        // PIN verified, proceed with delete
+        await deleteLocation();
+      } else {
+        deletePinError = 'Invalid PIN';
+      }
+    } catch (err) {
+      console.error('PIN verification failed:', err);
+      deletePinError = 'Verification failed';
+    }
+  }
+
   // Delete location
   async function deleteLocation() {
     if (!window.electronAPI?.locations?.delete) return;
@@ -175,6 +305,12 @@
     } finally {
       deleting = false;
     }
+  }
+
+  function cancelDelete() {
+    showDeleteConfirm = false;
+    deletePin = '';
+    deletePinError = '';
   }
 </script>
 
@@ -252,7 +388,7 @@
       </div>
     {/if}
 
-    <!-- View Tracking (Migration 34: Per-user tracking) -->
+    <!-- View Tracking -->
     <div class="col-span-full border-b pb-3 mb-2 mt-5">
       <p class="text-xs font-semibold text-gray-400 uppercase mb-2">Activity</p>
     </div>
@@ -347,128 +483,238 @@
         <span class="ml-2">{location.regions.join(', ')}</span>
       </div>
     {/if}
-  </div>
-  </div>
-  {/if}
-</div>
 
-<!-- Location Settings Section (collapsed by default, PIN-protected) -->
-<div class="mt-6 bg-white rounded-lg shadow">
-  <button
-    onclick={() => settingsOpen = !settingsOpen}
-    aria-expanded={settingsOpen}
-    class="w-full p-6 flex items-center justify-between text-left hover:bg-gray-50 transition-colors rounded-lg"
-  >
-    <h2 class="text-xl font-semibold text-foreground">Location Settings</h2>
-    <svg
-      class="w-5 h-5 text-gray-400 transition-transform duration-200 {settingsOpen ? 'rotate-180' : ''}"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-    </svg>
-  </button>
-
-  {#if settingsOpen}
-  <div class="px-6 pb-6">
-    {#if !settingsUnlocked}
-      <!-- PIN Entry -->
-      <div class="flex items-center gap-3">
-        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-        </svg>
-        <span class="text-sm text-gray-600">Enter PIN to unlock settings</span>
-      </div>
-      <div class="mt-3 flex items-center gap-3">
-        <input
-          type="password"
-          inputmode="numeric"
-          pattern="[0-9]*"
-          maxlength="6"
-          bind:value={pinInput}
-          placeholder="PIN"
-          onkeydown={(e) => e.key === 'Enter' && verifyPin()}
-          class="w-24 px-3 py-2 text-center border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-        />
-        <button
-          onclick={verifyPin}
-          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
-        >
-          Unlock
-        </button>
-        {#if pinError}
-          <span class="text-sm text-red-500">{pinError}</span>
-        {/if}
-      </div>
-    {:else}
-      <!-- Unlocked Settings -->
-      <div class="space-y-4">
-        <!-- Fix Media Buttons -->
-        <div class="flex flex-wrap items-center gap-3">
+    <!-- Location Settings (PIN-protected, inside Nerd Stats) -->
+    <div class="col-span-full border-b pb-3 mb-2 mt-5">
+      <p class="text-xs font-semibold text-gray-400 uppercase mb-2">Location Settings</p>
+    </div>
+    <div class="col-span-full">
+      {#if !settingsUnlocked}
+        <!-- PIN Entry -->
+        <div class="flex items-center gap-3">
+          <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          <span class="text-sm text-gray-600">Enter PIN to unlock</span>
+        </div>
+        <div class="mt-2 flex items-center gap-3">
+          <input
+            type="password"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="6"
+            bind:value={pinInput}
+            placeholder="PIN"
+            onkeydown={(e) => e.key === 'Enter' && verifyPin()}
+            class="w-20 px-2 py-1 text-center text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          />
           <button
-            onclick={fixLocationImages}
-            disabled={fixingImages || fixingVideos}
-            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+            onclick={verifyPin}
+            class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90 transition"
           >
-            {fixingImages ? 'Fixing...' : 'Fix Images'}
+            Unlock
           </button>
-          <button
-            onclick={fixLocationVideos}
-            disabled={fixingImages || fixingVideos}
-            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-          >
-            {fixingVideos ? 'Fixing...' : 'Fix Videos'}
-          </button>
-          {#if onEdit}
-            <button
-              onclick={onEdit}
-              class="px-4 py-2 bg-gray-600 text-white rounded hover:opacity-90 transition"
-            >
-              Edit Location
-            </button>
-          {/if}
-          {#if fixMessage}
-            <span class="text-sm text-gray-600">{fixMessage}</span>
+          {#if pinError}
+            <span class="text-sm text-red-500">{pinError}</span>
           {/if}
         </div>
+      {:else}
+        <!-- Unlocked Settings -->
+        <div class="space-y-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              onclick={fixLocationImages}
+              disabled={fixingImages || fixingVideos}
+              class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+            >
+              {fixingImages ? 'Fixing...' : 'Fix Images'}
+            </button>
+            <button
+              onclick={fixLocationVideos}
+              disabled={fixingImages || fixingVideos}
+              class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+            >
+              {fixingVideos ? 'Fixing...' : 'Fix Videos'}
+            </button>
+            <button
+              onclick={openEditType}
+              class="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:opacity-90 transition"
+            >
+              Edit Type
+            </button>
+            <button
+              onclick={openEditName}
+              class="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:opacity-90 transition"
+            >
+              Edit Name
+            </button>
+            {#if fixMessage}
+              <span class="text-sm text-gray-600">{fixMessage}</span>
+            {/if}
+          </div>
 
-        <!-- Delete Section -->
-        <div class="pt-4 border-t border-gray-200">
-          {#if !showDeleteConfirm}
+          <div class="pt-2">
             <button
               onclick={() => showDeleteConfirm = true}
-              class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
+              class="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition"
             >
               Delete Location
             </button>
-          {:else}
-            <div class="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p class="font-medium text-red-800 mb-2">Delete "{location.locnam}"?</p>
-              <p class="text-sm text-red-600 mb-4">
-                This action cannot be undone. Media files will remain on disk.
-              </p>
-              <div class="flex gap-3">
-                <button
-                  onclick={() => showDeleteConfirm = false}
-                  disabled={deleting}
-                  class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  onclick={deleteLocation}
-                  disabled={deleting}
-                  class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50"
-                >
-                  {deleting ? 'Deleting...' : 'Delete'}
-                </button>
-              </div>
-            </div>
-          {/if}
+          </div>
         </div>
-      </div>
-    {/if}
+      {/if}
+    </div>
+  </div>
   </div>
   {/if}
 </div>
+
+<!-- Edit Type Modal -->
+{#if showEditType}
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onclick={() => showEditType = false}>
+  <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4" onclick={(e) => e.stopPropagation()}>
+    <div class="flex justify-between items-center mb-4">
+      <h3 class="text-lg font-semibold">Edit Type</h3>
+      <button onclick={() => showEditType = false} class="text-gray-400 hover:text-gray-600">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+    <div class="space-y-4">
+      <div>
+        <label for="edit-type" class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+        <AutocompleteInput
+          bind:value={editType}
+          suggestions={typeSuggestions}
+          id="edit-type"
+          placeholder="e.g., Industrial, Medical..."
+          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+        />
+      </div>
+      <div>
+        <label for="edit-subtype" class="block text-sm font-medium text-gray-700 mb-1">Sub-Type</label>
+        <AutocompleteInput
+          bind:value={editSubType}
+          onchange={handleSubTypeChange}
+          suggestions={subTypeSuggestions}
+          id="edit-subtype"
+          placeholder="e.g., Factory, Hospital..."
+          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+        />
+      </div>
+    </div>
+    <div class="flex justify-end gap-3 mt-6">
+      <button
+        onclick={() => showEditType = false}
+        class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
+      >
+        Cancel
+      </button>
+      <button
+        onclick={saveType}
+        disabled={savingType}
+        class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+      >
+        {savingType ? 'Saving...' : 'Save'}
+      </button>
+    </div>
+  </div>
+</div>
+{/if}
+
+<!-- Edit Name Modal -->
+{#if showEditName}
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onclick={() => showEditName = false}>
+  <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4" onclick={(e) => e.stopPropagation()}>
+    <div class="flex justify-between items-center mb-4">
+      <h3 class="text-lg font-semibold">Edit Name</h3>
+      <button onclick={() => showEditName = false} class="text-gray-400 hover:text-gray-600">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+    <div class="space-y-4">
+      <div>
+        <label for="edit-name" class="block text-sm font-medium text-gray-700 mb-1">Location Name</label>
+        <input
+          id="edit-name"
+          type="text"
+          bind:value={editName}
+          placeholder="Location name"
+          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+        />
+      </div>
+    </div>
+    <div class="flex justify-end gap-3 mt-6">
+      <button
+        onclick={() => showEditName = false}
+        class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
+      >
+        Cancel
+      </button>
+      <button
+        onclick={saveName}
+        disabled={savingName || !editName.trim()}
+        class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+      >
+        {savingName ? 'Saving...' : 'Save'}
+      </button>
+    </div>
+  </div>
+</div>
+{/if}
+
+<!-- Delete Confirmation Modal (with second PIN) -->
+{#if showDeleteConfirm}
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onclick={cancelDelete}>
+  <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4" onclick={(e) => e.stopPropagation()}>
+    <div class="flex justify-between items-center mb-4">
+      <h3 class="text-lg font-semibold text-red-800">Delete "{location.locnam}"?</h3>
+      <button onclick={cancelDelete} class="text-gray-400 hover:text-gray-600">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+    <div class="bg-red-50 border border-red-200 rounded p-4 mb-4">
+      <p class="text-sm text-red-700 mb-2">This action cannot be undone.</p>
+      <p class="text-sm text-red-600">Media files will remain on disk.</p>
+    </div>
+    <div class="mb-4">
+      <label for="delete-pin" class="block text-sm font-medium text-gray-700 mb-1">Enter PIN to confirm</label>
+      <input
+        id="delete-pin"
+        type="password"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        maxlength="6"
+        bind:value={deletePin}
+        placeholder="PIN"
+        onkeydown={(e) => e.key === 'Enter' && verifyDeletePin()}
+        class="w-24 px-3 py-2 text-center border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500"
+      />
+      {#if deletePinError}
+        <p class="text-sm text-red-500 mt-1">{deletePinError}</p>
+      {/if}
+    </div>
+    <div class="flex justify-end gap-3">
+      <button
+        onclick={cancelDelete}
+        disabled={deleting}
+        class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
+      >
+        Cancel
+      </button>
+      <button
+        onclick={verifyDeletePin}
+        disabled={deleting || !deletePin}
+        class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50"
+      >
+        {deleting ? 'Deleting...' : 'Delete'}
+      </button>
+    </div>
+  </div>
+</div>
+{/if}
