@@ -419,6 +419,7 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
 
   /**
    * Import with deduplication options (after preview)
+   * Migration 39: When skipDuplicates is true, merges names into AKA field
    */
   ipcMain.handle('refMaps:importWithOptions', async (
     _event,
@@ -439,10 +440,30 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
       }
 
       let pointsToImport = parseResult.points;
+      let mergedCount = 0;
 
-      // If skipping duplicates, filter them out
+      // If skipping duplicates, filter them and merge names into existing points
       if (options.skipDuplicates) {
         const dedupResult = await dedupService.checkForDuplicates(parseResult.points);
+
+        // Merge names for reference matches (duplicates against existing ref_map_points)
+        for (const match of dedupResult.referenceMatches) {
+          if (match.newPoint.name && match.type === 'reference') {
+            // Use the addOrMergePoint method to merge the name
+            await dedupService.addOrMergePoint(
+              '', // mapId not needed for merge-only
+              match.newPoint.name,
+              match.newPoint.lat,
+              match.newPoint.lng,
+              null, // description
+              null, // state
+              null, // category
+              null  // rawMetadata
+            );
+            mergedCount++;
+          }
+        }
+
         pointsToImport = dedupResult.newPoints;
       }
 
@@ -450,8 +471,11 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
         return {
           success: true,
           skippedAll: true,
-          message: 'All points were duplicates - nothing imported',
-          pointCount: 0
+          message: mergedCount > 0
+            ? `All points were duplicates - ${mergedCount} names merged into existing points`
+            : 'All points were duplicates - nothing imported',
+          pointCount: 0,
+          mergedCount,
         };
       }
 
@@ -477,7 +501,8 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
           importedBy: refMap.importedBy
         },
         pointCount: pointsToImport.length,
-        skippedCount: parseResult.points.length - pointsToImport.length
+        skippedCount: parseResult.points.length - pointsToImport.length,
+        mergedCount,
       };
     } catch (error) {
       console.error('Error importing reference map with options:', error);
@@ -605,6 +630,47 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
       return {
         success: false,
         deleted: 0,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Migration 39: Preview GPS-based deduplication within ref_map_points.
+   * Shows what would be merged without making changes.
+   */
+  ipcMain.handle('refMaps:previewDedup', async () => {
+    try {
+      const preview = await dedupService.preview();
+      return {
+        success: true,
+        ...preview,
+      };
+    } catch (error) {
+      console.error('Error previewing deduplication:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Migration 39: Run GPS-based deduplication on ref_map_points.
+   * Merges duplicate pins at the same GPS location (~10m precision).
+   * Keeps the best name and stores alternates in aka_names field.
+   */
+  ipcMain.handle('refMaps:deduplicate', async () => {
+    try {
+      const stats = await dedupService.deduplicate();
+      return {
+        success: true,
+        stats,
+      };
+    } catch (error) {
+      console.error('Error running deduplication:', error);
+      return {
+        success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       };
     }

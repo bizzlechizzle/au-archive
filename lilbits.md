@@ -56,3 +56,30 @@ Validates that all 8 region fields are populated without gaps. Reports failures 
 **Lines:** ~259 LOC
 
 **Added:** 2024-11-28 (Region Gap Fix)
+
+---
+
+### `scripts/run-dedup.py`
+
+**Purpose:** GPS-based deduplication for ref_map_points table
+
+**Usage:**
+```bash
+python3 scripts/run-dedup.py
+```
+
+**Description:**
+Migration 39 cleanup script. Finds and merges duplicate pins that exist at the same GPS location (within ~10m precision = 4 decimal places):
+
+1. Creates a backup before modifications
+2. Runs Migration 39 if needed (aka_names column)
+3. Groups points by rounded GPS coordinates
+4. Scores each name for quality (length, descriptiveness, proper nouns)
+5. Keeps the best name, stores alternates in aka_names (pipe-separated)
+6. Deletes duplicate points
+
+Uses Python's built-in sqlite3 module (no native module issues with Electron's Node version).
+
+**Lines:** ~235 LOC
+
+**Added:** 2025-11-30 (Migration 39 - Ref Map Deduplication)

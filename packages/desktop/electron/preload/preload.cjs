@@ -329,6 +329,9 @@ const api = {
     purgeCataloguedPoints: () => ipcRenderer.invoke("refMaps:purgeCataloguedPoints"),
     // Phase 5: Delete single point from map popup
     deletePoint: (pointId) => ipcRenderer.invoke("refMaps:deletePoint", pointId),
+    // Migration 39: GPS-based deduplication within ref_map_points
+    previewDedup: () => ipcRenderer.invoke("refMaps:previewDedup"),
+    deduplicate: () => ipcRenderer.invoke("refMaps:deduplicate"),
   },
 };
 

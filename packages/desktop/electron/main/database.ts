@@ -1302,6 +1302,27 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 38 completed: location_exclusions table created');
     }
+
+    // Migration 39: Add aka_names to ref_map_points for deduplication
+    // Stores alternate names when merging duplicate pins
+    const akaColumnExists = sqlite.prepare(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('ref_map_points') WHERE name='aka_names'"
+    ).get() as { cnt: number };
+
+    if (akaColumnExists.cnt === 0) {
+      console.log('Running migration 39: Adding aka_names to ref_map_points');
+
+      sqlite.exec(`
+        -- Add aka_names column for storing alternate names from merged pins
+        ALTER TABLE ref_map_points ADD COLUMN aka_names TEXT;
+
+        -- Add index for rounded GPS lookup (deduplication)
+        CREATE INDEX IF NOT EXISTS idx_ref_map_points_gps_rounded
+          ON ref_map_points(ROUND(lat, 4), ROUND(lng, 4));
+      `);
+
+      console.log('Migration 39 completed: aka_names column added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

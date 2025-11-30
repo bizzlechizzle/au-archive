@@ -497,6 +497,8 @@ export interface RefMapPointsTable {
   state: string | null;
   category: string | null;
   raw_metadata: string | null;  // JSON blob
+  // Migration 39: AKA names from merged duplicate pins
+  aka_names: string | null;     // Pipe-separated alternate names
 }
 
 // Migration 38: Location Exclusions - "Different place" decisions

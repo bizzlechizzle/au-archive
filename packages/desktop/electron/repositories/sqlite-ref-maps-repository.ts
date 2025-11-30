@@ -27,6 +27,8 @@ export interface RefMapPoint {
   state: string | null;
   category: string | null;
   rawMetadata: Record<string, unknown> | null;
+  // Migration 39: AKA names from merged duplicate pins
+  akaNames: string | null;
 }
 
 export interface RefMapWithPoints extends RefMap {
@@ -61,7 +63,8 @@ function rowToRefMapPoint(row: RefMapPointsTable): RefMapPoint {
     lng: row.lng,
     state: row.state,
     category: row.category,
-    rawMetadata: row.raw_metadata ? JSON.parse(row.raw_metadata) : null
+    rawMetadata: row.raw_metadata ? JSON.parse(row.raw_metadata) : null,
+    akaNames: row.aka_names,
   };
 }
 

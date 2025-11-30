@@ -1,257 +1,495 @@
 /**
- * Reference Map Deduplication Service
+ * Reference Map Points Deduplication Service
  *
- * Detects potential duplicates when importing reference map files by checking:
- * 1. Against existing ref_map_points (Type A: reference duplicates)
- * 2. Against existing locs table (Type B: already catalogued locations)
+ * Two-tier deduplication:
+ * 1. GPS-based cleanup within ref_map_points (~10m = 4 decimal places)
+ * 2. Cross-table matching against catalogued locations (locs table)
  *
- * Detection criteria: Name similarity >= 85% AND GPS proximity <= 500m
+ * Migration 39: Adds aka_names column for storing merged alternate names.
+ *
+ * For GPS duplicate groups:
+ * - Keeps the pin with the best (longest/most descriptive) name
+ * - Stores alternate names in aka_names field (pipe-separated)
+ * - Deletes the duplicate pins
+ *
+ * Also provides import-time duplicate checking to prevent future duplicates.
  */
 
 import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
-import type { ParsedMapPoint } from './map-parser-service';
-import { jaroWinklerSimilarity } from './jaro-winkler-service';
-import { haversineDistance, getBoundingBox } from './geo-utils';
+import { jaroWinklerSimilarity, normalizeName } from './jaro-winkler-service';
+import { haversineDistance } from './geo-utils';
+
+// Constants for duplicate detection
+const GPS_RADIUS_METERS = 150; // Match against catalogued locations
+const NAME_SIMILARITY_THRESHOLD = 0.50; // 50% Jaro-Winkler
 
 /**
- * Represents a detected duplicate match
+ * Types for import preview and deduplication
  */
 export interface DuplicateMatch {
   type: 'catalogued' | 'reference';
-  newPoint: ParsedMapPoint;
+  newPoint: {
+    name: string | null;
+    lat: number;
+    lng: number;
+  };
+  existingId: string;
   existingName: string;
-  existingId: string; // locid for catalogued, point_id for reference
-  nameSimilarity: number; // 0-1 score
-  distanceMeters: number;
-  mapName?: string; // Only for reference matches
+  nameSimilarity?: number;
+  distanceMeters?: number;
+  mapName?: string;
 }
 
-/**
- * Result of deduplication check
- */
 export interface DedupeResult {
-  newPoints: ParsedMapPoint[]; // Unique points that can be imported
-  cataloguedMatches: DuplicateMatch[]; // Matches against locs table
-  referenceMatches: DuplicateMatch[]; // Matches against ref_map_points
   totalParsed: number;
+  newPoints: Array<{
+    name: string | null;
+    description: string | null;
+    lat: number;
+    lng: number;
+    state: string | null;
+    category: string | null;
+    rawMetadata: Record<string, unknown> | null;
+  }>;
+  cataloguedMatches: DuplicateMatch[];
+  referenceMatches: DuplicateMatch[];
+}
+
+export interface CataloguedMatch {
+  pointId: string;
+  pointName: string | null;
+  mapName: string;
+  matchedLocid: string;
+  matchedLocName: string;
+  nameSimilarity: number;
+  distanceMeters: number;
+}
+
+export interface DedupStats {
+  totalPoints: number;
+  uniqueLocations: number;
+  duplicateGroups: number;
+  pointsRemoved: number;
+  pointsWithAka: number;
+}
+
+export interface DuplicateGroup {
+  roundedLat: number;
+  roundedLng: number;
+  points: Array<{
+    pointId: string;
+    name: string | null;
+    mapId: string;
+    description: string | null;
+  }>;
 }
 
 /**
- * Options for deduplication check
+ * Score a name for quality - higher is better
+ * Prefers longer, more descriptive names over short/generic ones
  */
-export interface DedupeOptions {
-  nameThreshold?: number; // Default: 0.85 (85% similarity)
-  distanceThreshold?: number; // Default: 500 meters
+function scoreName(name: string | null): number {
+  if (!name) return 0;
+
+  let score = name.length;
+
+  // Penalize coordinate-style names (e.g., "44.29951983081727,-75.9590595960617")
+  if (/^-?\d+\.\d+,-?\d+\.\d+$/.test(name)) {
+    score = 1;
+  }
+
+  // Penalize very short names
+  if (name.length < 5) {
+    score -= 10;
+  }
+
+  // Penalize generic names
+  const genericPatterns = [
+    /^house$/i,
+    /^building$/i,
+    /^place$/i,
+    /^location$/i,
+    /^point$/i,
+    /^site$/i,
+  ];
+  for (const pattern of genericPatterns) {
+    if (pattern.test(name)) {
+      score -= 20;
+    }
+  }
+
+  // Bonus for names with proper nouns (capitalized words)
+  const properNouns = name.match(/[A-Z][a-z]+/g);
+  if (properNouns) {
+    score += properNouns.length * 5;
+  }
+
+  // Bonus for descriptive suffixes
+  const descriptiveSuffixes = [
+    /factory/i,
+    /hospital/i,
+    /school/i,
+    /church/i,
+    /theater/i,
+    /theatre/i,
+    /mill/i,
+    /farm/i,
+    /brewery/i,
+    /county/i,
+    /poorhouse/i,
+  ];
+  for (const suffix of descriptiveSuffixes) {
+    if (suffix.test(name)) {
+      score += 10;
+    }
+  }
+
+  return score;
 }
 
-const DEFAULT_NAME_THRESHOLD = 0.85;
-const DEFAULT_DISTANCE_THRESHOLD = 500; // meters
+/**
+ * Pick the best name from a group of duplicates
+ * Returns the name with the highest score
+ */
+function pickBestName(names: (string | null)[]): string | null {
+  const validNames = names.filter((n): n is string => n !== null && n.trim() !== '');
+  if (validNames.length === 0) return null;
+
+  let bestName = validNames[0];
+  let bestScore = scoreName(bestName);
+
+  for (const name of validNames.slice(1)) {
+    const score = scoreName(name);
+    if (score > bestScore) {
+      bestName = name;
+      bestScore = score;
+    }
+  }
+
+  return bestName;
+}
+
+/**
+ * Collect alternate names (excluding the primary name)
+ */
+function collectAkaNames(names: (string | null)[], primaryName: string | null): string | null {
+  const validNames = names.filter((n): n is string =>
+    n !== null &&
+    n.trim() !== '' &&
+    n !== primaryName &&
+    // Exclude coordinate-style names from AKA
+    !/^-?\d+\.\d+,-?\d+\.\d+$/.test(n)
+  );
+
+  // Remove duplicates (case-insensitive)
+  const uniqueNames = [...new Set(validNames.map(n => n.toLowerCase()))]
+    .map(lower => validNames.find(n => n.toLowerCase() === lower)!);
+
+  if (uniqueNames.length === 0) return null;
+  return uniqueNames.join(' | ');
+}
 
 export class RefMapDedupService {
   constructor(private db: Kysely<Database>) {}
 
   /**
-   * Check parsed points for duplicates against existing data.
-   *
-   * @param parsedPoints - Points parsed from the import file
-   * @param options - Threshold options
-   * @returns Categorized results with new points and matches
+   * Find all duplicate groups in ref_map_points
+   * Groups points by rounded GPS coordinates (4 decimal places ≈ 10m precision)
    */
-  async checkForDuplicates(
-    parsedPoints: ParsedMapPoint[],
-    options?: DedupeOptions
-  ): Promise<DedupeResult> {
-    const nameThreshold = options?.nameThreshold ?? DEFAULT_NAME_THRESHOLD;
-    const distanceThreshold = options?.distanceThreshold ?? DEFAULT_DISTANCE_THRESHOLD;
+  async findDuplicateGroups(): Promise<DuplicateGroup[]> {
+    // Get all points with their rounded coordinates
+    const points = await this.db
+      .selectFrom('ref_map_points')
+      .select([
+        'point_id',
+        'name',
+        'map_id',
+        'description',
+        'lat',
+        'lng',
+      ])
+      .execute();
 
-    const newPoints: ParsedMapPoint[] = [];
-    const cataloguedMatches: DuplicateMatch[] = [];
-    const referenceMatches: DuplicateMatch[] = [];
+    // Group by rounded coordinates
+    const groups = new Map<string, DuplicateGroup>();
 
-    for (const point of parsedPoints) {
-      // Skip points without names (can't match by name)
-      if (!point.name) {
-        newPoints.push(point);
-        continue;
+    for (const point of points) {
+      const roundedLat = Math.round(point.lat * 10000) / 10000;
+      const roundedLng = Math.round(point.lng * 10000) / 10000;
+      const key = `${roundedLat},${roundedLng}`;
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          roundedLat,
+          roundedLng,
+          points: [],
+        });
       }
 
-      // Check against catalogued locations first (higher priority)
-      const cataloguedMatch = await this.findCataloguedMatch(
-        point,
-        nameThreshold,
-        distanceThreshold
-      );
-
-      if (cataloguedMatch) {
-        cataloguedMatches.push(cataloguedMatch);
-        continue;
-      }
-
-      // Check against existing reference points
-      const referenceMatch = await this.findReferenceMatch(
-        point,
-        nameThreshold,
-        distanceThreshold
-      );
-
-      if (referenceMatch) {
-        referenceMatches.push(referenceMatch);
-        continue;
-      }
-
-      // No match found - this is a new point
-      newPoints.push(point);
+      groups.get(key)!.points.push({
+        pointId: point.point_id,
+        name: point.name,
+        mapId: point.map_id,
+        description: point.description,
+      });
     }
 
+    // Return only groups with duplicates (2+ points)
+    return Array.from(groups.values()).filter(g => g.points.length > 1);
+  }
+
+  /**
+   * Run deduplication on all ref_map_points
+   * Returns stats about what was cleaned up
+   */
+  async deduplicate(): Promise<DedupStats> {
+    const duplicateGroups = await this.findDuplicateGroups();
+
+    const stats: DedupStats = {
+      totalPoints: 0,
+      uniqueLocations: 0,
+      duplicateGroups: duplicateGroups.length,
+      pointsRemoved: 0,
+      pointsWithAka: 0,
+    };
+
+    // Get total count
+    const countResult = await this.db
+      .selectFrom('ref_map_points')
+      .select(eb => eb.fn.count('point_id').as('count'))
+      .executeTakeFirst();
+    stats.totalPoints = Number(countResult?.count || 0);
+
+    console.log(`[RefMapDedup] Found ${duplicateGroups.length} duplicate groups`);
+
+    for (const group of duplicateGroups) {
+      const names = group.points.map(p => p.name);
+      const bestName = pickBestName(names);
+      const akaNames = collectAkaNames(names, bestName);
+
+      // Find the point to keep (the one with the best name, or first if tie)
+      let keepPoint = group.points[0];
+      let keepScore = scoreName(keepPoint.name);
+
+      for (const point of group.points.slice(1)) {
+        const score = scoreName(point.name);
+        if (score > keepScore) {
+          keepPoint = point;
+          keepScore = score;
+        }
+      }
+
+      // Update the keeper with the best name and AKA names
+      await this.db
+        .updateTable('ref_map_points')
+        .set({
+          name: bestName,
+          aka_names: akaNames,
+        })
+        .where('point_id', '=', keepPoint.pointId)
+        .execute();
+
+      if (akaNames) {
+        stats.pointsWithAka++;
+      }
+
+      // Delete the duplicates
+      const deleteIds = group.points
+        .filter(p => p.pointId !== keepPoint.pointId)
+        .map(p => p.pointId);
+
+      if (deleteIds.length > 0) {
+        await this.db
+          .deleteFrom('ref_map_points')
+          .where('point_id', 'in', deleteIds)
+          .execute();
+
+        stats.pointsRemoved += deleteIds.length;
+
+        console.log(`[RefMapDedup] Merged ${group.points.length} pins at (${group.roundedLat}, ${group.roundedLng})`);
+        console.log(`  Kept: "${bestName}" | AKA: "${akaNames || 'none'}"`);
+      }
+    }
+
+    // Calculate unique locations
+    stats.uniqueLocations = stats.totalPoints - stats.pointsRemoved;
+
+    console.log(`[RefMapDedup] Complete: Removed ${stats.pointsRemoved} duplicates, ${stats.pointsWithAka} pins have AKA names`);
+
+    return stats;
+  }
+
+  /**
+   * Check if a point already exists at the given GPS coordinates
+   * Used during import to prevent adding duplicates
+   *
+   * @param lat Latitude
+   * @param lng Longitude
+   * @param precision Decimal places for rounding (default 4 ≈ 10m)
+   * @returns Existing point if found, null otherwise
+   */
+  async findExistingPoint(lat: number, lng: number, precision = 4): Promise<{
+    pointId: string;
+    name: string | null;
+    akaNames: string | null;
+  } | null> {
+    const multiplier = Math.pow(10, precision);
+    const roundedLat = Math.round(lat * multiplier) / multiplier;
+    const roundedLng = Math.round(lng * multiplier) / multiplier;
+
+    // Search for points within the precision window
+    const existing = await this.db
+      .selectFrom('ref_map_points')
+      .select(['point_id', 'name', 'aka_names'])
+      .where('lat', '>=', roundedLat - 0.5 / multiplier)
+      .where('lat', '<=', roundedLat + 0.5 / multiplier)
+      .where('lng', '>=', roundedLng - 0.5 / multiplier)
+      .where('lng', '<=', roundedLng + 0.5 / multiplier)
+      .executeTakeFirst();
+
+    if (!existing) return null;
+
     return {
-      newPoints,
-      cataloguedMatches,
-      referenceMatches,
-      totalParsed: parsedPoints.length,
+      pointId: existing.point_id,
+      name: existing.name,
+      akaNames: existing.aka_names,
     };
   }
 
   /**
-   * Find a match in the locs table (catalogued locations)
+   * Add a new point, merging with existing if duplicate found
+   * Returns the point ID (either new or existing)
    */
-  private async findCataloguedMatch(
-    point: ParsedMapPoint,
-    nameThreshold: number,
-    distanceThreshold: number
-  ): Promise<DuplicateMatch | null> {
-    // Get bounding box for pre-filtering
-    const bbox = getBoundingBox(point.lat, point.lng, distanceThreshold);
+  async addOrMergePoint(
+    mapId: string,
+    name: string | null,
+    lat: number,
+    lng: number,
+    description: string | null,
+    state: string | null,
+    category: string | null,
+    rawMetadata: Record<string, unknown> | null
+  ): Promise<{ pointId: string; merged: boolean }> {
+    const existing = await this.findExistingPoint(lat, lng);
 
-    // Query locations within bounding box that have GPS
-    const candidates = await this.db
-      .selectFrom('locs')
-      .select(['locid', 'locnam', 'gps_lat', 'gps_lng'])
-      .where('gps_lat', 'is not', null)
-      .where('gps_lng', 'is not', null)
-      .where('gps_lat', '>=', bbox.minLat)
-      .where('gps_lat', '<=', bbox.maxLat)
-      .where('gps_lng', '>=', bbox.minLng)
-      .where('gps_lng', '<=', bbox.maxLng)
-      .execute();
+    if (existing) {
+      // Merge: Add new name to AKA if different
+      const existingNames = [existing.name, ...(existing.akaNames?.split(' | ') || [])];
+      const newNameLower = name?.toLowerCase();
 
-    for (const candidate of candidates) {
-      if (!candidate.gps_lat || !candidate.gps_lng) continue;
+      const isDifferentName = name &&
+        !existingNames.some(n => n?.toLowerCase() === newNameLower);
 
-      // Check exact distance
-      const distance = haversineDistance(
-        point.lat,
-        point.lng,
-        candidate.gps_lat,
-        candidate.gps_lng
-      );
+      if (isDifferentName) {
+        const updatedAka = existing.akaNames
+          ? `${existing.akaNames} | ${name}`
+          : name;
 
-      if (distance > distanceThreshold) continue;
+        await this.db
+          .updateTable('ref_map_points')
+          .set({ aka_names: updatedAka })
+          .where('point_id', '=', existing.pointId)
+          .execute();
 
-      // Check name similarity
-      const similarity = jaroWinklerSimilarity(point.name!, candidate.locnam);
-
-      if (similarity >= nameThreshold) {
-        return {
-          type: 'catalogued',
-          newPoint: point,
-          existingName: candidate.locnam,
-          existingId: candidate.locid,
-          nameSimilarity: similarity,
-          distanceMeters: Math.round(distance),
-        };
+        console.log(`[RefMapDedup] Merged "${name}" into existing point "${existing.name}"`);
       }
+
+      return { pointId: existing.pointId, merged: true };
     }
 
-    return null;
+    // No duplicate - insert new point
+    const { randomUUID } = await import('crypto');
+    const pointId = randomUUID();
+
+    await this.db
+      .insertInto('ref_map_points')
+      .values({
+        point_id: pointId,
+        map_id: mapId,
+        name,
+        description,
+        lat,
+        lng,
+        state,
+        category,
+        raw_metadata: rawMetadata ? JSON.stringify(rawMetadata) : null,
+        aka_names: null,
+      })
+      .execute();
+
+    return { pointId, merged: false };
   }
 
   /**
-   * Find a match in the ref_map_points table (existing references)
+   * Get deduplication preview without making changes
    */
-  private async findReferenceMatch(
-    point: ParsedMapPoint,
-    nameThreshold: number,
-    distanceThreshold: number
-  ): Promise<DuplicateMatch | null> {
-    // Get bounding box for pre-filtering
-    const bbox = getBoundingBox(point.lat, point.lng, distanceThreshold);
+  async preview(): Promise<{
+    stats: DedupStats;
+    groups: Array<{
+      lat: number;
+      lng: number;
+      bestName: string | null;
+      akaNames: string | null;
+      pointCount: number;
+      allNames: string[];
+    }>;
+  }> {
+    const duplicateGroups = await this.findDuplicateGroups();
 
-    // Query reference points within bounding box
-    const candidates = await this.db
+    const countResult = await this.db
       .selectFrom('ref_map_points')
-      .innerJoin('ref_maps', 'ref_map_points.map_id', 'ref_maps.map_id')
-      .select([
-        'ref_map_points.point_id',
-        'ref_map_points.name',
-        'ref_map_points.lat',
-        'ref_map_points.lng',
-        'ref_maps.map_name',
-      ])
-      .where('ref_map_points.lat', '>=', bbox.minLat)
-      .where('ref_map_points.lat', '<=', bbox.maxLat)
-      .where('ref_map_points.lng', '>=', bbox.minLng)
-      .where('ref_map_points.lng', '<=', bbox.maxLng)
-      .where('ref_map_points.name', 'is not', null)
-      .execute();
+      .select(eb => eb.fn.count('point_id').as('count'))
+      .executeTakeFirst();
 
-    for (const candidate of candidates) {
-      if (!candidate.name) continue;
+    const totalPoints = Number(countResult?.count || 0);
+    let pointsRemoved = 0;
+    let pointsWithAka = 0;
 
-      // Check exact distance
-      const distance = haversineDistance(
-        point.lat,
-        point.lng,
-        candidate.lat,
-        candidate.lng
-      );
+    const groups = duplicateGroups.map(group => {
+      const names = group.points.map(p => p.name).filter((n): n is string => n !== null);
+      const bestName = pickBestName(group.points.map(p => p.name));
+      const akaNames = collectAkaNames(group.points.map(p => p.name), bestName);
 
-      if (distance > distanceThreshold) continue;
+      pointsRemoved += group.points.length - 1;
+      if (akaNames) pointsWithAka++;
 
-      // Check name similarity
-      const similarity = jaroWinklerSimilarity(point.name!, candidate.name);
+      return {
+        lat: group.roundedLat,
+        lng: group.roundedLng,
+        bestName,
+        akaNames,
+        pointCount: group.points.length,
+        allNames: names,
+      };
+    });
 
-      if (similarity >= nameThreshold) {
-        return {
-          type: 'reference',
-          newPoint: point,
-          existingName: candidate.name,
-          existingId: candidate.point_id,
-          nameSimilarity: similarity,
-          distanceMeters: Math.round(distance),
-          mapName: candidate.map_name,
-        };
-      }
-    }
-
-    return null;
+    return {
+      stats: {
+        totalPoints,
+        uniqueLocations: totalPoints - pointsRemoved,
+        duplicateGroups: duplicateGroups.length,
+        pointsRemoved,
+        pointsWithAka,
+      },
+      groups,
+    };
   }
 
-  /**
-   * Find all reference points that match catalogued locations.
-   * Used for purging reference points that are no longer needed.
-   *
-   * @param options - Threshold options
-   * @returns Array of point IDs that can be deleted
-   */
-  async findCataloguedRefPoints(
-    options?: DedupeOptions
-  ): Promise<Array<{
-    pointId: string;
-    pointName: string;
-    mapName: string;
-    matchedLocid: string;
-    matchedLocName: string;
-    nameSimilarity: number;
-    distanceMeters: number;
-  }>> {
-    const nameThreshold = options?.nameThreshold ?? DEFAULT_NAME_THRESHOLD;
-    const distanceThreshold = options?.distanceThreshold ?? DEFAULT_DISTANCE_THRESHOLD;
+  // ========================================================================
+  // CROSS-TABLE METHODS - Check ref_map_points against locs table
+  // ========================================================================
 
-    // Get all reference points with their map names
+  /**
+   * Find ref_map_points that match existing locations in the locs table.
+   * These are points that have already been "catalogued" as real locations.
+   * Returns matches based on GPS proximity and/or name similarity.
+   */
+  async findCataloguedRefPoints(): Promise<CataloguedMatch[]> {
+    // Get all ref points
     const refPoints = await this.db
       .selectFrom('ref_map_points')
-      .innerJoin('ref_maps', 'ref_map_points.map_id', 'ref_maps.map_id')
+      .innerJoin('ref_maps', 'ref_maps.map_id', 'ref_map_points.map_id')
       .select([
         'ref_map_points.point_id',
         'ref_map_points.name',
@@ -259,64 +497,66 @@ export class RefMapDedupService {
         'ref_map_points.lng',
         'ref_maps.map_name',
       ])
-      .where('ref_map_points.name', 'is not', null)
       .execute();
 
-    const matches: Array<{
-      pointId: string;
-      pointName: string;
-      mapName: string;
-      matchedLocid: string;
-      matchedLocName: string;
-      nameSimilarity: number;
-      distanceMeters: number;
-    }> = [];
+    // Get all catalogued locations
+    const locations = await this.db
+      .selectFrom('locs')
+      .select(['locid', 'locnam', 'gps_lat', 'gps_lng', 'akanam'])
+      .where('gps_lat', 'is not', null)
+      .where('gps_lng', 'is not', null)
+      .execute();
+
+    const matches: CataloguedMatch[] = [];
 
     for (const point of refPoints) {
-      if (!point.name) continue;
+      for (const loc of locations) {
+        if (loc.gps_lat === null || loc.gps_lng === null) continue;
 
-      // Get bounding box for pre-filtering
-      const bbox = getBoundingBox(point.lat, point.lng, distanceThreshold);
-
-      // Query locations within bounding box that have GPS
-      const candidates = await this.db
-        .selectFrom('locs')
-        .select(['locid', 'locnam', 'gps_lat', 'gps_lng'])
-        .where('gps_lat', 'is not', null)
-        .where('gps_lng', 'is not', null)
-        .where('gps_lat', '>=', bbox.minLat)
-        .where('gps_lat', '<=', bbox.maxLat)
-        .where('gps_lng', '>=', bbox.minLng)
-        .where('gps_lng', '<=', bbox.maxLng)
-        .execute();
-
-      for (const candidate of candidates) {
-        if (!candidate.gps_lat || !candidate.gps_lng) continue;
-
-        // Check exact distance
+        // Check GPS proximity
         const distance = haversineDistance(
-          point.lat,
-          point.lng,
-          candidate.gps_lat,
-          candidate.gps_lng
+          point.lat, point.lng,
+          loc.gps_lat, loc.gps_lng
         );
 
-        if (distance > distanceThreshold) continue;
+        if (distance <= GPS_RADIUS_METERS) {
+          // GPS match
+          const nameSim = point.name && loc.locnam
+            ? jaroWinklerSimilarity(normalizeName(point.name), normalizeName(loc.locnam))
+            : 0;
 
-        // Check name similarity
-        const similarity = jaroWinklerSimilarity(point.name, candidate.locnam);
-
-        if (similarity >= nameThreshold) {
           matches.push({
             pointId: point.point_id,
             pointName: point.name,
             mapName: point.map_name,
-            matchedLocid: candidate.locid,
-            matchedLocName: candidate.locnam,
-            nameSimilarity: similarity,
+            matchedLocid: loc.locid,
+            matchedLocName: loc.locnam,
+            nameSimilarity: Math.round(nameSim * 100),
             distanceMeters: Math.round(distance),
           });
-          break; // Only need one match per ref point
+          break; // Found match, move to next point
+        }
+
+        // Check name similarity if GPS didn't match
+        if (point.name) {
+          const normalizedPointName = normalizeName(point.name);
+          const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
+
+          for (const locName of namesToCheck) {
+            const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
+            if (nameSim >= NAME_SIMILARITY_THRESHOLD) {
+              matches.push({
+                pointId: point.point_id,
+                pointName: point.name,
+                mapName: point.map_name,
+                matchedLocid: loc.locid,
+                matchedLocName: loc.locnam,
+                nameSimilarity: Math.round(nameSim * 100),
+                distanceMeters: Math.round(distance),
+              });
+              break;
+            }
+          }
         }
       }
     }
@@ -325,10 +565,124 @@ export class RefMapDedupService {
   }
 
   /**
-   * Delete specific reference points by their IDs.
-   *
-   * @param pointIds - Array of point IDs to delete
-   * @returns Number of points deleted
+   * Check incoming points against existing ref_map_points and locs.
+   * Used during import preview to identify duplicates before importing.
+   */
+  async checkForDuplicates(points: Array<{
+    name: string | null;
+    description: string | null;
+    lat: number;
+    lng: number;
+    state: string | null;
+    category: string | null;
+    rawMetadata: Record<string, unknown> | null;
+  }>): Promise<DedupeResult> {
+    const result: DedupeResult = {
+      totalParsed: points.length,
+      newPoints: [],
+      cataloguedMatches: [],
+      referenceMatches: [],
+    };
+
+    // Get existing ref points for checking
+    const existingRefPoints = await this.db
+      .selectFrom('ref_map_points')
+      .innerJoin('ref_maps', 'ref_maps.map_id', 'ref_map_points.map_id')
+      .select([
+        'ref_map_points.point_id',
+        'ref_map_points.name',
+        'ref_map_points.lat',
+        'ref_map_points.lng',
+        'ref_maps.map_name',
+      ])
+      .execute();
+
+    // Get catalogued locations
+    const locations = await this.db
+      .selectFrom('locs')
+      .select(['locid', 'locnam', 'gps_lat', 'gps_lng', 'akanam'])
+      .where('gps_lat', 'is not', null)
+      .where('gps_lng', 'is not', null)
+      .execute();
+
+    for (const point of points) {
+      let isDuplicate = false;
+
+      // Check against catalogued locations (locs table)
+      for (const loc of locations) {
+        if (loc.gps_lat === null || loc.gps_lng === null) continue;
+
+        const distance = haversineDistance(point.lat, point.lng, loc.gps_lat, loc.gps_lng);
+
+        if (distance <= GPS_RADIUS_METERS) {
+          result.cataloguedMatches.push({
+            type: 'catalogued',
+            newPoint: { name: point.name, lat: point.lat, lng: point.lng },
+            existingId: loc.locid,
+            existingName: loc.locnam,
+            distanceMeters: Math.round(distance),
+          });
+          isDuplicate = true;
+          break;
+        }
+
+        // Check name similarity
+        if (point.name) {
+          const normalizedPointName = normalizeName(point.name);
+          const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
+
+          for (const locName of namesToCheck) {
+            const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
+            if (nameSim >= NAME_SIMILARITY_THRESHOLD) {
+              result.cataloguedMatches.push({
+                type: 'catalogued',
+                newPoint: { name: point.name, lat: point.lat, lng: point.lng },
+                existingId: loc.locid,
+                existingName: loc.locnam,
+                nameSimilarity: Math.round(nameSim * 100),
+              });
+              isDuplicate = true;
+              break;
+            }
+          }
+          if (isDuplicate) break;
+        }
+      }
+
+      if (isDuplicate) continue;
+
+      // Check against existing ref_map_points (GPS proximity ~10m)
+      for (const refPoint of existingRefPoints) {
+        const roundedNewLat = Math.round(point.lat * 10000) / 10000;
+        const roundedNewLng = Math.round(point.lng * 10000) / 10000;
+        const roundedExistingLat = Math.round(refPoint.lat * 10000) / 10000;
+        const roundedExistingLng = Math.round(refPoint.lng * 10000) / 10000;
+
+        if (roundedNewLat === roundedExistingLat && roundedNewLng === roundedExistingLng) {
+          result.referenceMatches.push({
+            type: 'reference',
+            newPoint: { name: point.name, lat: point.lat, lng: point.lng },
+            existingId: refPoint.point_id,
+            existingName: refPoint.name || 'Unnamed',
+            mapName: refPoint.map_name,
+            distanceMeters: Math.round(haversineDistance(point.lat, point.lng, refPoint.lat, refPoint.lng)),
+          });
+          isDuplicate = true;
+          break;
+        }
+      }
+
+      if (!isDuplicate) {
+        result.newPoints.push(point);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Delete ref_map_points by their IDs.
+   * Used when purging catalogued points or after conversion to locations.
    */
   async deleteRefPoints(pointIds: string[]): Promise<number> {
     if (pointIds.length === 0) return 0;
@@ -336,8 +690,12 @@ export class RefMapDedupService {
     const result = await this.db
       .deleteFrom('ref_map_points')
       .where('point_id', 'in', pointIds)
-      .executeTakeFirst();
+      .execute();
 
-    return Number(result.numDeletedRows);
+    const deleted = Number(result[0]?.numDeletedRows ?? 0);
+    console.log(`[RefMapDedup] Deleted ${deleted} ref_map_points`);
+    return deleted;
   }
 }
+
+export default RefMapDedupService;

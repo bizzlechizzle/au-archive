@@ -476,11 +476,128 @@ When a user converts a reference map point to a location:
 
 ---
 
+## Migration 39: Reference Map Points Deduplication
+
+Migration 39 adds GPS-based deduplication for ref_map_points, handling duplicate pins that exist at the same location (within ~10m precision).
+
+### Schema Changes
+
+```sql
+-- New column for alternate names
+ALTER TABLE ref_map_points ADD COLUMN aka_names TEXT;
+
+-- Index for faster GPS grouping
+CREATE INDEX idx_ref_map_points_gps_rounded
+  ON ref_map_points(ROUND(lat, 4), ROUND(lng, 4));
+```
+
+### How It Works
+
+1. **GPS Rounding**: Coordinates are rounded to 4 decimal places (~10m precision)
+2. **Grouping**: Points at the same rounded GPS are grouped as duplicates
+3. **Name Scoring**: Each name is scored based on quality:
+   - Longer, more descriptive names score higher
+   - Coordinate-style names (e.g., "44.299,-75.959") are penalized
+   - Generic names ("house", "building") are penalized
+   - Descriptive suffixes ("factory", "hospital", "school") get bonuses
+4. **Merging**: The best name becomes primary, others go into `aka_names` (pipe-separated)
+
+### Running Deduplication
+
+#### From the App (IPC)
+
+```typescript
+// Preview what would be deduplicated
+const preview = await window.electronAPI.refMaps.previewDedup();
+console.log('Groups to merge:', preview.stats.duplicateGroups);
+console.log('Points to remove:', preview.stats.pointsRemoved);
+
+// Run deduplication
+const result = await window.electronAPI.refMaps.deduplicate();
+console.log('Removed:', result.stats.pointsRemoved);
+console.log('Points with AKA:', result.stats.pointsWithAka);
+```
+
+#### From Command Line
+
+```bash
+# Uses Python (no native module compilation needed)
+python3 scripts/run-dedup.py
+```
+
+### Import-Time Deduplication
+
+When importing maps with `skipDuplicates: true`, the system now:
+1. Checks new points against existing ref_map_points
+2. **Merges names** into existing points' aka_names if duplicate
+3. Only inserts truly new points
+
+```typescript
+const result = await window.electronAPI.refMaps.importWithOptions(
+  '/path/to/map.kml',
+  { skipDuplicates: true, importedBy: 'user123' }
+);
+
+console.log('Imported:', result.pointCount);
+console.log('Merged (names added to existing):', result.mergedCount);
+console.log('Skipped (catalogued locations):', result.skippedCount);
+```
+
+### Service API
+
+```typescript
+// RefMapDedupService methods
+class RefMapDedupService {
+  // GPS-based dedup within ref_map_points
+  findDuplicateGroups(): Promise<DuplicateGroup[]>;
+  deduplicate(): Promise<DedupStats>;
+  preview(): Promise<{ stats: DedupStats; groups: [...] }>;
+
+  // Import-time helpers
+  findExistingPoint(lat, lng, precision?): Promise<ExistingPoint | null>;
+  addOrMergePoint(...): Promise<{ pointId: string; merged: boolean }>;
+
+  // Cross-table matching (vs locs)
+  findCataloguedRefPoints(): Promise<CataloguedMatch[]>;
+  checkForDuplicates(points): Promise<DedupeResult>;
+  deleteRefPoints(pointIds): Promise<number>;
+}
+```
+
+### Name Scoring Algorithm
+
+```typescript
+function scoreName(name: string | null): number {
+  if (!name) return 0;
+  let score = name.length;
+
+  // Penalize coordinate-style names
+  if (/^-?\d+\.\d+,-?\d+\.\d+$/.test(name)) score = 1;
+
+  // Penalize short names
+  if (name.length < 5) score -= 10;
+
+  // Penalize generic names
+  if (/^(house|building|place|location|point|site)$/i.test(name)) score -= 20;
+
+  // Bonus for proper nouns
+  score += (name.match(/[A-Z][a-z]+/g) || []).length * 5;
+
+  // Bonus for descriptive suffixes
+  ['factory', 'hospital', 'school', 'church', 'mill', 'farm', 'poorhouse']
+    .forEach(suffix => { if (name.toLowerCase().includes(suffix)) score += 10; });
+
+  return score;
+}
+```
+
+---
+
 ## Future Enhancements
 
 See ADR for planned features:
 
-1. **Bulk duplicate scan** - Scan existing archive for potential duplicates
+1. ~~**Bulk duplicate scan** - Scan existing archive for potential duplicates~~ (Done: Migration 39)
 2. **Merge workflow** - Combine two locations into one
-3. **Import-time check** - Check during KML/GPX import, not just creation
+3. ~~**Import-time check** - Check during KML/GPX import, not just creation~~ (Done: Migration 39)
 4. **Link pin to existing** - Associate ref_map_point with existing location instead of converting
