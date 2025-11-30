@@ -662,12 +662,12 @@
           ? `<button
               data-verify-location-id="${location.locid}"
               class="verify-location-btn"
-              style="margin-top: 4px; padding: 6px 12px; background: #22c55e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;"
+              style="margin-top: 4px; padding: 6px 12px; background: #286736; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;"
             >
               Verify Location
             </button>`
           : popupMode === 'full' && isVerified
-            ? `<div style="margin-top: 4px; padding: 6px 12px; background: #dcfce7; color: #166534; border-radius: 4px; font-size: 11px; text-align: center;">
+            ? `<div style="margin-top: 4px; padding: 6px 12px; background: #39934D; color: #FFFBF7; border-radius: 4px; font-size: 11px; text-align: center;">
                 Location Verified
               </div>`
             : '';
@@ -981,7 +981,7 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background-color: #356C6E; /* Dark teal for reference points */
+    background-color: #49696E; /* Blue Slate - reference points ONLY blue in app */
     border: 2px solid white;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   }
@@ -998,7 +998,7 @@
   }
 
   :global(.create-from-ref-btn:hover) {
-    background: #a68550;
+    background: #725A31; /* Olive Bark - gold dark variant */
   }
 
   :global(.delete-ref-btn) {
@@ -1014,7 +1014,7 @@
   }
 
   :global(.delete-ref-btn:hover) {
-    background: #dc3545;
+    background: #AE1C09; /* Oxidized Iron - danger red */
     color: white;
   }
 </style>
