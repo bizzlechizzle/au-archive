@@ -24,8 +24,9 @@ export const TILE_LAYERS = {
   SATELLITE: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   STREET: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   TOPO: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-  // ESRI World Boundaries and Places - designed for satellite overlay, high contrast
+  // ESRI Reference layers - designed for satellite overlay
   LABELS: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  ROADS: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
   // P3c: New layers
   CARTO_LIGHT: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
   CARTO_DARK: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',

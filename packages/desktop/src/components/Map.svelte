@@ -429,6 +429,10 @@
           attribution: hideAttribution ? '' : 'Esri',
           maxZoom: MAP_CONFIG.MAX_ZOOM,
         }),
+        'Roads': L.tileLayer(TILE_LAYERS.ROADS, {
+          attribution: hideAttribution ? '' : 'Esri',
+          maxZoom: MAP_CONFIG.MAX_ZOOM,
+        }),
       };
 
       // DECISION-011: Default layer based on prop
@@ -443,8 +447,9 @@
       const selectedLayer = layerMap[defaultLayer] || 'Light';
       baseLayers[selectedLayer].addTo(map);
 
-      // DECISION-011: Add labels overlay if satellite-labels is selected
+      // DECISION-011: Add labels and roads overlay if satellite-labels is selected
       if (defaultLayer === 'satellite-labels') {
+        overlayLayers['Roads'].addTo(map);
         overlayLayers['Labels'].addTo(map);
       }
 
