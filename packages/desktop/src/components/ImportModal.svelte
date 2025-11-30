@@ -431,7 +431,7 @@
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label for="loc-name" class="block text-sm font-medium text-gray-700 mb-1.5">
-              Location Name <span class="text-red-500">*</span>
+              Location Name
             </label>
             <input
               id="loc-name"
@@ -471,7 +471,7 @@
           <div class="grid grid-cols-2 gap-4">
             <div>
               <label for="subloc-name" class="block text-sm font-medium text-gray-700 mb-1.5">
-                Sub-Location Name <span class="text-red-500">*</span>
+                Sub-Location Name
               </label>
               <input
                 id="subloc-name"
@@ -502,7 +502,7 @@
         <!-- State (required) -->
         <div>
           <label for="loc-state" class="block text-sm font-medium text-gray-700 mb-1.5">
-            State <span class="text-red-500">*</span>
+            State
           </label>
           <AutocompleteInput
             value={selectedState}
@@ -519,7 +519,7 @@
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label for="loc-type" class="block text-sm font-medium text-gray-700 mb-1.5">
-              Type <span class="text-red-500">*</span>
+              Type
             </label>
             <AutocompleteInput
               value={type}
@@ -596,10 +596,7 @@
       </div>
 
       <!-- Footer -->
-      <div class="p-5 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
-        <div class="text-xs text-gray-500">
-          <span class="text-red-500">*</span> Required fields
-        </div>
+      <div class="p-5 border-t border-gray-200 bg-gray-50 flex justify-end items-center">
         <div class="flex gap-3">
           <button
             onclick={handleCancel}
