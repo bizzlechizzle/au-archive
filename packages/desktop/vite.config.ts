@@ -73,6 +73,9 @@ export default defineConfig({
                 // Sharp is a native module with platform-specific binaries
                 // that use dynamic requires - must be external to the bundle
                 'sharp',
+                // unzipper has optional S3 support that requires this package
+                // we don't use S3 features, so mark as external to prevent crash
+                '@aws-sdk/client-s3',
               ],
             },
           },
