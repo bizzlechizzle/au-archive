@@ -24,6 +24,16 @@ Never auto-open external URLs or embed third-party iframes without explicit opt-
 
 Background job (optional) can re-hash random samples and compare against stored SHAs; log any mismatch and surface remediation steps.
 
+## Self-Documenting Archive (BagIt)
+
+Each location has a BagIt package (RFC 8493) in its documents folder (`_archive/`) containing:
+- `bagit.txt`: Version declaration
+- `bag-info.txt`: Location metadata (survives without database)
+- `manifest-sha256.txt`: SHA256 checksums for all media files
+- `tagmanifest-sha256.txt`: Checksums of metadata files
+
+This ensures each location can stand alone for 35+ years without the database.
+
 ## Logging Scope
 
 All operational logs stay local (filesystem or developer console). No remote log aggregation.
