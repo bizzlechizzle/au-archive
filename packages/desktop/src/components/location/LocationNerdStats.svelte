@@ -48,6 +48,14 @@
   let deletePinError = $state('');
   let deleting = $state(false);
 
+  // BagIt Archive state
+  let bagStatus = $state<string | null>(null);
+  let bagLastVerified = $state<string | null>(null);
+  let bagLastError = $state<string | null>(null);
+  let regeneratingBag = $state(false);
+  let validatingBag = $state(false);
+  let bagMessage = $state('');
+
   // Per-user view statistics
   interface ViewStats {
     totalViews: number;
@@ -64,7 +72,7 @@
   let viewStats = $state<ViewStats | null>(null);
   let loadingViewStats = $state(false);
 
-  // Fetch view stats and suggestions when section is opened
+  // Fetch view stats, suggestions, and BagIt status when section is opened
   $effect(() => {
     if (isOpen && !viewStats && !loadingViewStats) {
       loadingViewStats = true;
@@ -81,8 +89,71 @@
 
       // Load type suggestions
       loadSuggestions();
+
+      // Load BagIt status
+      loadBagStatus();
     }
   });
+
+  async function loadBagStatus() {
+    try {
+      const status = await window.electronAPI?.bagit?.status(location.locid);
+      if (status) {
+        bagStatus = status.bag_status || 'none';
+        bagLastVerified = status.bag_last_verified || null;
+        bagLastError = status.bag_last_error || null;
+      }
+    } catch (err) {
+      console.warn('[NerdStats] Failed to load bag status:', err);
+    }
+  }
+
+  async function regenerateBag() {
+    if (regeneratingBag || !window.electronAPI?.bagit?.regenerate) return;
+
+    try {
+      regeneratingBag = true;
+      bagMessage = 'Regenerating archive...';
+
+      await window.electronAPI.bagit.regenerate(location.locid);
+
+      bagMessage = 'Archive regenerated successfully';
+      await loadBagStatus();
+      setTimeout(() => { bagMessage = ''; }, 3000);
+    } catch (err) {
+      console.error('Regenerate bag failed:', err);
+      bagMessage = 'Failed to regenerate archive';
+    } finally {
+      regeneratingBag = false;
+    }
+  }
+
+  async function validateBag() {
+    if (validatingBag || !window.electronAPI?.bagit?.validate) return;
+
+    try {
+      validatingBag = true;
+      bagMessage = 'Validating archive...';
+
+      const result = await window.electronAPI.bagit.validate(location.locid);
+
+      if (result.status === 'valid') {
+        bagMessage = 'Archive verified successfully';
+      } else if (result.status === 'incomplete') {
+        bagMessage = `Archive incomplete: ${result.missingFiles?.length || 0} missing files`;
+      } else if (result.status === 'invalid') {
+        bagMessage = `Archive invalid: ${result.checksumErrors?.length || 0} checksum errors`;
+      }
+
+      await loadBagStatus();
+      setTimeout(() => { bagMessage = ''; }, 5000);
+    } catch (err) {
+      console.error('Validate bag failed:', err);
+      bagMessage = 'Validation failed';
+    } finally {
+      validatingBag = false;
+    }
+  }
 
   async function loadSuggestions() {
     try {
@@ -471,6 +542,65 @@
     <div>
       <span class="text-gray-500">Total Media:</span>
       <span class="ml-2 font-semibold">{imageCount + videoCount + documentCount}</span>
+    </div>
+
+    <!-- BagIt Archive (Self-Documenting Archive per RFC 8493) -->
+    <div class="col-span-full border-b pb-3 mb-2 mt-5">
+      <p class="text-xs font-semibold text-gray-400 uppercase mb-2">Archive Integrity</p>
+    </div>
+    <div>
+      <span class="text-gray-500">Status:</span>
+      <span class="ml-2">
+        {#if bagStatus === 'valid'}
+          <span class="text-green-600 font-medium">Valid</span>
+        {:else if bagStatus === 'complete'}
+          <span class="text-blue-600 font-medium">Complete</span>
+        {:else if bagStatus === 'incomplete'}
+          <span class="text-amber-600 font-medium">Incomplete</span>
+        {:else if bagStatus === 'invalid'}
+          <span class="text-red-600 font-medium">Invalid</span>
+        {:else}
+          <span class="text-gray-400">Not Generated</span>
+        {/if}
+      </span>
+    </div>
+    {#if bagLastVerified}
+      <div>
+        <span class="text-gray-500">Last Verified:</span>
+        <span class="ml-2">{new Date(bagLastVerified).toLocaleString()}</span>
+      </div>
+    {/if}
+    {#if bagLastError}
+      <div class="col-span-full">
+        <span class="text-gray-500">Last Error:</span>
+        <span class="ml-2 text-red-600 text-xs">{bagLastError}</span>
+      </div>
+    {/if}
+    <div class="col-span-full mt-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          onclick={regenerateBag}
+          disabled={regeneratingBag || validatingBag}
+          class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+          title="Regenerate BagIt archive files for this location"
+        >
+          {regeneratingBag ? 'Regenerating...' : 'Regenerate Archive'}
+        </button>
+        <button
+          onclick={validateBag}
+          disabled={regeneratingBag || validatingBag}
+          class="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
+          title="Verify file checksums match manifest"
+        >
+          {validatingBag ? 'Validating...' : 'Verify Checksums'}
+        </button>
+        {#if bagMessage}
+          <span class="text-sm text-gray-600">{bagMessage}</span>
+        {/if}
+      </div>
+      <p class="text-xs text-gray-400 mt-2">
+        Self-documenting archive per BagIt RFC 8493. Files survive 35+ years without database.
+      </p>
     </div>
 
     <!-- Regions -->

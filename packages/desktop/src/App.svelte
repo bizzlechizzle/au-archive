@@ -180,6 +180,14 @@
         }
       });
     }
+
+    // BagIt: Schedule validation if due (weekly background check)
+    if (window.electronAPI?.bagit?.scheduleValidation) {
+      window.electronAPI.bagit.scheduleValidation().catch((err: Error) => {
+        console.warn('[BagIt] Failed to schedule validation:', err);
+        // Non-fatal - don't show error to user
+      });
+    }
   });
 
   onDestroy(() => {

@@ -1323,6 +1323,32 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 39 completed: aka_names column added');
     }
+
+    // Migration 40: Add BagIt self-documenting archive columns to locs table
+    // Per RFC 8493: Each location folder becomes a self-documenting archive
+    // that can be understood 35+ years from now without the database
+    // - bag_status: 'none', 'valid', 'complete', 'incomplete', 'invalid'
+    // - bag_last_verified: ISO8601 timestamp of last integrity check
+    // - bag_last_error: Error message if validation failed
+    const locsColsForBagit = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasBagStatus = locsColsForBagit.some(col => col.name === 'bag_status');
+
+    if (!hasBagStatus) {
+      console.log('Running migration 40: Adding BagIt archive columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN bag_status TEXT DEFAULT 'none';
+        ALTER TABLE locs ADD COLUMN bag_last_verified TEXT;
+        ALTER TABLE locs ADD COLUMN bag_last_error TEXT;
+      `);
+
+      // Create index for finding locations needing validation
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_locs_bag_status ON locs(bag_status) WHERE bag_status != 'valid';
+      `);
+
+      console.log('Migration 40 completed: BagIt archive columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

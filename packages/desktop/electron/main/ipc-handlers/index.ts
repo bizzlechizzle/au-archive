@@ -43,6 +43,7 @@ import { registerResearchBrowserHandlers } from './research-browser';
 import { registerRefMapsHandlers } from './ref-maps';
 import { registerImportIntelligenceHandlers } from './import-intelligence';
 import { registerStorageHandlers } from './storage';
+import { registerBagItHandlers } from './bagit';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -100,6 +101,9 @@ export function registerIpcHandlers() {
 
   // Storage monitoring
   registerStorageHandlers();
+
+  // BagIt self-documenting archive (RFC 8493)
+  registerBagItHandlers(db);
 
   console.log('IPC handlers registered (modular)');
 }

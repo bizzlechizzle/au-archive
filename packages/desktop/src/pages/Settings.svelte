@@ -176,6 +176,14 @@
   let purgingPoints = $state(false);
   let purgeMessage = $state('');
 
+  // BagIt Integrity state
+  let integrityExpanded = $state(false);
+  let bagSummary = $state<{ valid: number; complete: number; incomplete: number; invalid: number; none: number } | null>(null);
+  let lastValidation = $state<string | null>(null);
+  let validatingAllBags = $state(false);
+  let validationProgress = $state<{ current: number; total: number; currentLocation: string } | null>(null);
+  let bagValidationMessage = $state('');
+
   async function loadSettings() {
     try {
       loading = true;
@@ -1514,12 +1522,55 @@
     }
   }
 
+  // BagIt Integrity functions
+  async function loadBagSummary() {
+    if (!window.electronAPI?.bagit?.summary) return;
+    try {
+      bagSummary = await window.electronAPI.bagit.summary();
+      const lastVal = await window.electronAPI.bagit.lastValidation();
+      lastValidation = lastVal;
+    } catch (error) {
+      console.error('Failed to load bag summary:', error);
+    }
+  }
+
+  async function validateAllBags() {
+    if (!window.electronAPI?.bagit?.validateAll || validatingAllBags) return;
+
+    try {
+      validatingAllBags = true;
+      bagValidationMessage = 'Starting validation...';
+
+      // Set up progress listener
+      const unsubscribe = window.electronAPI.bagit.onProgress((progress: { current: number; total: number; currentLocation: string }) => {
+        validationProgress = progress;
+        bagValidationMessage = `Validating ${progress.current}/${progress.total}: ${progress.currentLocation}`;
+      });
+
+      const result = await window.electronAPI.bagit.validateAll();
+
+      unsubscribe();
+      validationProgress = null;
+
+      bagValidationMessage = `Validation complete: ${result.validCount} valid, ${result.incompleteCount} incomplete, ${result.invalidCount} invalid`;
+      await loadBagSummary();
+
+      setTimeout(() => { bagValidationMessage = ''; }, 5000);
+    } catch (error) {
+      console.error('Failed to validate all bags:', error);
+      bagValidationMessage = 'Validation failed';
+    } finally {
+      validatingAllBags = false;
+    }
+  }
+
   onMount(() => {
     loadSettings();
     loadProxyCacheStats();
     loadRefMaps();
     loadStorageStats();
     loadDatabaseHealth();
+    loadBagSummary();
   });
 </script>
 
@@ -2056,6 +2107,92 @@
                   Fix Videos
                 </button>
               </div>
+            </div>
+            {/if}
+          </div>
+
+          <!-- Integrity Sub-Accordion (BagIt RFC 8493) -->
+          <div>
+            <button
+              onclick={() => integrityExpanded = !integrityExpanded}
+              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
+            >
+              <span class="text-sm font-medium text-gray-700">Integrity</span>
+              <svg
+                class="w-4 h-4 text-accent transition-transform duration-200 {integrityExpanded ? 'rotate-180' : ''}"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {#if integrityExpanded}
+            <div class="py-3">
+              <!-- Summary Stats -->
+              {#if bagSummary}
+                <div class="bg-gray-50 rounded-lg p-3 mb-3">
+                  <div class="flex flex-wrap gap-4 text-sm">
+                    <div class="flex items-center gap-1">
+                      <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                      <span class="text-gray-500">Valid:</span>
+                      <span class="font-medium">{bagSummary.valid}</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                      <span class="text-gray-500">Incomplete:</span>
+                      <span class="font-medium">{bagSummary.incomplete}</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                      <span class="text-gray-500">Invalid:</span>
+                      <span class="font-medium">{bagSummary.invalid}</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <span class="w-2 h-2 rounded-full bg-gray-400"></span>
+                      <span class="text-gray-500">None:</span>
+                      <span class="font-medium">{bagSummary.none}</span>
+                    </div>
+                  </div>
+                  {#if lastValidation}
+                    <p class="text-xs text-gray-500 mt-2">
+                      Last validated: {new Date(lastValidation).toLocaleString()}
+                    </p>
+                  {/if}
+                </div>
+              {/if}
+
+              <!-- Progress bar during validation -->
+              {#if validationProgress}
+                <div class="mb-3">
+                  <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      class="h-full bg-accent transition-all duration-300"
+                      style="width: {(validationProgress.current / validationProgress.total) * 100}%"
+                    ></div>
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Actions -->
+              <div class="flex flex-wrap gap-2">
+                <button
+                  onclick={validateAllBags}
+                  disabled={validatingAllBags}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  {validatingAllBags ? 'Validating...' : 'Verify All Locations'}
+                </button>
+              </div>
+
+              {#if bagValidationMessage}
+                <p class="text-sm text-gray-600 mt-2">{bagValidationMessage}</p>
+              {/if}
+
+              <p class="text-xs text-gray-400 mt-3">
+                Self-documenting archive per BagIt RFC 8493. Weekly automatic validation.
+              </p>
             </div>
             {/if}
           </div>

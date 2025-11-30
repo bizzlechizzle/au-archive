@@ -152,6 +152,11 @@ export interface LocsTable {
   view_count: number;              // Number of times location has been viewed
   last_viewed_at: string | null;   // ISO timestamp of last view
 
+  // BagIt Archive (Migration 40) - Self-documenting archive per RFC 8493
+  bag_status: string | null;       // 'none' | 'valid' | 'complete' | 'incomplete' | 'invalid'
+  bag_last_verified: string | null; // ISO timestamp of last integrity check
+  bag_last_error: string | null;   // Error message if validation failed
+
   // Regions
   regions: string | null;
   state: string | null;

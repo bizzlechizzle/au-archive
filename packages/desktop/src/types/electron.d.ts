@@ -573,6 +573,24 @@ export interface ElectronAPI {
     addAkaName: (locid: string, newName: string) => Promise<{ success: boolean }>;
   };
 
+  // Storage monitoring
+  storage: {
+    getStats: () => Promise<StorageStats>;
+  };
+
+  // BagIt Self-Documenting Archive (RFC 8493)
+  bagit: {
+    regenerate: (locid: string) => Promise<{ success: boolean }>;
+    validate: (locid: string) => Promise<BagValidationResult>;
+    validateAll: () => Promise<IntegrityCheckResult>;
+    status: (locid: string) => Promise<BagStatus>;
+    summary: () => Promise<BagStatusSummary>;
+    lastValidation: () => Promise<string | null>;
+    isValidationDue: () => Promise<boolean>;
+    scheduleValidation: () => Promise<{ success: boolean; error?: string }>;
+    onProgress: (callback: (progress: BagIntegrityProgress) => void) => () => void;
+  };
+
 }
 
 // Reference Map types
@@ -678,6 +696,57 @@ export interface IntelligenceScanResult {
   };
   matches: IntelligenceMatch[];
   scanTimeMs: number;
+}
+
+// Storage types
+export interface StorageStats {
+  archivePath: string;
+  archiveBytes: number;
+  freeBytes: number;
+  totalBytes: number;
+  usedPercent: number;
+  driveLetter?: string;
+}
+
+// BagIt Self-Documenting Archive types (RFC 8493)
+export type BagStatusType = 'none' | 'valid' | 'complete' | 'incomplete' | 'invalid';
+
+export interface BagStatus {
+  bag_status: BagStatusType | null;
+  bag_last_verified: string | null;
+  bag_last_error: string | null;
+}
+
+export interface BagValidationResult {
+  status: BagStatusType;
+  error?: string;
+  missingFiles?: string[];
+  checksumErrors?: string[];
+  payloadOxum?: { bytes: number; count: number };
+}
+
+export interface IntegrityCheckResult {
+  totalLocations: number;
+  validCount: number;
+  incompleteCount: number;
+  invalidCount: number;
+  noneCount: number;
+  errors: Array<{ locid: string; locnam: string; error: string }>;
+  durationMs: number;
+}
+
+export interface BagStatusSummary {
+  valid: number;
+  incomplete: number;
+  invalid: number;
+  none: number;
+}
+
+export interface BagIntegrityProgress {
+  current: number;
+  total: number;
+  currentLocation: string;
+  status: 'running' | 'complete' | 'error';
 }
 
 declare global {

@@ -20,6 +20,8 @@ import { AddressService, type NormalizedAddress } from '../../services/address-s
 import { LocationDuplicateService } from '../../services/location-duplicate-service';
 // OPT-031: Use shared user service
 import { getCurrentUser } from '../../services/user-service';
+// BagIt: Initialize bag on location creation, update bag-info on metadata changes
+import { getBagItService } from './bagit';
 
 export function registerLocationHandlers(db: Kysely<Database>) {
   const locationRepo = new SQLiteLocationRepository(db);
@@ -76,6 +78,41 @@ export function registerLocationHandlers(db: Kysely<Database>) {
         });
       }
 
+      // BagIt: Initialize bag for new location (non-blocking)
+      if (location) {
+        try {
+          const bagItService = getBagItService();
+          if (bagItService) {
+            await bagItService.initializeBag({
+              locid: location.locid,
+              loc12: location.loc12,
+              locnam: location.locnam,
+              slocnam: location.slocnam || '',
+              type: location.type || null,
+              access: null,
+              address_state: location.address?.state || null,
+              address_city: location.address?.city || null,
+              address_county: location.address?.county || null,
+              address_zipcode: location.address?.zipcode || null,
+              address_street: location.address?.street || null,
+              gps_lat: location.gps?.lat || null,
+              gps_lng: location.gps?.lng || null,
+              gps_source: location.gps?.source || null,
+              gps_verified_on_map: location.gps?.verifiedOnMap ? 1 : 0,
+              gps_accuracy: location.gps?.accuracy || null,
+              census_region: null,
+              census_division: null,
+              state_direction: null,
+              cultural_region: null,
+              notes: null,
+              locadd: location.locadd || null,
+              locup: location.locup || null,
+            });
+            console.log(`[BagIt] Initialized bag for new location: ${location.locnam}`);
+          }
+        } catch (e) { console.warn('[Location IPC] Failed to initialize BagIt bag (non-fatal):', e); }
+      }
+
       return location;
     } catch (error) {
       console.error('Error creating location:', error);
@@ -106,6 +143,41 @@ export function registerLocationHandlers(db: Kysely<Database>) {
           console.warn('[Location IPC] Failed to track contributor:', err);
           // Non-fatal - don't fail location update
         });
+      }
+
+      // BagIt: Update bag-info.txt when metadata changes (non-blocking)
+      if (location) {
+        try {
+          const bagItService = getBagItService();
+          if (bagItService) {
+            await bagItService.updateBagInfo({
+              locid: location.locid,
+              loc12: location.loc12,
+              locnam: location.locnam,
+              slocnam: location.slocnam || '',
+              type: location.type || null,
+              access: null,
+              address_state: location.address?.state || null,
+              address_city: location.address?.city || null,
+              address_county: location.address?.county || null,
+              address_zipcode: location.address?.zipcode || null,
+              address_street: location.address?.street || null,
+              gps_lat: location.gps?.lat || null,
+              gps_lng: location.gps?.lng || null,
+              gps_source: location.gps?.source || null,
+              gps_verified_on_map: location.gps?.verifiedOnMap ? 1 : 0,
+              gps_accuracy: location.gps?.accuracy || null,
+              census_region: null,
+              census_division: null,
+              state_direction: null,
+              cultural_region: null,
+              notes: null,
+              locadd: location.locadd || null,
+              locup: location.locup || null,
+            }, []);
+            console.log(`[BagIt] Updated bag-info for location: ${location.locnam}`);
+          }
+        } catch (e) { console.warn('[Location IPC] Failed to update BagIt bag-info (non-fatal):', e); }
       }
 
       return location;

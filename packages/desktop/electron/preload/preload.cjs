@@ -79,6 +79,8 @@ const longOperationChannels = [
   "database:backup",
   "database:restore",
   "location:backfillRegions",
+  "bagit:validateAll",
+  "bagit:regenerate",
 ];
 
 const veryLongOperationChannels = [
@@ -399,6 +401,24 @@ const api = {
   // Reference Maps - imported KML, GPX, GeoJSON, CSV files
   storage: {
     getStats: () => invokeAuto("storage:getStats")(),
+  },
+
+  // BagIt Self-Documenting Archive (RFC 8493)
+  bagit: {
+    regenerate: (locid) => invokeAuto("bagit:regenerate")(locid),
+    validate: (locid) => invokeAuto("bagit:validate")(locid),
+    validateAll: () => invokeAuto("bagit:validateAll")(),
+    status: (locid) => invokeAuto("bagit:status")(locid),
+    summary: () => invokeAuto("bagit:summary")(),
+    lastValidation: () => invokeAuto("bagit:lastValidation")(),
+    isValidationDue: () => invokeAuto("bagit:isValidationDue")(),
+    scheduleValidation: () => invokeAuto("bagit:scheduleValidation")(),
+    // Listen for validation progress events
+    onProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("bagit:progress", listener);
+      return () => ipcRenderer.removeListener("bagit:progress", listener);
+    },
   },
 
   refMaps: {

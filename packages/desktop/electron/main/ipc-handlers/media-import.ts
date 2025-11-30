@@ -25,9 +25,105 @@ import { getConfigService } from '../../services/config-service';
 import { getBackupScheduler } from '../../services/backup-scheduler';
 // OPT-031: Use shared user service
 import { getCurrentUser } from '../../services/user-service';
+// BagIt: Update manifest after imports
+import { getBagItService } from './bagit';
+import type { MediaFile } from '../../services/bagit-service';
 
 // Track active imports for cancellation
 const activeImports: Map<string, AbortController> = new Map();
+
+/**
+ * Helper to get media files for BagIt manifest update
+ */
+async function getMediaFilesForBagIt(
+  db: Kysely<Database>,
+  mediaRepo: SQLiteMediaRepository,
+  locid: string
+): Promise<MediaFile[]> {
+  const files: MediaFile[] = [];
+  const fsPromises = fs;
+
+  // Get images
+  const images = await db
+    .selectFrom('imgs')
+    .select(['imgsha', 'imgloc'])
+    .where('locid', '=', locid)
+    .where('hidden', '=', 0)
+    .execute();
+
+  for (const img of images) {
+    try {
+      const stats = await fsPromises.stat(img.imgloc);
+      files.push({
+        hash: img.imgsha,
+        path: img.imgloc,
+        type: 'image',
+        size: stats.size,
+      });
+    } catch { /* File doesn't exist, skip */ }
+  }
+
+  // Get videos
+  const videos = await db
+    .selectFrom('vids')
+    .select(['vidsha', 'vidloc'])
+    .where('locid', '=', locid)
+    .where('hidden', '=', 0)
+    .execute();
+
+  for (const vid of videos) {
+    try {
+      const stats = await fsPromises.stat(vid.vidloc);
+      files.push({
+        hash: vid.vidsha,
+        path: vid.vidloc,
+        type: 'video',
+        size: stats.size,
+      });
+    } catch { /* File doesn't exist */ }
+  }
+
+  // Get documents
+  const docs = await db
+    .selectFrom('docs')
+    .select(['docsha', 'docloc'])
+    .where('locid', '=', locid)
+    .where('hidden', '=', 0)
+    .execute();
+
+  for (const doc of docs) {
+    try {
+      const stats = await fsPromises.stat(doc.docloc);
+      files.push({
+        hash: doc.docsha,
+        path: doc.docloc,
+        type: 'document',
+        size: stats.size,
+      });
+    } catch { /* File doesn't exist */ }
+  }
+
+  // Get maps
+  const maps = await db
+    .selectFrom('maps')
+    .select(['mapsha', 'maploc'])
+    .where('locid', '=', locid)
+    .execute();
+
+  for (const map of maps) {
+    try {
+      const stats = await fsPromises.stat(map.maploc);
+      files.push({
+        hash: map.mapsha,
+        path: map.maploc,
+        type: 'map',
+        size: stats.size,
+      });
+    } catch { /* File doesn't exist */ }
+  }
+
+  return files;
+}
 
 /**
  * Migration 23 FIX: Auto-detect Live Photos and SDR duplicates for a location
@@ -264,6 +360,25 @@ export function registerMediaImportHandlers(
             await getBackupScheduler().createBackup();
           }
         } catch (e) { console.warn('[media:import] Failed to create post-import backup:', e); }
+
+        // BagIt: Update manifest after successful import (non-blocking)
+        try {
+          const bagItService = getBagItService();
+          if (bagItService) {
+            const loc = await locationRepo.findById(validatedInput.locid);
+            if (loc) {
+              const mediaFiles = await getMediaFilesForBagIt(db, mediaRepo, validatedInput.locid);
+              await bagItService.updateManifest({
+                locid: loc.locid,
+                loc12: loc.loc12,
+                slocnam: loc.slocnam || '',
+                address_state: loc.address?.state || null,
+                type: loc.type || null,
+              }, mediaFiles);
+              console.log(`[BagIt] Updated manifest for location: ${loc.locnam} (${mediaFiles.length} files)`);
+            }
+          }
+        } catch (e) { console.warn('[media:import] Failed to update BagIt manifest (non-fatal):', e); }
       }
 
       return result;
@@ -359,6 +474,25 @@ export function registerMediaImportHandlers(
             await getBackupScheduler().createBackup();
           }
         } catch (e) { console.warn('[media:phaseImport] Failed to create post-import backup:', e); }
+
+        // BagIt: Update manifest after successful import (non-blocking)
+        try {
+          const bagItService = getBagItService();
+          if (bagItService) {
+            const loc = await locationRepo.findById(validatedInput.locid);
+            if (loc) {
+              const mediaFiles = await getMediaFilesForBagIt(db, mediaRepo, validatedInput.locid);
+              await bagItService.updateManifest({
+                locid: loc.locid,
+                loc12: loc.loc12,
+                slocnam: loc.slocnam || '',
+                address_state: loc.address?.state || null,
+                type: loc.type || null,
+              }, mediaFiles);
+              console.log(`[BagIt] Updated manifest for location: ${loc.locnam} (${mediaFiles.length} files)`);
+            }
+          }
+        } catch (e) { console.warn('[media:phaseImport] Failed to update BagIt manifest (non-fatal):', e); }
       }
 
       return result;
