@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import HealthMonitoring from '../components/HealthMonitoring.svelte';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
 
   interface User {
@@ -1704,7 +1703,7 @@
           {/each}
 
           <!-- Add User row -->
-          <div class="flex items-center justify-end border-t border-gray-200 pt-4 mt-4">
+          <div class="flex items-center justify-end pt-4 mt-4">
             <button
               onclick={openAddUser}
               class="text-sm text-accent hover:underline"
@@ -1810,12 +1809,7 @@
         <div class="px-6 pb-6 space-y-4">
           <!-- Archive Location Row -->
           <div class="flex items-center justify-between py-2 border-b border-gray-100">
-            <div class="flex-1">
-              <span class="text-sm font-medium text-gray-700">Archive Location</span>
-              {#if archivePath}
-                <p class="text-xs text-gray-500 truncate max-w-[280px]" title={archivePath}>{archivePath}</p>
-              {/if}
-            </div>
+            <span class="text-sm font-medium text-gray-700">Archive Location</span>
             <button
               onclick={() => requestPinForAction('archive')}
               class="text-sm text-accent hover:underline"
@@ -1826,12 +1820,7 @@
 
           <!-- Delete on Import Row -->
           <div class="flex items-center justify-between py-2 border-b border-gray-100">
-            <div class="flex items-center gap-2">
-              <span class="text-sm font-medium text-gray-700">Delete Original Files on Import</span>
-              <span class="text-xs px-1.5 py-0.5 rounded {deleteOriginals ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}">
-                {deleteOriginals ? 'On' : 'Off'}
-              </span>
-            </div>
+            <span class="text-sm font-medium text-gray-700">Delete Original Files on Import</span>
             <button
               onclick={() => requestPinForAction('deleteOnImport')}
               class="text-sm text-accent hover:underline"
@@ -1842,12 +1831,7 @@
 
           <!-- Startup PIN Row -->
           <div class="flex items-center justify-between py-2 border-b border-gray-100">
-            <div class="flex items-center gap-2">
-              <span class="text-sm font-medium text-gray-700">Startup PIN Required</span>
-              <span class="text-xs px-1.5 py-0.5 rounded {requireLogin ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
-                {requireLogin ? 'On' : 'Off'}
-              </span>
-            </div>
+            <span class="text-sm font-medium text-gray-700">Startup PIN Required</span>
             <button
               onclick={() => requestPinForAction('startupPin')}
               class="text-sm text-accent hover:underline"
@@ -1949,10 +1933,6 @@
 
             {#if mapsExpanded}
             <div class="py-3">
-              <p class="text-xs text-gray-500 mb-3">
-                Import map files to display as reference points on the Atlas. Supports KML, KMZ, GPX, GeoJSON, and CSV files.
-              </p>
-
               <!-- Stats -->
               {#if refMapStats}
                 <div class="bg-gray-50 rounded-lg p-3 mb-3">
@@ -1998,14 +1978,7 @@
               {/if}
 
               <!-- Buttons -->
-              <div class="flex flex-wrap gap-2">
-                <button
-                  onclick={importRefMap}
-                  disabled={importingRefMap}
-                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-                >
-                  {importingRefMap ? 'Importing...' : 'Import Map'}
-                </button>
+              <div class="flex justify-end gap-2">
                 {#if cataloguedCount > 0}
                   <button
                     onclick={purgeCataloguedPoints}
@@ -2016,6 +1989,13 @@
                     {purgingPoints ? 'Purging...' : `Purge ${cataloguedCount} Catalogued`}
                   </button>
                 {/if}
+                <button
+                  onclick={importRefMap}
+                  disabled={importingRefMap}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  {importingRefMap ? 'Importing...' : 'Import Map'}
+                </button>
               </div>
               {#if refMapMessage}
                 <p class="text-sm text-gray-600 mt-2">{refMapMessage}</p>
@@ -2076,30 +2056,6 @@
                   Fix Videos
                 </button>
               </div>
-            </div>
-            {/if}
-          </div>
-
-          <!-- Health Sub-Accordion -->
-          <div>
-            <button
-              onclick={() => healthExpanded = !healthExpanded}
-              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
-            >
-              <span class="text-sm font-medium text-gray-700">Health</span>
-              <svg
-                class="w-4 h-4 text-accent transition-transform duration-200 {healthExpanded ? 'rotate-180' : ''}"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {#if healthExpanded}
-            <div class="py-3">
-              <HealthMonitoring />
             </div>
             {/if}
           </div>
