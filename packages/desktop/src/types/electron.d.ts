@@ -489,6 +489,82 @@ export interface ElectronAPI {
     onLoadingChanged: (callback: (loading: boolean) => void) => () => void;
   };
 
+  // Reference Maps - imported KML, GPX, GeoJSON, CSV files
+  refMaps: {
+    import: (importedBy?: string) => Promise<{
+      success: boolean;
+      canceled?: boolean;
+      error?: string;
+      map?: RefMap;
+      pointCount?: number;
+    }>;
+    importFromPath: (filePath: string, importedBy?: string) => Promise<{
+      success: boolean;
+      error?: string;
+      map?: RefMap;
+      pointCount?: number;
+    }>;
+    findAll: () => Promise<RefMap[]>;
+    findById: (mapId: string) => Promise<RefMapWithPoints | null>;
+    getAllPoints: () => Promise<RefMapPoint[]>;
+    update: (mapId: string, updates: { mapName?: string }) => Promise<RefMap | null>;
+    delete: (mapId: string) => Promise<{ success: boolean; error?: string }>;
+    getStats: () => Promise<{
+      mapCount: number;
+      pointCount: number;
+      categories: string[];
+      states: string[];
+    }>;
+    getSupportedExtensions: () => Promise<string[]>;
+    // Phase 2: Auto-matching for location creation
+    findMatches: (query: string, options?: {
+      threshold?: number;
+      limit?: number;
+      state?: string | null;
+    }) => Promise<RefMapMatch[]>;
+  };
+
+}
+
+// Reference Map types
+export interface RefMap {
+  mapId: string;
+  mapName: string;
+  filePath: string;
+  fileType: string;
+  pointCount: number;
+  importedAt: string;
+  importedBy: string | null;
+}
+
+export interface RefMapPoint {
+  pointId: string;
+  mapId: string;
+  name: string | null;
+  description: string | null;
+  lat: number;
+  lng: number;
+  state: string | null;
+  category: string | null;
+  rawMetadata: Record<string, unknown> | null;
+}
+
+export interface RefMapWithPoints extends RefMap {
+  points: RefMapPoint[];
+}
+
+// Phase 2: Auto-matching result
+export interface RefMapMatch {
+  pointId: string;
+  mapId: string;
+  name: string;
+  description: string | null;
+  lat: number;
+  lng: number;
+  state: string | null;
+  category: string | null;
+  mapName: string;
+  score: number;
 }
 
 declare global {

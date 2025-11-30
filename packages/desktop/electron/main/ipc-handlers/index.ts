@@ -40,6 +40,7 @@ import { registerHealthHandlers } from './health';
 import { registerGeocodeHandlers } from './geocode';
 import { registerSubLocationHandlers } from './sublocations';
 import { registerResearchBrowserHandlers } from './research-browser';
+import { registerRefMapsHandlers } from './ref-maps';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -88,6 +89,9 @@ export function registerIpcHandlers() {
 
   // Research browser (external Ungoogled Chromium)
   registerResearchBrowserHandlers();
+
+  // Reference maps (imported KML, GPX, GeoJSON, CSV)
+  registerRefMapsHandlers(db);
 
   console.log('IPC handlers registered (modular)');
 }

@@ -6,6 +6,18 @@
   import Map from '../components/Map.svelte';
   import type { Location } from '@au-archive/core';
 
+  // Reference map point interface
+  interface RefMapPoint {
+    pointId: string;
+    mapId: string;
+    name: string | null;
+    description: string | null;
+    lat: number;
+    lng: number;
+    state: string | null;
+    category: string | null;
+  }
+
   let locations = $state<Location[]>([]);
   let loading = $state(true);
   let showFilters = $state(false);
@@ -13,6 +25,9 @@
   let filterType = $state('');
   // FIX 6.8: Heat map toggle
   let showHeatMap = $state(false);
+  // Reference map layer toggle
+  let showRefMapLayer = $state(false);
+  let refMapPoints = $state<RefMapPoint[]>([]);
 
   // FEAT-P2: Default Atlas view settings
   let defaultCenter = $state<{ lat: number; lng: number } | null>(null);
@@ -178,6 +193,17 @@
     }
   }
 
+  // Load reference map points from imported maps
+  async function loadRefMapPoints() {
+    if (!window.electronAPI?.refMaps) return;
+    try {
+      const points = await window.electronAPI.refMaps.getAllPoints();
+      refMapPoints = points;
+    } catch (err) {
+      console.error('Error loading reference map points:', err);
+    }
+  }
+
   // FEAT-P2: Save current map view as default
   async function saveDefaultView() {
     if (!window.electronAPI?.settings) return;
@@ -210,6 +236,7 @@
   onMount(() => {
     loadLocations();
     loadDefaultView(); // FEAT-P2: Load saved default view
+    loadRefMapPoints(); // Load imported reference map points
     // Close context menu on click outside
     const handleClickOutside = () => closeContextMenu();
     document.addEventListener('click', handleClickOutside);
@@ -245,6 +272,16 @@
       >
         {showHeatMap ? 'Heat On' : 'Heat Off'}
       </button>
+      <!-- Reference Maps layer toggle -->
+      {#if refMapPoints.length > 0}
+        <button
+          onclick={() => showRefMapLayer = !showRefMapLayer}
+          class="px-4 py-2 rounded transition text-sm {showRefMapLayer ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-foreground hover:bg-gray-200'}"
+          title="Toggle imported reference maps ({refMapPoints.length} points)"
+        >
+          {showRefMapLayer ? 'Refs On' : 'Refs Off'}
+        </button>
+      {/if}
       <button
         onclick={() => showFilters = !showFilters}
         class="px-4 py-2 bg-gray-100 text-foreground rounded hover:bg-gray-200 transition text-sm"
@@ -302,6 +339,8 @@
       zoom={urlZoom ?? undefined}
       center={urlCenter ?? undefined}
       defaultLayer={urlLayer ?? 'satellite-labels'}
+      refMapPoints={refMapPoints}
+      showRefMapLayer={showRefMapLayer}
     />
     {#if loading}
       <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded shadow-lg z-10">

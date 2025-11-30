@@ -80,6 +80,22 @@
 
   // P6: Darktable state removed per v010steps.md
 
+  // Reference Maps state
+  interface RefMap {
+    mapId: string;
+    mapName: string;
+    filePath: string;
+    fileType: string;
+    pointCount: number;
+    importedAt: string;
+    importedBy: string | null;
+  }
+
+  let refMaps = $state<RefMap[]>([]);
+  let refMapStats = $state<{ mapCount: number; pointCount: number } | null>(null);
+  let importingRefMap = $state(false);
+  let refMapMessage = $state('');
+
   async function loadSettings() {
     try {
       loading = true;
@@ -746,9 +762,86 @@
     }
   }
 
+  /**
+   * Load reference maps list
+   */
+  async function loadRefMaps() {
+    if (!window.electronAPI?.refMaps) return;
+    try {
+      refMaps = await window.electronAPI.refMaps.findAll();
+      const stats = await window.electronAPI.refMaps.getStats();
+      refMapStats = { mapCount: stats.mapCount, pointCount: stats.pointCount };
+    } catch (error) {
+      console.error('Failed to load reference maps:', error);
+    }
+  }
+
+  /**
+   * Import a new reference map file
+   */
+  async function importRefMap() {
+    if (!window.electronAPI?.refMaps) {
+      refMapMessage = 'Reference maps not available';
+      return;
+    }
+
+    try {
+      importingRefMap = true;
+      refMapMessage = 'Selecting file...';
+
+      const result = await window.electronAPI.refMaps.import(currentUserId || undefined);
+
+      if (result.canceled) {
+        refMapMessage = '';
+        return;
+      }
+
+      if (!result.success) {
+        refMapMessage = result.error || 'Import failed';
+        setTimeout(() => { refMapMessage = ''; }, 5000);
+        return;
+      }
+
+      refMapMessage = `Imported "${result.map?.mapName}" with ${result.pointCount} points`;
+      await loadRefMaps();
+
+      setTimeout(() => { refMapMessage = ''; }, 5000);
+    } catch (error) {
+      console.error('Reference map import failed:', error);
+      refMapMessage = 'Import failed';
+      setTimeout(() => { refMapMessage = ''; }, 5000);
+    } finally {
+      importingRefMap = false;
+    }
+  }
+
+  /**
+   * Delete a reference map
+   */
+  async function deleteRefMap(mapId: string) {
+    if (!window.electronAPI?.refMaps) return;
+
+    const map = refMaps.find(m => m.mapId === mapId);
+    if (!confirm(`Delete "${map?.mapName}"? This will remove all ${map?.pointCount || 0} points.`)) {
+      return;
+    }
+
+    try {
+      await window.electronAPI.refMaps.delete(mapId);
+      await loadRefMaps();
+      refMapMessage = 'Map deleted';
+      setTimeout(() => { refMapMessage = ''; }, 3000);
+    } catch (error) {
+      console.error('Failed to delete reference map:', error);
+      refMapMessage = 'Delete failed';
+      setTimeout(() => { refMapMessage = ''; }, 5000);
+    }
+  }
+
   onMount(() => {
     loadSettings();
     loadProxyCacheStats();
+    loadRefMaps();
   });
 </script>
 
@@ -1249,6 +1342,78 @@
       </div>
 
       <!-- P6: Darktable section removed per v010steps.md -->
+
+      <!-- Reference Maps -->
+      <div class="bg-white rounded-lg shadow p-6 mb-6">
+        <h2 class="text-lg font-semibold mb-3 text-foreground">Reference Maps</h2>
+        <p class="text-sm text-gray-600 mb-4">
+          Import map files to display as reference points on the Atlas. Supports KML, KMZ, GPX, GeoJSON, and CSV files.
+        </p>
+
+        <!-- Stats -->
+        {#if refMapStats}
+          <div class="bg-gray-50 rounded-lg p-4 mb-4">
+            <div class="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span class="text-gray-500">Imported maps:</span>
+                <span class="font-medium ml-2">{refMapStats.mapCount}</span>
+              </div>
+              <div>
+                <span class="text-gray-500">Total points:</span>
+                <span class="font-medium ml-2">{refMapStats.pointCount.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Map List -->
+        {#if refMaps.length > 0}
+          <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
+            {#each refMaps as map}
+              <div class="flex items-center justify-between border border-gray-200 rounded-lg p-3">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="font-medium text-foreground truncate">{map.mapName}</span>
+                    <span class="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded uppercase">{map.fileType}</span>
+                  </div>
+                  <p class="text-xs text-gray-500 mt-0.5">
+                    {map.pointCount} points - {new Date(map.importedAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <button
+                  onclick={() => deleteRefMap(map.mapId)}
+                  class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                  title="Delete map"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                  </svg>
+                </button>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="text-center text-gray-500 py-6 bg-gray-50 rounded-lg mb-4">
+            <p class="text-sm">No reference maps imported yet</p>
+          </div>
+        {/if}
+
+        <div class="flex items-center gap-3">
+          <button
+            onclick={importRefMap}
+            disabled={importingRefMap}
+            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+          >
+            {importingRefMap ? 'Importing...' : 'Import Map File'}
+          </button>
+          {#if refMapMessage}
+            <span class="text-sm text-gray-600">{refMapMessage}</span>
+          {/if}
+        </div>
+        <p class="text-xs text-gray-500 mt-2">
+          Imported points appear as a separate "Reference Maps" layer on the Atlas.
+        </p>
+      </div>
 
       <DatabaseSettings />
 

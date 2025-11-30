@@ -306,6 +306,21 @@ const api = {
     close: () => ipcRenderer.invoke("research:close"),
     status: () => ipcRenderer.invoke("research:status"),
   },
+
+  // Reference Maps - imported KML, GPX, GeoJSON, CSV files
+  refMaps: {
+    import: (importedBy) => ipcRenderer.invoke("refMaps:import", importedBy),
+    importFromPath: (filePath, importedBy) => ipcRenderer.invoke("refMaps:importFromPath", filePath, importedBy),
+    findAll: () => ipcRenderer.invoke("refMaps:findAll"),
+    findById: (mapId) => ipcRenderer.invoke("refMaps:findById", mapId),
+    getAllPoints: () => ipcRenderer.invoke("refMaps:getAllPoints"),
+    update: (mapId, updates) => ipcRenderer.invoke("refMaps:update", mapId, updates),
+    delete: (mapId) => ipcRenderer.invoke("refMaps:delete", mapId),
+    getStats: () => ipcRenderer.invoke("refMaps:getStats"),
+    getSupportedExtensions: () => ipcRenderer.invoke("refMaps:getSupportedExtensions"),
+    // Phase 2: Auto-matching for location creation
+    findMatches: (query, options) => ipcRenderer.invoke("refMaps:findMatches", query, options),
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

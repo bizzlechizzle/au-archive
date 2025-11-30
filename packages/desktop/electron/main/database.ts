@@ -1229,6 +1229,50 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 36 completed: video_proxies table created');
     }
+
+    // Migration 37: Create reference maps tables for user-imported map data
+    // Stores imported KML, GPX, GeoJSON, etc. for location reference
+    const refMapsExists = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='ref_maps'"
+    ).get();
+
+    if (!refMapsExists) {
+      console.log('Running migration 37: Creating reference maps tables');
+
+      sqlite.exec(`
+        -- Imported map files metadata
+        CREATE TABLE ref_maps (
+          map_id TEXT PRIMARY KEY,
+          map_name TEXT NOT NULL,
+          file_path TEXT NOT NULL,
+          file_type TEXT NOT NULL,
+          point_count INTEGER DEFAULT 0,
+          imported_at TEXT NOT NULL,
+          imported_by TEXT
+        );
+
+        CREATE INDEX idx_ref_maps_name ON ref_maps(map_name);
+
+        -- Points extracted from imported maps
+        CREATE TABLE ref_map_points (
+          point_id TEXT PRIMARY KEY,
+          map_id TEXT NOT NULL REFERENCES ref_maps(map_id) ON DELETE CASCADE,
+          name TEXT,
+          description TEXT,
+          lat REAL NOT NULL,
+          lng REAL NOT NULL,
+          state TEXT,
+          category TEXT,
+          raw_metadata TEXT
+        );
+
+        CREATE INDEX idx_ref_map_points_map ON ref_map_points(map_id);
+        CREATE INDEX idx_ref_map_points_state ON ref_map_points(state);
+        CREATE INDEX idx_ref_map_points_coords ON ref_map_points(lat, lng);
+      `);
+
+      console.log('Migration 37 completed: reference maps tables created');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

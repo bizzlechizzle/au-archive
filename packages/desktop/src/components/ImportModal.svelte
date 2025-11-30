@@ -47,6 +47,24 @@
   let saving = $state(false);
   let error = $state('');
 
+  // Phase 2: Reference map matching
+  interface RefMapMatch {
+    pointId: string;
+    mapId: string;
+    name: string;
+    description: string | null;
+    lat: number;
+    lng: number;
+    state: string | null;
+    category: string | null;
+    mapName: string;
+    score: number;
+  }
+  let refMapMatches = $state<RefMapMatch[]>([]);
+  let matchesLoading = $state(false);
+  let matchesDismissed = $state(false);
+  let matchSearchTimeout: ReturnType<typeof setTimeout> | null = null;
+
   // Auto-fill sub-location name when location name changes (if adding first building)
   $effect(() => {
     if (addFirstBuilding && name && !subLocationName) {
@@ -181,6 +199,67 @@
       loadOptions();
     }
   });
+
+  // Phase 2: Debounced reference map matching
+  // Searches for matches when name changes (300ms debounce)
+  $effect(() => {
+    // Don't search if:
+    // - GPS already provided (from map click)
+    // - User dismissed suggestions
+    // - Name too short
+    const hasGps = $importModal.prefilledData?.gps_lat && $importModal.prefilledData?.gps_lng;
+    if (hasGps || matchesDismissed || name.trim().length < 3) {
+      refMapMatches = [];
+      return;
+    }
+
+    // Clear previous timeout
+    if (matchSearchTimeout) {
+      clearTimeout(matchSearchTimeout);
+    }
+
+    // Debounce the search
+    matchSearchTimeout = setTimeout(async () => {
+      if (!window.electronAPI?.refMaps?.findMatches) return;
+
+      try {
+        matchesLoading = true;
+        const matches = await window.electronAPI.refMaps.findMatches(name.trim(), {
+          threshold: 0.92,
+          limit: 3,
+          state: selectedState || null,
+        });
+        refMapMatches = matches;
+      } catch (err) {
+        console.error('Error finding ref map matches:', err);
+        refMapMatches = [];
+      } finally {
+        matchesLoading = false;
+      }
+    }, 300);
+  });
+
+  // Apply GPS from a matched reference point
+  function applyMatchGps(match: RefMapMatch) {
+    // Update the prefilled data in the store to include GPS
+    importModal.update(current => ({
+      ...current,
+      prefilledData: {
+        ...current.prefilledData,
+        gps_lat: match.lat,
+        gps_lng: match.lng,
+      },
+    }));
+    // Clear matches after applying
+    refMapMatches = [];
+    toasts.success(`GPS applied from "${match.name}"`);
+  }
+
+  // Dismiss match suggestions
+  function dismissMatches() {
+    matchesDismissed = true;
+    refMapMatches = [];
+  }
 
   function validateForm(): boolean {
     if (!name.trim()) {
@@ -338,6 +417,13 @@
     isPrimaryBuilding = true;
     subLocNameDuplicate = false;
     error = '';
+    // Phase 2: Reset match state
+    refMapMatches = [];
+    matchesDismissed = false;
+    if (matchSearchTimeout) {
+      clearTimeout(matchSearchTimeout);
+      matchSearchTimeout = null;
+    }
   }
 
   function handleCancel() {
@@ -465,6 +551,55 @@
             </label>
           </div>
         </div>
+
+        <!-- Phase 2: Reference Map Match Suggestions -->
+        {#if refMapMatches.length > 0 && !matchesDismissed}
+          <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 animate-in fade-in duration-200">
+            <div class="flex items-start gap-2">
+              <svg class="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-purple-900">
+                  {refMapMatches.length === 1 ? 'Possible match found' : `${refMapMatches.length} possible matches found`}
+                </p>
+                <div class="mt-2 space-y-2">
+                  {#each refMapMatches as match}
+                    <div class="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-purple-100">
+                      <div class="min-w-0 flex-1">
+                        <p class="text-sm font-medium text-gray-900 truncate">{match.name}</p>
+                        <p class="text-xs text-gray-500">
+                          From: {match.mapName}
+                          <span class="ml-2 text-purple-600">{Math.round(match.score * 100)}% match</span>
+                        </p>
+                      </div>
+                      <button
+                        onclick={() => applyMatchGps(match)}
+                        class="ml-3 px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition flex-shrink-0"
+                      >
+                        Apply GPS
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+                <button
+                  onclick={dismissMatches}
+                  class="mt-2 text-xs text-purple-600 hover:text-purple-800 transition"
+                >
+                  Dismiss suggestions
+                </button>
+              </div>
+            </div>
+          </div>
+        {:else if matchesLoading}
+          <div class="text-xs text-gray-400 flex items-center gap-1">
+            <svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            Checking reference maps...
+          </div>
+        {/if}
 
         <!-- Row 2: Sub-Location Name + Primary (conditional) -->
         {#if addFirstBuilding}

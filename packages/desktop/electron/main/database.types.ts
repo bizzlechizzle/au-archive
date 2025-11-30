@@ -17,6 +17,8 @@ export interface Database {
   location_authors: LocationAuthorsTable;
   location_views: LocationViewsTable;
   video_proxies: VideoProxiesTable;
+  ref_maps: RefMapsTable;
+  ref_map_points: RefMapPointsTable;
 }
 
 // Locations table
@@ -470,4 +472,28 @@ export interface VideoProxiesTable {
   original_height: number | null;
   proxy_width: number | null;
   proxy_height: number | null;
+}
+
+// Migration 37: Reference Maps - User-imported map files
+export interface RefMapsTable {
+  map_id: string;
+  map_name: string;
+  file_path: string;
+  file_type: string;        // kml, kmz, gpx, geojson, csv, shp
+  point_count: number;
+  imported_at: string;
+  imported_by: string | null;
+}
+
+// Migration 37: Reference Map Points - Extracted from imported maps
+export interface RefMapPointsTable {
+  point_id: string;
+  map_id: string;
+  name: string | null;
+  description: string | null;
+  lat: number;
+  lng: number;
+  state: string | null;
+  category: string | null;
+  raw_metadata: string | null;  // JSON blob
 }

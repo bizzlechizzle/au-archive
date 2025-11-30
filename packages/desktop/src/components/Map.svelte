@@ -139,6 +139,20 @@
     gps_lng: number;
   }
 
+  /**
+   * Reference map point for imported KML/GPX/GeoJSON files
+   */
+  interface RefMapPoint {
+    pointId: string;
+    mapId: string;
+    name: string | null;
+    description: string | null;
+    lat: number;
+    lng: number;
+    state: string | null;
+    category: string | null;
+  }
+
   interface Props {
     locations?: Location[];
     onLocationClick?: (location: Location) => void;
@@ -175,6 +189,10 @@
     campusSubLocations?: CampusSubLocation[];
     // Campus map: Callback when clicking a sub-location marker
     onCampusSubLocationClick?: (subid: string) => void;
+    // Reference map points to display (from imported KML/GPX/GeoJSON)
+    refMapPoints?: RefMapPoint[];
+    // Whether to show reference map layer
+    showRefMapLayer?: boolean;
   }
 
   let {
@@ -196,7 +214,9 @@
     extraZoomOut = false,
     allowFullZoomIn = false,
     campusSubLocations = [],
-    onCampusSubLocationClick
+    onCampusSubLocationClick,
+    refMapPoints = [],
+    showRefMapLayer = false
   }: Props = $props();
 
   /**
@@ -217,6 +237,8 @@
   let markersLayer: LayerGroup | null = null;
   // Campus map: Layer for sub-location markers
   let campusMarkersLayer: LayerGroup | null = null;
+  // Reference map layer for imported KML/GPX/GeoJSON points
+  let refMapLayer: LayerGroup | null = null;
   // FIX 6.8: Heat map layer
   let heatLayer: any = null;
   let cluster: Supercluster | null = null;
@@ -426,6 +448,8 @@
       markersLayer = L.layerGroup().addTo(map);
       // Campus map: Layer for sub-location markers (rendered on top)
       campusMarkersLayer = L.layerGroup().addTo(map);
+      // Reference map layer for imported KML/GPX/GeoJSON points (separate from location markers)
+      refMapLayer = L.layerGroup();
 
       // DECISION-010: Skip click handlers when readonly
       if (!readonly) {
@@ -733,6 +757,56 @@
     });
   });
 
+  // Toggle reference map layer based on showRefMapLayer prop
+  $effect(() => {
+    if (!map || !refMapLayer) return;
+
+    import('leaflet').then((L) => {
+      // Clear existing reference markers
+      refMapLayer!.clearLayers();
+
+      if (showRefMapLayer && refMapPoints.length > 0) {
+        // Add layer to map if not already added
+        if (!map!.hasLayer(refMapLayer!)) {
+          refMapLayer!.addTo(map!);
+        }
+
+        // Create markers for each reference point
+        refMapPoints.forEach((point) => {
+          // Use a distinct color for reference map points (purple/magenta)
+          const refIcon = L.default.divIcon({
+            html: `<div class="ref-map-marker"></div>`,
+            className: 'ref-map-icon',
+            iconSize: [12, 12],
+            iconAnchor: [6, 6],
+          });
+
+          const marker = L.default.marker([point.lat, point.lng], { icon: refIcon });
+
+          // Build popup content
+          const name = point.name || 'Unnamed Point';
+          const desc = point.description ? `<br/><span style="color: #666; font-size: 11px;">${escapeHtml(point.description.substring(0, 100))}${point.description.length > 100 ? '...' : ''}</span>` : '';
+          const category = point.category ? `<br/><span style="color: #888; font-size: 10px;">${escapeHtml(point.category)}</span>` : '';
+
+          marker.bindPopup(`
+            <div class="ref-map-popup" style="min-width: 150px;">
+              <strong style="font-size: 13px;">${escapeHtml(name)}</strong>
+              ${desc}
+              ${category}
+            </div>
+          `);
+
+          refMapLayer!.addLayer(marker);
+        });
+      } else {
+        // Remove layer from map if currently added
+        if (map!.hasLayer(refMapLayer!)) {
+          map!.removeLayer(refMapLayer!);
+        }
+      }
+    });
+  });
+
   onDestroy(() => {
     // BUG-V1 FIX: Clean up event delegation listener
     if (viewDetailsClickHandler) {
@@ -786,5 +860,19 @@
     border-radius: 50%;
     border: 2px solid white;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  :global(.ref-map-icon) {
+    background: transparent;
+    border: none;
+  }
+
+  :global(.ref-map-marker) {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: #9333ea; /* Purple for reference points */
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   }
 </style>
