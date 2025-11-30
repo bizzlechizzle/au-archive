@@ -6,7 +6,7 @@
    * Location Settings Overhaul: Added PIN-protected settings section
    */
   import type { Location } from '@au-archive/core';
-  import { goto } from '$app/navigation';
+  import { router } from '../../stores/router';
 
   interface Props {
     location: Location;
@@ -168,7 +168,7 @@
       deleting = true;
       await window.electronAPI.locations.delete(location.locid);
       showDeleteConfirm = false;
-      goto('/locations');
+      router.navigate('/locations');
     } catch (err) {
       console.error('Delete location failed:', err);
       alert('Failed to delete location');
