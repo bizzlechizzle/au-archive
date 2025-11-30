@@ -526,11 +526,13 @@
       // Event delegation for "Delete" button on reference point popups
       deleteRefClickHandler = (e: MouseEvent) => {
         const target = e.target as HTMLElement;
-        if (target.classList.contains('delete-ref-btn')) {
+        // Use closest() to handle clicks on SVG icon inside button
+        const btn = target.closest('.delete-ref-btn') as HTMLElement | null;
+        if (btn) {
           e.preventDefault();
           e.stopPropagation();
-          const pointId = target.getAttribute('data-point-id');
-          const name = target.getAttribute('data-name') || 'Unnamed Point';
+          const pointId = btn.getAttribute('data-point-id');
+          const name = btn.getAttribute('data-name') || 'Unnamed Point';
           if (onDeleteRefPoint && pointId) {
             onDeleteRefPoint(pointId, name);
           }
