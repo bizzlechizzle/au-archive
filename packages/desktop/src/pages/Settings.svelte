@@ -48,6 +48,9 @@
   let changeConfirmPin = $state('');
   let changePinError = $state('');
 
+  // Users accordion state
+  let usersExpanded = $state(true);
+
   // Kanye6: Thumbnail regeneration state
   let regenerating = $state(false);
   let regenProgress = $state(0);
@@ -1002,11 +1005,28 @@
   {:else}
     <div class="max-w-2xl">
       <!-- User Management -->
-      <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold text-foreground mb-4">Users</h2>
+      <div class="bg-white rounded-lg shadow mb-6 {usersExpanded ? 'p-6' : 'px-6 py-4'}">
+        <!-- Accordion Header -->
+        <button
+          onclick={() => usersExpanded = !usersExpanded}
+          aria-expanded={usersExpanded}
+          class="w-full flex items-center justify-between text-left hover:opacity-80 transition-opacity"
+        >
+          <h2 class="text-lg font-semibold text-foreground leading-none">Users</h2>
+          <svg
+            class="w-5 h-5 text-accent transition-transform duration-200 {usersExpanded ? 'rotate-180' : ''}"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
 
+        {#if usersExpanded}
         <!-- User List -->
-        <div class="space-y-3">
+        <div class="space-y-3 mt-4">
           {#each users as user}
             <div class="border border-gray-200 rounded-lg p-4">
               {#if editingUserId === user.user_id}
@@ -1112,9 +1132,6 @@
                     {#if user.display_name}
                       <p class="text-xs text-gray-500">@{user.username}</p>
                     {/if}
-                    {#if user.last_login}
-                      <p class="text-xs text-gray-400">Last login: {new Date(user.last_login).toLocaleDateString()}</p>
-                    {/if}
                   </div>
                   <div class="flex gap-1">
                     <button
@@ -1152,21 +1169,24 @@
             </div>
           {/each}
 
-          <!-- Security Settings -->
-          <div class="border-t border-gray-200 pt-4 mt-4">
-            <h3 class="text-sm font-medium text-gray-700 mb-3">Security</h3>
-            <label class="flex items-start gap-3 cursor-pointer">
+          <!-- Require PIN and Add User row -->
+          <div class="flex items-center justify-between border-t border-gray-200 pt-4 mt-4">
+            <label class="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={requireLogin}
                 onchange={toggleRequireLogin}
-                class="mt-0.5 h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent"
+                class="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent"
               />
-              <div>
-                <span class="text-sm text-foreground">Require PIN on startup</span>
-                <p class="text-xs text-gray-500 mt-0.5">App will prompt for PIN each time it launches</p>
-              </div>
+              <span class="text-sm text-foreground">Require PIN on startup</span>
             </label>
+            <button
+              onclick={openAddUser}
+              class="text-sm text-accent hover:underline"
+              title="Add user"
+            >
+              add user
+            </button>
           </div>
 
           <!-- Add User Form -->
@@ -1239,15 +1259,9 @@
                 </div>
               </div>
             </div>
-          {:else}
-            <button
-              onclick={openAddUser}
-              class="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-gray-400 hover:text-gray-600 transition text-sm"
-            >
-              + Add User
-            </button>
           {/if}
         </div>
+        {/if}
       </div>
 
       <div class="bg-white rounded-lg shadow p-6 mb-6">
