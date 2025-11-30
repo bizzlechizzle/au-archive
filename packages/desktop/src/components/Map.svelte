@@ -426,7 +426,7 @@
 
       const overlayLayers: { [key: string]: TileLayer } = {
         'Labels': L.tileLayer(TILE_LAYERS.LABELS, {
-          attribution: hideAttribution ? '' : '&copy; Stamen Design',
+          attribution: hideAttribution ? '' : 'Esri',
           maxZoom: MAP_CONFIG.MAX_ZOOM,
         }),
       };
