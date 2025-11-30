@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { router } from '../stores/router';
   import { openImportModal } from '../stores/import-modal-store';
   import { toasts } from '../stores/toast-store';
@@ -30,9 +30,14 @@
   // DECISION-016: Read URL params from router store (hash-based routing)
   let routeQuery = $state<Record<string, string>>({});
 
-  // Subscribe to router to get query params
-  router.subscribe(route => {
+  // OPT-016: Subscribe to router and store unsubscribe for cleanup
+  const unsubscribeRouter = router.subscribe(route => {
     routeQuery = route.query || {};
+  });
+
+  // OPT-016: Clean up router subscription on component destroy
+  onDestroy(() => {
+    unsubscribeRouter();
   });
 
   const highlightLocid = $derived(routeQuery.locid || null);

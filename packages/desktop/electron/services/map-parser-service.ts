@@ -2,9 +2,11 @@
  * Map Parser Service
  * Parses various map file formats (KML, KMZ, GPX, GeoJSON, Shapefile, CSV)
  * and extracts points with coordinates and metadata.
+ * OPT-027: Uses async I/O to avoid blocking the event loop
  */
 
 import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { DOMParser } from '@xmldom/xmldom';
 import * as unzipper from 'unzipper';
@@ -586,9 +588,10 @@ export async function parseMapFile(filePath: string): Promise<ParsedMapResult> {
   try {
     let points: ParsedMapPoint[] = [];
 
+    // OPT-027: Use async I/O to avoid blocking the event loop
     switch (fileType) {
       case 'kml': {
-        const content = fs.readFileSync(filePath, 'utf8');
+        const content = await fsPromises.readFile(filePath, 'utf8');
         points = parseKML(content);
         break;
       }
@@ -600,19 +603,19 @@ export async function parseMapFile(filePath: string): Promise<ParsedMapResult> {
       }
 
       case 'gpx': {
-        const content = fs.readFileSync(filePath, 'utf8');
+        const content = await fsPromises.readFile(filePath, 'utf8');
         points = parseGPX(content);
         break;
       }
 
       case 'geojson': {
-        const content = fs.readFileSync(filePath, 'utf8');
+        const content = await fsPromises.readFile(filePath, 'utf8');
         points = parseGeoJSON(content);
         break;
       }
 
       case 'csv': {
-        const content = fs.readFileSync(filePath, 'utf8');
+        const content = await fsPromises.readFile(filePath, 'utf8');
         points = parseCSV(content);
         break;
       }

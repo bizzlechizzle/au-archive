@@ -53,6 +53,8 @@ export interface ImportResult {
     locationGPS: { lat: number; lng: number };
     mediaGPS: { lat: number; lng: number };
   };
+  // OPT-012: Track non-fatal warnings during import
+  warnings?: string[];
 }
 
 export interface ImportSessionResult {
@@ -491,6 +493,8 @@ export class FileImportService {
     // 5. Extract metadata
     let metadata: any = null;
     let gpsWarning: ImportResult['gpsWarning'] = undefined;
+    // OPT-012: Track non-fatal warnings during import
+    const warnings: string[] = [];
 
     console.log('[FileImport] Step 5: Extracting metadata for', file.originalName, 'type:', type);
 
@@ -570,7 +574,10 @@ export class FileImportService {
         }
       }
     } catch (error) {
-      console.warn('[FileImport] Failed to extract metadata:', error);
+      // OPT-012: Track metadata extraction failure as warning
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.warn('[FileImport] Failed to extract metadata:', errorMsg);
+      warnings.push(`Metadata extraction failed: ${errorMsg}`);
       // Continue without metadata
     }
 
@@ -598,7 +605,10 @@ export class FileImportService {
             console.log('[FileImport] No embedded preview found (will use original for viewing)');
           }
         } catch (previewError) {
-          console.warn('[FileImport] Preview extraction failed:', previewError);
+          // OPT-012: Track preview extraction failure as warning
+          const errMsg = previewError instanceof Error ? previewError.message : String(previewError);
+          console.warn('[FileImport] Preview extraction failed:', errMsg);
+          warnings.push(`RAW preview extraction failed: ${errMsg}`);
         }
       }
 
@@ -616,7 +626,10 @@ export class FileImportService {
         console.log(`  - thumb_lg (800px): ${thumbPathLg ? 'OK' : 'NULL'}`);
         console.log(`  - preview (1920px): ${previewPath ? 'OK' : 'NULL'}`);
       } catch (thumbError) {
-        console.warn('[FileImport] Multi-tier thumbnail generation failed:', thumbError);
+        // OPT-012: Track thumbnail generation failure as warning
+        const errMsg = thumbError instanceof Error ? thumbError.message : String(thumbError);
+        console.warn('[FileImport] Multi-tier thumbnail generation failed:', errMsg);
+        warnings.push(`Thumbnail generation failed: ${errMsg}`);
       }
     } else if (type === 'video') {
       // Generate poster frame for videos, then generate multi-tier from poster
@@ -633,7 +646,10 @@ export class FileImportService {
           previewPath = thumbnails.preview;
         }
       } catch (posterError) {
-        console.warn('[FileImport] Poster frame generation failed:', posterError);
+        // OPT-012: Track poster frame generation failure as warning
+        const errMsg = posterError instanceof Error ? posterError.message : String(posterError);
+        console.warn('[FileImport] Poster frame generation failed:', errMsg);
+        warnings.push(`Video poster frame generation failed: ${errMsg}`);
       }
     } else if (type === 'map') {
       // Maps can have thumbnails too (for image-based maps like scans)
@@ -646,7 +662,10 @@ export class FileImportService {
           thumbPathLg = thumbnails.thumb_lg;
           previewPath = thumbnails.preview;
         } catch (thumbError) {
-          console.warn('[FileImport] Map thumbnail generation failed:', thumbError);
+          // OPT-012: Track map thumbnail generation failure as warning
+          const errMsg = thumbError instanceof Error ? thumbError.message : String(thumbError);
+          console.warn('[FileImport] Map thumbnail generation failed:', errMsg);
+          warnings.push(`Map thumbnail generation failed: ${errMsg}`);
         }
       }
     }
@@ -679,62 +698,58 @@ export class FileImportService {
 
     // DECISION-015: Step 8a - Auto-populate location GPS from first media with GPS
     // If location has no GPS but media has GPS, transfer it to location
+    // OPT-004: Track fire-and-forget results with await instead of fire-and-forget
     if (gpsForGeocode && (!location.gps?.lat || !location.gps?.lng)) {
       console.log('[FileImport] Step 8a: Auto-populating location GPS from media EXIF...');
-      // Fire-and-forget - don't block import
-      // BUG FIX: Removed gps_updated_at (field doesn't exist in schema)
-      this.db
-        .updateTable('locs')
-        .set({
-          gps_lat: gpsForGeocode.lat,
-          gps_lng: gpsForGeocode.lng,
-          gps_source: 'media_gps',
-        })
-        .where('locid', '=', file.locid)
-        .execute()
-        .then(async () => {
-          console.log('[FileImport] Location GPS auto-populated from media EXIF:', gpsForGeocode);
-          // DECISION-018: Recalculate region fields after GPS update
-          await this.recalculateRegionsForLocation(file.locid, gpsForGeocode);
-        })
-        .catch((dbError) => {
-          console.warn('[FileImport] Failed to auto-populate location GPS:', dbError);
-        });
+      try {
+        await this.db
+          .updateTable('locs')
+          .set({
+            gps_lat: gpsForGeocode.lat,
+            gps_lng: gpsForGeocode.lng,
+            gps_source: 'media_gps',
+          })
+          .where('locid', '=', file.locid)
+          .execute();
+        console.log('[FileImport] Location GPS auto-populated from media EXIF:', gpsForGeocode);
+        // DECISION-018: Recalculate region fields after GPS update
+        await this.recalculateRegionsForLocation(file.locid, gpsForGeocode);
+      } catch (dbError) {
+        const errMsg = dbError instanceof Error ? dbError.message : String(dbError);
+        console.warn('[FileImport] Failed to auto-populate location GPS:', errMsg);
+        warnings.push(`GPS auto-population failed: ${errMsg}`);
+      }
     }
 
     // Step 8b: Non-blocking geocoding (DUMP phase per spec: GPS → Address)
-    // Fire-and-forget: Don't block import, don't fail if geocoding fails
+    // OPT-004: Track geocoding results with await instead of fire-and-forget
     // Only trigger if: geocodingService exists, location has no address, file has GPS
     if (gpsForGeocode && this.geocodingService && !location.address_street && !location.address_city) {
-      console.log('[FileImport] Step 8b: Queueing reverse geocode (non-blocking)...');
-      // Fire-and-forget - don't await, don't block
-      this.geocodingService.reverseGeocode(gpsForGeocode.lat, gpsForGeocode.lng)
-        .then(async (geocodeResult) => {
-          if (geocodeResult && geocodeResult.address) {
-            try {
-              await this.db
-                .updateTable('locs')
-                .set({
-                  address_street: geocodeResult.address.street || null,
-                  address_city: geocodeResult.address.city || null,
-                  address_county: geocodeResult.address.county || null,
-                  address_state: geocodeResult.address.stateCode || geocodeResult.address.state || null,
-                  address_zipcode: geocodeResult.address.zipcode || null,
-                  address_geocoded_at: new Date().toISOString(),
-                })
-                .where('locid', '=', file.locid)
-                .execute();
-              console.log('[FileImport] Location address updated from media GPS (async)');
-              // DECISION-018: Recalculate region fields after address update (now has state/county for cultural region lookup)
-              await this.recalculateRegionsForLocation(file.locid, gpsForGeocode);
-            } catch (dbError) {
-              console.warn('[FileImport] Failed to update location address:', dbError);
-            }
-          }
-        })
-        .catch((geocodeError) => {
-          console.warn('[FileImport] Reverse geocoding failed (non-fatal):', geocodeError);
-        });
+      console.log('[FileImport] Step 8b: Running reverse geocode...');
+      try {
+        const geocodeResult = await this.geocodingService.reverseGeocode(gpsForGeocode.lat, gpsForGeocode.lng);
+        if (geocodeResult && geocodeResult.address) {
+          await this.db
+            .updateTable('locs')
+            .set({
+              address_street: geocodeResult.address.street || null,
+              address_city: geocodeResult.address.city || null,
+              address_county: geocodeResult.address.county || null,
+              address_state: geocodeResult.address.stateCode || geocodeResult.address.state || null,
+              address_zipcode: geocodeResult.address.zipcode || null,
+              address_geocoded_at: new Date().toISOString(),
+            })
+            .where('locid', '=', file.locid)
+            .execute();
+          console.log('[FileImport] Location address updated from media GPS');
+          // DECISION-018: Recalculate region fields after address update (now has state/county for cultural region lookup)
+          await this.recalculateRegionsForLocation(file.locid, gpsForGeocode);
+        }
+      } catch (geocodeError) {
+        const errMsg = geocodeError instanceof Error ? geocodeError.message : String(geocodeError);
+        console.warn('[FileImport] Reverse geocoding failed:', errMsg);
+        warnings.push(`Reverse geocoding failed: ${errMsg}`);
+      }
     }
 
     // 9. Delete original if requested (after DB success)
@@ -757,6 +772,8 @@ export class FileImportService {
       duplicate: false,
       archivePath,
       gpsWarning,
+      // OPT-012: Include warnings in result (only if non-empty)
+      warnings: warnings.length > 0 ? warnings : undefined,
     };
   }
 

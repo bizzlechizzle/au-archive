@@ -74,6 +74,7 @@ export class MediaPathService {
 
   /**
    * Ensure all media directories exist
+   * OPT-006: Added error handling for mkdir failures
    */
   async ensureDirectories(): Promise<void> {
     const dirs = [
@@ -83,16 +84,30 @@ export class MediaPathService {
     ];
 
     for (const dir of dirs) {
-      await fs.mkdir(dir, { recursive: true });
+      try {
+        await fs.mkdir(dir, { recursive: true });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to create media directory ${dir}: ${msg}`);
+      }
     }
   }
 
   /**
    * Ensure bucket directory exists for a given hash
+   * OPT-006: Added error handling for mkdir failures
    */
   async ensureBucketDir(baseDir: string, hash: string): Promise<void> {
+    if (!hash || hash.length < 2) {
+      throw new Error('Invalid hash: must be at least 2 characters');
+    }
     const bucket = hash.substring(0, 2);
     const bucketDir = path.join(baseDir, bucket);
-    await fs.mkdir(bucketDir, { recursive: true });
+    try {
+      await fs.mkdir(bucketDir, { recursive: true });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to create bucket directory ${bucketDir}: ${msg}`);
+    }
   }
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { router } from '../stores/router';
   import type { Location } from '@au-archive/core';
 
@@ -67,6 +67,11 @@
       filterAuthorId, filterCensusRegion, filterCensusDivision, filterCulturalRegion,
       filterStateDirection, specialFilter
     ].filter(Boolean).length;
+  });
+
+  // OPT-017: Clean up router subscription on component destroy
+  onDestroy(() => {
+    unsubscribe();
   });
 
   // Load locations for a specific author from location_authors table

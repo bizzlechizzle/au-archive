@@ -73,6 +73,7 @@ export class SqliteRefMapsRepository {
 
   /**
    * Create a new reference map with its points
+   * OPT-005: Uses transaction to ensure all operations succeed or all fail
    */
   async create(input: {
     mapName: string;
@@ -92,51 +93,56 @@ export class SqliteRefMapsRepository {
     const mapId = randomUUID();
     const now = new Date().toISOString();
 
-    // Insert the map record
-    await this.db
-      .insertInto('ref_maps')
-      .values({
-        map_id: mapId,
-        map_name: input.mapName,
-        file_path: input.filePath,
-        file_type: input.fileType,
-        point_count: input.points.length,
-        imported_at: now,
-        imported_by: input.importedBy || null
-      })
-      .execute();
-
-    // Insert all points
+    // OPT-005: Use transaction to ensure map and all points are created atomically
     const pointRecords: RefMapPoint[] = [];
-    for (const point of input.points) {
-      const pointId = randomUUID();
-      await this.db
-        .insertInto('ref_map_points')
+
+    await this.db.transaction().execute(async (trx) => {
+      // Insert the map record
+      await trx
+        .insertInto('ref_maps')
         .values({
-          point_id: pointId,
           map_id: mapId,
+          map_name: input.mapName,
+          file_path: input.filePath,
+          file_type: input.fileType,
+          point_count: input.points.length,
+          imported_at: now,
+          imported_by: input.importedBy || null
+        })
+        .execute();
+
+      // Insert all points within the same transaction
+      for (const point of input.points) {
+        const pointId = randomUUID();
+        await trx
+          .insertInto('ref_map_points')
+          .values({
+            point_id: pointId,
+            map_id: mapId,
+            name: point.name,
+            description: point.description,
+            lat: point.lat,
+            lng: point.lng,
+            state: point.state,
+            category: point.category,
+            raw_metadata: point.rawMetadata ? JSON.stringify(point.rawMetadata) : null
+          })
+          .execute();
+
+        pointRecords.push({
+          pointId,
+          mapId,
           name: point.name,
           description: point.description,
           lat: point.lat,
           lng: point.lng,
           state: point.state,
           category: point.category,
-          raw_metadata: point.rawMetadata ? JSON.stringify(point.rawMetadata) : null
-        })
-        .execute();
-
-      pointRecords.push({
-        pointId,
-        mapId,
-        name: point.name,
-        description: point.description,
-        lat: point.lat,
-        lng: point.lng,
-        state: point.state,
-        category: point.category,
-        rawMetadata: point.rawMetadata
-      });
-    }
+          rawMetadata: point.rawMetadata,
+          akaNames: null
+        });
+      }
+    });
 
     return {
       mapId,

@@ -140,8 +140,19 @@ export class ExifToolService {
   /**
    * Close the ExifTool process
    * Should be called when the application is shutting down
+   * OPT-007: Added timeout and error handling to prevent shutdown hangs
    */
   async close(): Promise<void> {
-    await exiftool.end();
+    try {
+      await Promise.race([
+        exiftool.end(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('ExifTool shutdown timeout')), 5000)
+        )
+      ]);
+    } catch (error) {
+      // Log but don't throw - we're shutting down anyway
+      console.warn('[ExifTool] Shutdown error (ignored):', error);
+    }
   }
 }

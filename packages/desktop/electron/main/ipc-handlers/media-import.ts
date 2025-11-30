@@ -3,6 +3,7 @@
  * Handles media selection, expansion, and import operations
  * Migration 25: Activity tracking - injects current user into imports
  * Migration 25 - Phase 3: Author attribution - tracks documenters in location_authors
+ * OPT-031: Uses shared user service for getCurrentUser
  */
 import { ipcMain, dialog } from 'electron';
 import { z } from 'zod';
@@ -22,24 +23,8 @@ import { PhaseImportService } from '../../services/phase-import-service';
 import { GeocodingService } from '../../services/geocoding-service';
 import { getConfigService } from '../../services/config-service';
 import { getBackupScheduler } from '../../services/backup-scheduler';
-
-/**
- * Migration 25: Get current user context from settings
- */
-async function getCurrentUser(db: Kysely<Database>): Promise<{ userId: string; username: string } | null> {
-  try {
-    const userIdRow = await db.selectFrom('settings').select('value').where('key', '=', 'current_user_id').executeTakeFirst();
-    const usernameRow = await db.selectFrom('settings').select('value').where('key', '=', 'current_user').executeTakeFirst();
-
-    if (userIdRow?.value && usernameRow?.value) {
-      return { userId: userIdRow.value, username: usernameRow.value };
-    }
-    return null;
-  } catch (error) {
-    console.warn('[Media Import] Failed to get current user:', error);
-    return null;
-  }
-}
+// OPT-031: Use shared user service
+import { getCurrentUser } from '../../services/user-service';
 
 // Track active imports for cancellation
 const activeImports: Map<string, AbortController> = new Map();

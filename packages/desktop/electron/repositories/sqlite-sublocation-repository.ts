@@ -91,6 +91,7 @@ export class SQLiteSubLocationRepository {
 
   /**
    * Create a new sub-location
+   * OPT-001: Wrapped in transaction to ensure atomicity
    */
   async create(input: CreateSubLocationInput): Promise<SubLocation> {
     const subid = randomUUID();
@@ -98,42 +99,63 @@ export class SQLiteSubLocationRepository {
     const ssubname = input.ssubname || generateShortName(input.subnam);
     const created_date = new Date().toISOString();
 
-    await this.db
-      .insertInto('slocs')
-      .values({
-        subid,
-        sub12,
-        locid: input.locid,
-        subnam: input.subnam,
-        ssubname,
-        type: input.type || null,
-        status: input.status || null,
-        hero_imgsha: null,
-        is_primary: input.is_primary ? 1 : 0,
-        created_date,
-        created_by: input.created_by || null,
-        modified_date: null,
-        modified_by: null,
-        // Migration 31: GPS fields (all null on creation)
-        gps_lat: null,
-        gps_lng: null,
-        gps_accuracy: null,
-        gps_source: null,
-        gps_verified_on_map: 0,
-        gps_captured_at: null,
-        // Migration 32: AKA and historical name (null on creation)
-        akanam: null,
-        historicalName: null,
-      })
-      .execute();
+    // Use transaction to ensure all operations succeed or all fail
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto('slocs')
+        .values({
+          subid,
+          sub12,
+          locid: input.locid,
+          subnam: input.subnam,
+          ssubname,
+          type: input.type || null,
+          status: input.status || null,
+          hero_imgsha: null,
+          is_primary: input.is_primary ? 1 : 0,
+          created_date,
+          created_by: input.created_by || null,
+          modified_date: null,
+          modified_by: null,
+          // Migration 31: GPS fields (all null on creation)
+          gps_lat: null,
+          gps_lng: null,
+          gps_accuracy: null,
+          gps_source: null,
+          gps_verified_on_map: 0,
+          gps_captured_at: null,
+          // Migration 32: AKA and historical name (null on creation)
+          akanam: null,
+          historicalName: null,
+        })
+        .execute();
 
-    // If marked as primary, update parent location's sub12 field
-    if (input.is_primary) {
-      await this.setPrimaryOnParent(input.locid, sub12);
-    }
+      // If marked as primary, update parent location's sub12 field
+      if (input.is_primary) {
+        await trx
+          .updateTable('locs')
+          .set({ sub12 })
+          .where('locid', '=', input.locid)
+          .execute();
+      }
 
-    // Update parent location's sublocs JSON array
-    await this.addToParentSublocs(input.locid, subid);
+      // Update parent location's sublocs JSON array
+      const parent = await trx
+        .selectFrom('locs')
+        .select('sublocs')
+        .where('locid', '=', input.locid)
+        .executeTakeFirst();
+
+      const currentSublocs: string[] = parent?.sublocs ? JSON.parse(parent.sublocs) : [];
+      if (!currentSublocs.includes(subid)) {
+        currentSublocs.push(subid);
+        await trx
+          .updateTable('locs')
+          .set({ sublocs: JSON.stringify(currentSublocs) })
+          .where('locid', '=', input.locid)
+          .execute();
+      }
+    });
 
     return {
       subid,

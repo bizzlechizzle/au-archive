@@ -4,6 +4,7 @@
  * Migration 25: Activity tracking - passes current user to repository
  * Migration 25 - Phase 3: Author attribution via location_authors table
  * Migration 38: Duplicate detection for pin-to-location conversion
+ * OPT-031: Uses shared user service for getCurrentUser
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
@@ -17,25 +18,8 @@ import { LocationInputSchema } from '@au-archive/core';
 import type { LocationFilters } from '@au-archive/core';
 import { AddressService, type NormalizedAddress } from '../../services/address-service';
 import { LocationDuplicateService } from '../../services/location-duplicate-service';
-
-/**
- * Get current user context from settings
- * Returns { userId, username } or null if no user logged in
- */
-async function getCurrentUser(db: Kysely<Database>): Promise<{ userId: string; username: string } | null> {
-  try {
-    const userIdRow = await db.selectFrom('settings').select('value').where('key', '=', 'current_user_id').executeTakeFirst();
-    const usernameRow = await db.selectFrom('settings').select('value').where('key', '=', 'current_user').executeTakeFirst();
-
-    if (userIdRow?.value && usernameRow?.value) {
-      return { userId: userIdRow.value, username: usernameRow.value };
-    }
-    return null;
-  } catch (error) {
-    console.warn('[Location IPC] Failed to get current user:', error);
-    return null;
-  }
-}
+// OPT-031: Use shared user service
+import { getCurrentUser } from '../../services/user-service';
 
 export function registerLocationHandlers(db: Kysely<Database>) {
   const locationRepo = new SQLiteLocationRepository(db);
