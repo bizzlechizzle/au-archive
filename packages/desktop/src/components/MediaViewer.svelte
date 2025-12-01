@@ -240,6 +240,8 @@
 
   // Issue 7: Track which hero type we're setting (building or campus)
   let settingHeroFor = $state<'building' | 'campus' | null>(null);
+  // Track if Dashboard is selected as save target (two-click save)
+  let dashboardSelected = $state(false);
 
   function startFocalEdit(heroType: 'building' | 'campus' = 'building') {
     pendingFocalX = isCurrentHero ? focalX : 0.5;
@@ -299,25 +301,34 @@
       }
     }
     settingHeroFor = null;
+    dashboardSelected = false;
     isEditingFocal = false;
   }
 
   function cancelFocalEdit() {
     settingHeroFor = null;
+    dashboardSelected = false;
     isEditingFocal = false;
   }
 
-  /** Save current focal point as Dashboard hero */
-  async function saveDashboardHero() {
-    if (!currentMedia) return;
-    try {
-      await window.electronAPI.settings.set('dashboard_hero_imgsha', currentMedia.hash);
-      await window.electronAPI.settings.set('dashboard_hero_focal_x', String(pendingFocalX));
-      await window.electronAPI.settings.set('dashboard_hero_focal_y', String(pendingFocalY));
-      isEditingFocal = false;
-      settingHeroFor = null;
-    } catch (err) {
-      console.error('Error setting dashboard hero:', err);
+  /** Toggle Dashboard selection or save if already selected */
+  async function handleDashboardClick() {
+    if (dashboardSelected) {
+      // Second click: save to dashboard
+      if (!currentMedia) return;
+      try {
+        await window.electronAPI.settings.set('dashboard_hero_imgsha', currentMedia.hash);
+        await window.electronAPI.settings.set('dashboard_hero_focal_x', String(pendingFocalX));
+        await window.electronAPI.settings.set('dashboard_hero_focal_y', String(pendingFocalY));
+        isEditingFocal = false;
+        settingHeroFor = null;
+        dashboardSelected = false;
+      } catch (err) {
+        console.error('Error setting dashboard hero:', err);
+      }
+    } else {
+      // First click: select Dashboard as target
+      dashboardSelected = true;
     }
   }
 
@@ -327,6 +338,7 @@
     onSetHostHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
     isEditingFocal = false;
     settingHeroFor = null;
+    dashboardSelected = false;
   }
 
   // Handle escape key in focal editor
@@ -1050,10 +1062,10 @@
           <!-- Left side: Additional hero destinations -->
           <div class="flex gap-2">
             <button
-              onclick={saveDashboardHero}
-              class="px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+              onclick={handleDashboardClick}
+              class="px-3 py-2 text-sm font-medium rounded-lg transition {dashboardSelected ? 'bg-accent text-white hover:bg-accent/90' : 'text-gray-600 bg-white border border-gray-300 hover:bg-gray-50'}"
             >
-              Dashboard
+              {dashboardSelected ? 'Save' : 'Dashboard'}
             </button>
             {#if onSetHostHeroImage}
               <button
