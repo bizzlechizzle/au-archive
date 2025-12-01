@@ -66,6 +66,11 @@
 
   let loading = $state(true);
 
+  // Hero title auto-sizing: responsive to container width
+  let heroTitleEl = $state<HTMLElement | null>(null);
+  let heroTitleFontSize = $state(128); // Start at max, shrink as needed
+  let heroContainerEl = $state<HTMLElement | null>(null);
+
   // Cache version for busting browser cache after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
 
@@ -173,7 +178,65 @@
     const date = new Date(isoDate);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
+
+  // Responsive title sizing (simplified for single-word "Dashboard")
+  function fitTitle() {
+    const el = heroTitleEl;
+    const container = heroContainerEl;
+    if (!el || !container) return;
+
+    const maxSize = 128;
+    const minSize = 14;
+
+    // "Dashboard" is always single line
+    el.style.whiteSpace = 'nowrap';
+
+    // Binary search for optimal size
+    let low = minSize;
+    let high = maxSize;
+    let bestFit = minSize;
+
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      el.style.fontSize = `${mid}px`;
+
+      const containerWidth = container.clientWidth;
+      const textWidth = el.scrollWidth;
+
+      if (textWidth <= containerWidth) {
+        bestFit = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    el.style.fontSize = `${bestFit}px`;
+    heroTitleFontSize = bestFit;
+  }
+
+  // Effect: Auto-size title on mount and container resize
+  $effect(() => {
+    const el = heroTitleEl;
+    const container = heroContainerEl;
+    if (!el) return;
+
+    requestAnimationFrame(fitTitle);
+
+    const resizeObserver = new ResizeObserver(() => {
+      fitTitle();
+    });
+
+    if (container) {
+      resizeObserver.observe(container);
+    }
+
+    return () => resizeObserver.disconnect();
+  });
 </script>
+
+<!-- Resize handler for title text fitting -->
+<svelte:window onresize={fitTitle} />
 
 <div class="h-full overflow-auto">
   <!-- Dashboard Hero (uses same component as Location pages) -->
@@ -186,8 +249,12 @@
 
   <!-- Title overlaps hero gradient -->
   <div class="max-w-6xl mx-auto px-8 pb-4 relative z-20 -mt-10">
-    <div class="w-[88%] mx-auto text-center">
-      <h1 class="hero-title font-bold uppercase leading-tight text-center mb-0">
+    <div bind:this={heroContainerEl} class="w-[88%] mx-auto text-center">
+      <h1
+        bind:this={heroTitleEl}
+        class="hero-title font-bold uppercase leading-tight text-center mb-0"
+        style="font-size: {heroTitleFontSize}px;"
+      >
         Dashboard
       </h1>
     </div>
@@ -451,10 +518,9 @@
 </div>
 
 <style>
-  /* Hero title: matches LocationDetail styling */
+  /* Hero title: auto-sized to fit container, matches LocationDetail styling */
   .hero-title {
     color: #454545;
-    font-size: 72px; /* Fixed size for Dashboard since title is always "Dashboard" */
     letter-spacing: 0.02em; /* Tight, premium spacing */
     word-spacing: -0.02em; /* Cohesive word blocks */
     font-weight: 800;
