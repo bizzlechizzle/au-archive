@@ -421,6 +421,17 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
         pointIndex: coordToIndex.get(`${m.newPoint.lat},${m.newPoint.lng}`),
       });
 
+      // Build state breakdown for new points (top 5)
+      const stateCounts = new Map<string, number>();
+      for (const point of dedupResult.newPoints) {
+        const state = point.state || 'Unknown';
+        stateCounts.set(state, (stateCounts.get(state) || 0) + 1);
+      }
+      const newPointsStateBreakdown = Array.from(stateCounts.entries())
+        .map(([state, count]) => ({ state, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
       return {
         success: true,
         fileName: path.basename(filePath),
@@ -428,6 +439,7 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
         fileType: parseResult.fileType,
         totalPoints: dedupResult.totalParsed,
         newPoints: dedupResult.newPoints.length,
+        newPointsStateBreakdown,
         // New: separate enrichment opportunities from already catalogued
         enrichmentCount: enrichmentOpportunities.length,
         enrichmentOpportunities: enrichmentOpportunities.slice(0, 20).map(formatMatch),
@@ -508,9 +520,18 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
 
       // Migration 42: Apply enrichments to existing locations
       if (options.enrichments && options.enrichments.length > 0) {
+        console.log(`[RefMaps] Processing ${options.enrichments.length} enrichments...`);
         for (const enrichment of options.enrichments) {
+          // Validate pointIndex is a number (not boolean or undefined)
+          if (typeof enrichment.pointIndex !== 'number') {
+            console.warn(`[RefMaps] Skipping enrichment for ${enrichment.existingLocId}: invalid pointIndex (${typeof enrichment.pointIndex})`);
+            continue;
+          }
           const point = parseResult.points[enrichment.pointIndex];
-          if (!point) continue;
+          if (!point) {
+            console.warn(`[RefMaps] Skipping enrichment for ${enrichment.existingLocId}: point at index ${enrichment.pointIndex} not found`);
+            continue;
+          }
 
           // Update the existing location with GPS from the point
           await db

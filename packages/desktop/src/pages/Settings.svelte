@@ -162,6 +162,7 @@
     fileType: string;
     totalPoints: number;
     newPoints: number;
+    newPointsStateBreakdown: Array<{ state: string; count: number }>;
     // Migration 42: Enrichment opportunities (existing location lacks GPS)
     enrichmentCount: number;
     enrichmentOpportunities: DuplicateMatchPreview[];
@@ -955,6 +956,7 @@
         fileType: preview.fileType || '',
         totalPoints: preview.totalPoints || 0,
         newPoints: preview.newPoints || 0,
+        newPointsStateBreakdown: preview.newPointsStateBreakdown || [],
         // Migration 42: Enrichment opportunities
         enrichmentCount: preview.enrichmentCount || 0,
         enrichmentOpportunities: preview.enrichmentOpportunities || [],
@@ -965,8 +967,15 @@
         referenceMatches: preview.referenceMatches || [],
       };
       skipDuplicates = true;
-      // Migration 42: Reset enrichment selections
+      // Migration 42: Reset enrichment selections and auto-select 90%+ matches
       selectedEnrichments = new Map();
+      // Auto-check enrichments with 90%+ similarity
+      // CRITICAL: Must store pointIndex (number), NOT boolean - IPC handler needs index to find GPS coords
+      for (const opp of preview.enrichmentOpportunities || []) {
+        if (opp.nameSimilarity >= 90 && opp.pointIndex !== undefined) {
+          selectedEnrichments.set(opp.existingId, opp.pointIndex);
+        }
+      }
       showImportPreview = true;
       previewLoading = false;
       refMapMessage = '';
@@ -1044,14 +1053,14 @@
   }
 
   /**
-   * Migration 42: Select all high-confidence enrichments (95%+ similarity)
+   * Migration 42: Select ALL enrichments (check all button)
    */
-  function selectAllHighConfidenceEnrichments() {
+  function selectAllEnrichments() {
     if (!importPreview) return;
 
-    const newMap = new Map(selectedEnrichments);
+    const newMap = new Map<string, number>();
     for (const match of importPreview.enrichmentOpportunities) {
-      if (match.pointIndex !== undefined && (match.nameSimilarity ?? 0) >= 95) {
+      if (match.pointIndex !== undefined) {
         newMap.set(match.existingId, match.pointIndex);
       }
     }
@@ -1064,6 +1073,18 @@
   function deselectAllEnrichments() {
     selectedEnrichments = new Map();
   }
+
+  /**
+   * Get color class for similarity percentage pill
+   * 100% = gold (accent), 90%+ = green, 72%+ = yellow, <72% = red
+   */
+  function getSimilarityPillClass(similarity: number): string {
+    if (similarity === 100) return 'bg-accent text-white';
+    if (similarity >= 90) return 'bg-green-500 text-white';
+    if (similarity >= 72) return 'bg-yellow-500 text-white';
+    return 'bg-red-500 text-white';
+  }
+
 
   /**
    * Cancel import preview
@@ -2391,317 +2412,107 @@
   {/if}
 </div>
 
-<!-- Import Preview Modal -->
+<!-- Import Preview Modal - Premium Archive Experience -->
 {#if showImportPreview && importPreview}
-  {@const needsReviewCount = importPreview.cataloguedMatches.filter(m => m.needsConfirmation).length}
-  {@const autoSkipCount = importPreview.cataloguedMatches.filter(m => !m.needsConfirmation).length}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[80vh] flex flex-col">
       <!-- Header -->
-      <div class="p-4 border-b">
-        <h2 class="text-lg font-semibold text-foreground">Import Reference Map</h2>
-        <p class="text-sm text-gray-500">{importPreview.fileName}</p>
+      <div class="px-5 pt-5 pb-3">
+        <h2 class="text-base font-semibold text-foreground">Import Reference Map</h2>
       </div>
 
       <!-- Content -->
-      <div class="p-4 overflow-y-auto flex-1">
-        <!-- Summary Stats -->
-        <div class="bg-gray-50 rounded-lg p-4 mb-4">
-          <div class="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <span class="text-gray-500">Total points:</span>
-              <span class="font-medium ml-2">{importPreview.totalPoints}</span>
-            </div>
-            <div>
-              <span class="text-gray-500">New points:</span>
-              <span class="font-medium ml-2 text-green-600">{importPreview.newPoints}</span>
-            </div>
-            {#if importPreview.enrichmentCount > 0}
-              <div>
-                <span class="text-gray-500">GPS opportunities:</span>
-                <span class="font-medium ml-2 text-amber-600">{importPreview.enrichmentCount}</span>
-              </div>
-            {/if}
-            {#if autoSkipCount > 0}
-              <div>
-                <span class="text-gray-500">Already catalogued:</span>
-                <span class="font-medium ml-2 text-green-600">{autoSkipCount}</span>
-              </div>
-            {/if}
-            {#if needsReviewCount > 0}
-              <div>
-                <span class="text-gray-500">Needs review:</span>
-                <span class="font-medium ml-2 text-purple-600">{needsReviewCount}</span>
-              </div>
-            {/if}
-            {#if importPreview.referenceCount > 0}
-              <div>
-                <span class="text-gray-500">Duplicate refs:</span>
-                <span class="font-medium ml-2 text-blue-600">{importPreview.referenceCount}</span>
-              </div>
-            {/if}
-          </div>
-        </div>
+      <div class="px-5 pb-5 overflow-y-auto flex-1 space-y-4">
 
-        <!-- Migration 42: GPS Enrichment Opportunities -->
+        <!-- Matches Found (enrichment opportunities) -->
         {#if importPreview.enrichmentCount > 0}
-          {@const highConfidenceCount = importPreview.enrichmentOpportunities.filter(m => (m.nameSimilarity ?? 0) >= 95).length}
-          <div class="mb-4 border border-amber-200 rounded-lg bg-amber-50 p-3">
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="text-sm font-medium text-amber-800 flex items-center gap-1.5">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                GPS Enrichment Opportunities ({importPreview.enrichmentCount})
-              </h3>
-              {#if highConfidenceCount > 0}
-                <div class="flex gap-2">
-                  <button
-                    onclick={selectAllHighConfidenceEnrichments}
-                    class="text-xs px-2 py-1 bg-amber-200 text-amber-800 rounded hover:bg-amber-300 transition"
-                  >
-                    Select All 95%+ ({highConfidenceCount})
-                  </button>
-                  {#if selectedEnrichments.size > 0}
-                    <button
-                      onclick={deselectAllEnrichments}
-                      class="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
-                    >
-                      Deselect All
-                    </button>
-                  {/if}
-                </div>
-              {/if}
+          <div class="bg-[#FFFFFF] border border-gray-100 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-sm font-medium text-foreground">Matches Found</span>
+              <button
+                onclick={selectAllEnrichments}
+                class="text-xs text-accent hover:underline"
+              >
+                check all
+              </button>
             </div>
-            <p class="text-xs text-amber-700 mb-3">
-              These existing locations lack GPS coordinates. Select matches to apply GPS from the imported points.
-            </p>
-            <div class="space-y-2 max-h-48 overflow-y-auto">
+            <div class="space-y-2 max-h-40 overflow-y-auto">
               {#each importPreview.enrichmentOpportunities as match}
                 {@const isSelected = selectedEnrichments.has(match.existingId)}
                 {@const similarity = match.nameSimilarity ?? 0}
-                <button
-                  onclick={() => toggleEnrichment(match)}
-                  class="w-full text-left text-xs rounded px-3 py-2 transition flex items-center gap-2 {isSelected ? 'bg-amber-200 border-amber-400' : 'bg-white border-amber-100'} border"
-                >
-                  <!-- Checkbox indicator -->
-                  <div class="flex-shrink-0 w-4 h-4 rounded border {isSelected ? 'bg-amber-500 border-amber-500' : 'border-gray-300'} flex items-center justify-center">
+                <div class="flex items-center gap-2 text-sm">
+                  <span class="px-2 py-0.5 rounded text-xs font-medium {getSimilarityPillClass(similarity)}">
+                    {similarity}%
+                  </span>
+                  <span class="flex-1 truncate text-gray-700 text-xs">
+                    {match.newPointName} — {match.existingName}
+                  </span>
+                  <button
+                    onclick={() => toggleEnrichment(match)}
+                    class="w-4 h-4 rounded border-2 flex items-center justify-center transition flex-shrink-0 {isSelected ? 'bg-accent border-accent' : 'border-gray-300 hover:border-accent'}"
+                  >
                     {#if isSelected}
-                      <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
                       </svg>
                     {/if}
-                  </div>
-                  <!-- Match info -->
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-1.5 mb-0.5">
-                      <span class="font-medium text-foreground truncate">{match.newPointName}</span>
-                      <span class="text-gray-400">→</span>
-                      <span class="font-medium text-foreground truncate">{match.existingName}</span>
-                    </div>
-                    <div class="flex items-center gap-2 text-gray-500">
-                      {#if match.existingState}
-                        <span>{match.existingState}</span>
-                      {/if}
-                      {#if match.newPointLat && match.newPointLng}
-                        <span class="text-[10px]">({match.newPointLat.toFixed(4)}, {match.newPointLng.toFixed(4)})</span>
-                      {/if}
-                    </div>
-                  </div>
-                  <!-- Similarity badge -->
-                  <div class="flex-shrink-0">
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium {similarity >= 95 ? 'bg-green-100 text-green-700' : similarity >= 85 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}">
-                      {similarity}%
-                    </span>
-                  </div>
-                </button>
+                  </button>
+                </div>
               {/each}
-              {#if importPreview.enrichmentCount > importPreview.enrichmentOpportunities.length}
-                <div class="text-xs text-gray-500 italic px-3">
-                  ...and {importPreview.enrichmentCount - importPreview.enrichmentOpportunities.length} more
+            </div>
+          </div>
+        {/if}
+
+        <!-- New Locations Found -->
+        {#if importPreview.newPoints > 0}
+          <div class="bg-[#FFFFFF] border border-gray-100 rounded-lg p-4">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-foreground">New Locations</span>
+              <span class="text-sm text-gray-600">{importPreview.newPoints}</span>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Duplicates -->
+        {#if importPreview.cataloguedCount > 0 || importPreview.referenceCount > 0}
+          <div class="bg-[#FFFFFF] border border-gray-100 rounded-lg p-4">
+            <span class="text-sm font-medium text-foreground block mb-2">Duplicates</span>
+            <div class="space-y-1">
+              {#if importPreview.cataloguedCount > 0}
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-gray-600">Already Catalogued</span>
+                  <span class="text-gray-600">{importPreview.cataloguedCount}</span>
+                </div>
+              {/if}
+              {#if importPreview.referenceCount > 0}
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-gray-600">Reference Matches</span>
+                  <span class="text-gray-600">{importPreview.referenceCount}</span>
                 </div>
               {/if}
             </div>
-            {#if selectedEnrichments.size > 0}
-              <div class="mt-3 pt-2 border-t border-amber-200 text-xs text-amber-800">
-                <strong>{selectedEnrichments.size}</strong> location{selectedEnrichments.size === 1 ? '' : 's'} will receive GPS coordinates when you import.
-              </div>
-            {/if}
           </div>
         {/if}
 
-        <!-- Duplicate Details -->
-        {#if importPreview.cataloguedCount > 0 || importPreview.referenceCount > 0}
-          {@const autoSkipMatches = importPreview.cataloguedMatches.filter(m => !m.needsConfirmation)}
-          {@const needsReviewMatches = importPreview.cataloguedMatches.filter(m => m.needsConfirmation)}
-          <div class="mb-4">
-            <h3 class="text-sm font-medium text-foreground mb-2">Duplicate Matches</h3>
-            <p class="text-xs text-gray-500 mb-3">
-              Points matching existing data (GPS within 150m, similar name within 500m, or same state + similar name)
-            </p>
-
-            <!-- Needs Review - State-Based Matches -->
-            {#if needsReviewMatches.length > 0}
-              <div class="mb-3">
-                <div class="text-xs font-medium text-purple-600 mb-1 flex items-center gap-1">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Needs Review ({needsReviewMatches.length})
-                </div>
-                <p class="text-xs text-gray-400 mb-2">Same state + similar name - please confirm these matches</p>
-                <div class="space-y-2 max-h-40 overflow-y-auto">
-                  {#each needsReviewMatches.slice(0, 10) as match}
-                    <div class="text-xs bg-purple-50 border border-purple-200 rounded px-2 py-2">
-                      <div class="flex items-center justify-between mb-1">
-                        <div class="flex items-center gap-1">
-                          {#if match.matchType === 'name_state'}
-                            <span class="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.5 rounded">State Match</span>
-                          {:else if match.matchType === 'exact_name'}
-                            <span class="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded">Name Only</span>
-                          {/if}
-                          {#if match.existingState}
-                            <span class="text-gray-500">{match.existingState}</span>
-                          {/if}
-                        </div>
-                        <span class="text-gray-400">{match.nameSimilarity ?? 0}% match</span>
-                      </div>
-                      <div class="flex items-center gap-1">
-                        <span class="font-medium text-foreground">{match.newPointName}</span>
-                        <span class="text-gray-400">→</span>
-                        <span class="font-medium text-foreground">{match.existingName}</span>
-                      </div>
-                    </div>
-                  {/each}
-                  {#if needsReviewMatches.length > 10}
-                    <div class="text-xs text-gray-500 italic">
-                      ...and {needsReviewMatches.length - 10} more
-                    </div>
-                  {/if}
-                </div>
-              </div>
-            {/if}
-
-            <!-- Catalogued Matches (Auto-skip - GPS based) -->
-            {#if autoSkipMatches.length > 0}
-              <div class="mb-3">
-                <div class="text-xs font-medium text-green-600 mb-1 flex items-center gap-1">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Already Catalogued ({autoSkipMatches.length})
-                </div>
-                <div class="space-y-1 max-h-32 overflow-y-auto">
-                  {#each autoSkipMatches.slice(0, 10) as match}
-                    <div class="text-xs bg-green-50 border border-green-100 rounded px-2 py-1">
-                      <div class="flex items-center gap-1">
-                        {#if match.matchType === 'gps'}
-                          <span class="bg-green-100 text-green-700 text-[10px] px-1 py-0.5 rounded">GPS</span>
-                        {:else if match.matchType === 'name_gps'}
-                          <span class="bg-blue-100 text-blue-700 text-[10px] px-1 py-0.5 rounded">Name+GPS</span>
-                        {/if}
-                        <span class="font-medium">{match.newPointName}</span>
-                        <span class="text-gray-400">→</span>
-                        <span class="font-medium">{match.existingName}</span>
-                        <span class="text-gray-400 ml-auto">
-                          {match.nameSimilarity ?? 0}%{match.distanceMeters != null ? `, ${match.distanceMeters}m` : ''}
-                        </span>
-                      </div>
-                    </div>
-                  {/each}
-                  {#if autoSkipMatches.length > 10}
-                    <div class="text-xs text-gray-500 italic">
-                      ...and {autoSkipMatches.length - 10} more
-                    </div>
-                  {/if}
-                </div>
-              </div>
-            {/if}
-
-            <!-- Reference Matches -->
-            {#if importPreview.referenceMatches.length > 0}
-              <div>
-                <div class="text-xs font-medium text-blue-600 mb-1 flex items-center gap-1">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                  </svg>
-                  Already in Reference Maps ({importPreview.referenceCount})
-                </div>
-                <div class="space-y-1 max-h-32 overflow-y-auto">
-                  {#each importPreview.referenceMatches.slice(0, 10) as match}
-                    <div class="text-xs bg-blue-50 border border-blue-100 rounded px-2 py-1">
-                      <span class="font-medium">{match.newPointName}</span>
-                      <span class="text-gray-500"> matches </span>
-                      <span class="font-medium">{match.existingName}</span>
-                      {#if match.mapName}
-                        <span class="text-gray-400"> in {match.mapName}</span>
-                      {/if}
-                      <span class="text-gray-400 ml-1">
-                        ({match.nameSimilarity ?? 0}%{match.distanceMeters != null ? `, ${match.distanceMeters}m` : ''})
-                      </span>
-                    </div>
-                  {/each}
-                  {#if importPreview.referenceCount > 10}
-                    <div class="text-xs text-gray-500 italic">
-                      ...and {importPreview.referenceCount - 10} more
-                    </div>
-                  {/if}
-                </div>
-              </div>
-            {/if}
-          </div>
-
-          <!-- Skip Duplicates Option -->
-          <div class="border-t border-gray-200 pt-3">
-            <label class="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={skipDuplicates}
-                class="mt-0.5 h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent"
-              />
-              <div>
-                <span class="text-sm text-foreground">Skip duplicates</span>
-                <p class="text-xs text-gray-500 mt-0.5">
-                  Only import {importPreview.newPoints} new points, skip {importPreview.cataloguedCount + importPreview.referenceCount} duplicates
-                </p>
-              </div>
-            </label>
-          </div>
-        {:else}
-          <div class="bg-green-50 border border-green-100 rounded-lg p-3 text-sm text-green-700">
-            All {importPreview.totalPoints} points are new. No duplicates found.
-          </div>
-        {/if}
       </div>
 
       <!-- Footer -->
-      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end gap-3">
+      <div class="px-5 pb-5 pt-2 flex justify-end gap-3">
         <button
           onclick={cancelImportPreview}
-          class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
+          class="px-4 py-2 text-sm text-accent border border-accent rounded hover:bg-accent/10 transition"
         >
           Cancel
         </button>
         <button
           onclick={confirmImport}
           disabled={importingRefMap}
-          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+          class="px-4 py-2 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
         >
           {#if importingRefMap}
             Importing...
-          {:else if skipDuplicates && (importPreview.cataloguedCount + importPreview.referenceCount > 0)}
-            {#if selectedEnrichments.size > 0}
-              Import {importPreview.newPoints} + Enrich {selectedEnrichments.size}
-            {:else}
-              Import {importPreview.newPoints} Points
-            {/if}
           {:else}
-            {#if selectedEnrichments.size > 0}
-              Import All + Enrich {selectedEnrichments.size}
-            {:else}
-              Import All {importPreview.totalPoints} Points
-            {/if}
+            Import
           {/if}
         </button>
       </div>

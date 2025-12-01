@@ -686,6 +686,9 @@ export class RefMapDedupService {
       .select(['locid', 'locnam', 'gps_lat', 'gps_lng', 'akanam', 'state'])
       .execute();
 
+    // Track locations already matched for enrichment - one ref point per location
+    const matchedEnrichmentLocIds = new Set<string>();
+
     for (const point of points) {
       let isDuplicate = false;
       const pointStateNorm = normalizeState(point.state);
@@ -751,6 +754,9 @@ export class RefMapDedupService {
           }
         } else if (locStateNorm && pointStateNorm) {
           // LOCATION HAS NO GPS BUT HAS STATE - use state-based matching
+          // Skip if this location already has a better match
+          if (matchedEnrichmentLocIds.has(loc.locid)) continue;
+
           const sameState = locStateNorm === pointStateNorm;
 
           if (sameState && point.name) {
@@ -774,6 +780,7 @@ export class RefMapDedupService {
                   nameSimilarity: Math.round(nameSim * 100),
                   needsConfirmation: true, // User must confirm
                 });
+                matchedEnrichmentLocIds.add(loc.locid); // Mark location as matched
                 isDuplicate = true;
                 break;
               }
@@ -781,25 +788,29 @@ export class RefMapDedupService {
             if (isDuplicate) break;
           }
         } else if (point.name) {
-          // LOCATION HAS NO GPS AND NO STATE - exact name match only
+          // LOCATION HAS NO GPS AND NO STATE - name match for enrichment
+          // Skip if this location already has a better match
+          if (matchedEnrichmentLocIds.has(loc.locid)) continue;
+
           const normalizedPointName = normalizeName(point.name);
           const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
           for (const locName of namesToCheck) {
             const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
 
-            if (nameSim >= 0.99) { // 99%+ = exact match only
+            if (nameSim >= NAME_SIMILARITY_THRESHOLD) { // 72%+ name match = enrichment opportunity
               // This is an ENRICHMENT OPPORTUNITY - existing location has no GPS
               result.cataloguedMatches.push({
                 type: 'catalogued',
-                matchType: 'exact_name',
+                matchType: 'name_only',
                 newPoint: { name: point.name, lat: point.lat, lng: point.lng, state: point.state },
                 existingId: loc.locid,
                 existingName: loc.locnam,
-                existingHasGps: false, // Exact name match = existing has NO GPS
+                existingHasGps: false, // Name match = existing has NO GPS
                 nameSimilarity: Math.round(nameSim * 100),
                 needsConfirmation: true, // User must confirm
               });
+              matchedEnrichmentLocIds.add(loc.locid); // Mark location as matched
               isDuplicate = true;
               break;
             }
