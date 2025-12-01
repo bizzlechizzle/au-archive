@@ -10,6 +10,7 @@ This script removes:
 - Maintenance history
 - Archive support directories (.thumbnails, .previews, .posters, .cache/video-proxies, _database)
 
+Use --wipe-media to also clear the locations/ folder (ALL imported media, BagIt archives, XMP sidecars).
 Use --nuclear to also clear research browser profile (logins, cookies, history).
 """
 
@@ -46,7 +47,8 @@ def get_dev_data_dir() -> Path | None:
 
 def get_default_db_path() -> Path:
     """Get the default database path."""
-    return get_config_dir() / "data" / "au-archive.db"
+    # DB is directly in config dir, not in a data/ subfolder
+    return get_config_dir() / "au-archive.db"
 
 
 def get_bootstrap_config_path() -> Path:
@@ -99,7 +101,38 @@ def remove_dir(path: Path, name: str) -> bool:
         return False
 
 
-def reset_database(archive_path: str | None = None, force: bool = False, nuclear: bool = False):
+def get_dir_stats(path: Path) -> tuple[int, int]:
+    """Get file count and total size of a directory."""
+    if not path.exists():
+        return 0, 0
+    file_count = 0
+    total_size = 0
+    try:
+        for item in path.rglob("*"):
+            if item.is_file():
+                file_count += 1
+                try:
+                    total_size += item.stat().st_size
+                except (OSError, PermissionError):
+                    pass
+    except (OSError, PermissionError):
+        pass
+    return file_count, total_size
+
+
+def format_size(size_bytes: int) -> str:
+    """Format bytes as human-readable size."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+def reset_database(archive_path: str | None = None, force: bool = False, nuclear: bool = False, wipe_media: bool = False):
     """
     Reset the database and optionally archive support files.
 
@@ -107,6 +140,7 @@ def reset_database(archive_path: str | None = None, force: bool = False, nuclear
         archive_path: Optional path to archive directory to clean support files
         force: Skip confirmation prompt
         nuclear: Also clear research browser profile (logins, cookies, history)
+        wipe_media: Also clear the locations/ folder (ALL imported media)
     """
     print("\n=== AU Archive Reset Script ===\n")
 
@@ -123,8 +157,11 @@ def reset_database(archive_path: str | None = None, force: bool = False, nuclear
 
     print("  [Database]")
     print(f"    - Database: {db_path}")
-    print(f"    - Data directory: {config_dir / 'data'}")
     print(f"    - Backups directory: {config_dir / 'backups'}")
+
+    print("\n  [Electron Cache]")
+    print(f"    - Session Storage, Local Storage, Cookies, Preferences")
+    print(f"    - GPU Cache, Code Cache, Dawn Cache, etc.")
 
     print("\n  [Configuration]")
     print(f"    - Config: {config_path}")
@@ -148,6 +185,16 @@ def reset_database(archive_path: str | None = None, force: bool = False, nuclear
         print(f"    - Video proxies: {archive / '.cache' / 'video-proxies'}")
         print(f"    - Database snapshots: {archive / '_database'}")
 
+    if wipe_media and archive_path:
+        archive = Path(archive_path)
+        locations_dir = archive / "locations"
+        file_count, total_size = get_dir_stats(locations_dir)
+        print("\n  [WIPE MEDIA - Archive Content] ⚠️  DESTRUCTIVE")
+        print(f"    - Media archive: {locations_dir}")
+        print(f"      ({file_count:,} files, {format_size(total_size)})")
+        print("      (ALL imported images, videos, documents)")
+        print("      (ALL BagIt archives and XMP sidecars)")
+
     if nuclear:
         print("\n  [NUCLEAR - Research Browser]")
         print(f"    - Browser profile: {research_browser_dir}")
@@ -157,13 +204,23 @@ def reset_database(archive_path: str | None = None, force: bool = False, nuclear
 
     # Confirmation
     if not force:
-        if nuclear:
+        if wipe_media:
+            print("⚠️  --wipe-media will PERMANENTLY DELETE all imported media files!")
+            print("    This cannot be undone. Make sure you have backups.\n")
+            response = input("Type 'DELETE' to confirm media wipe: ").strip()
+            if response != "DELETE":
+                print("Aborted. (You must type exactly 'DELETE' to confirm)")
+                return
+        elif nuclear:
             response = input("⚠️  NUCLEAR mode enabled. Are you SURE? [y/N]: ").strip().lower()
+            if response not in ("y", "yes"):
+                print("Aborted.")
+                return
         else:
             response = input("Are you sure you want to proceed? [y/N]: ").strip().lower()
-        if response not in ("y", "yes"):
-            print("Aborted.")
-            return
+            if response not in ("y", "yes"):
+                print("Aborted.")
+                return
 
     print("\n" + "=" * 40)
     print("Removing files...")
@@ -173,25 +230,35 @@ def reset_database(archive_path: str | None = None, force: bool = False, nuclear
     print("\n[Database]")
     remove_file(db_path, "Database")
 
-    # Remove entire data directory if empty or just has db-related files
-    data_dir = config_dir / "data"
-    if data_dir.exists():
-        # Check for WAL and SHM files (SQLite journal files)
-        for suffix in ["-wal", "-shm"]:
-            wal_path = db_path.parent / f"{db_path.name}{suffix}"
-            remove_file(wal_path, f"Database {suffix} file")
-
-        # Try to remove data dir if empty
-        try:
-            if not any(data_dir.iterdir()):
-                data_dir.rmdir()
-                print(f"  ✓ Removed empty data directory: {data_dir}")
-        except Exception:
-            pass
+    # Remove WAL and SHM files (SQLite journal files)
+    for suffix in ["-wal", "-shm"]:
+        wal_path = config_dir / f"au-archive.db{suffix}"
+        remove_file(wal_path, f"Database {suffix} file")
 
     # Remove backups directory
     backups_dir = config_dir / "backups"
     remove_dir(backups_dir, "Backups directory")
+
+    # --- Electron Cache ---
+    print("\n[Electron Cache]")
+    electron_dirs = [
+        "blob_storage", "Cache", "Code Cache", "DawnCache", "DawnGraphiteCache",
+        "DawnWebGPUCache", "GPUCache", "Local Storage", "Partitions",
+        "Service Worker", "Session Storage", "Shared Dictionary", "shared_proto_db",
+        "VideoDecodeStats", "WebStorage"
+    ]
+    electron_files = [
+        "Cookies", "Cookies-journal", "DIPS", "DIPS-shm", "DIPS-wal",
+        "Network Persistent State", "Preferences", "SharedStorage",
+        "SharedStorage-wal", "TransportSecurity", "Trust Tokens", "Trust Tokens-journal"
+    ]
+    # Remove Singleton* symlinks
+    for item in config_dir.glob("Singleton*"):
+        remove_file(item, f"Electron lock ({item.name})")
+    for dirname in electron_dirs:
+        remove_dir(config_dir / dirname, f"Electron cache ({dirname})")
+    for filename in electron_files:
+        remove_file(config_dir / filename, f"Electron data ({filename})")
 
     # --- Configuration ---
     print("\n[Configuration]")
@@ -232,6 +299,12 @@ def reset_database(archive_path: str | None = None, force: bool = False, nuclear
             except Exception:
                 pass
 
+    # --- Wipe Media ---
+    if wipe_media and archive_path:
+        archive = Path(archive_path)
+        print("\n[WIPE MEDIA - Archive Content]")
+        remove_dir(archive / "locations", "Media archive (locations/)")
+
     # --- Nuclear: Research Browser ---
     if nuclear:
         print("\n[NUCLEAR - Research Browser]")
@@ -250,11 +323,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python3 resetdb.py                     # Interactive reset (DB, config, logs)
-  python3 resetdb.py -f                  # Force reset without confirmation
-  python3 resetdb.py -a /path/to/archive # Also clear archive caches
-  python3 resetdb.py -a /archive --nuclear  # Clear EVERYTHING including browser
-  python3 resetdb.py --db-only           # Only remove database files
+  python3 resetdb.py                         # Interactive reset (DB, config, logs)
+  python3 resetdb.py -f                      # Force reset without confirmation
+  python3 resetdb.py -a /path/to/archive     # Also clear archive caches
+  python3 resetdb.py -a /archive --wipe-media   # FRESH IMPORT TEST - clears all media
+  python3 resetdb.py -a /archive --nuclear   # Clear browser profile too
+  python3 resetdb.py --db-only               # Only remove database files
 """
     )
     parser.add_argument(
@@ -270,6 +344,11 @@ Examples:
         "--db-only",
         action="store_true",
         help="Only remove database, keep config and archive files"
+    )
+    parser.add_argument(
+        "--wipe-media",
+        action="store_true",
+        help="Clear locations/ folder (ALL imported media, BagIt archives, XMP sidecars) - VERY DESTRUCTIVE"
     )
     parser.add_argument(
         "--nuclear",
@@ -312,7 +391,7 @@ Examples:
 
         print("\n✓ Done!\n")
     else:
-        reset_database(archive_path=args.archive, force=args.force, nuclear=args.nuclear)
+        reset_database(archive_path=args.archive, force=args.force, nuclear=args.nuclear, wipe_media=args.wipe_media)
 
 
 if __name__ == "__main__":
