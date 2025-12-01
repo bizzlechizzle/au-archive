@@ -615,11 +615,16 @@ export class RefMapDedupService {
         const distance = haversineDistance(point.lat, point.lng, loc.gps_lat, loc.gps_lng);
 
         if (distance <= GPS_RADIUS_METERS) {
+          // GPS match - also calculate name similarity for display
+          const nameSim = point.name && loc.locnam
+            ? jaroWinklerSimilarity(normalizeName(point.name), normalizeName(loc.locnam))
+            : 0;
           result.cataloguedMatches.push({
             type: 'catalogued',
             newPoint: { name: point.name, lat: point.lat, lng: point.lng },
             existingId: loc.locid,
             existingName: loc.locnam,
+            nameSimilarity: Math.round(nameSim * 100),
             distanceMeters: Math.round(distance),
           });
           isDuplicate = true;
