@@ -228,6 +228,11 @@
         fixMessage = `Fixed ${result.fixed}/${result.total} images${result.errors > 0 ? ` (${result.errors} errors)` : ''}`;
       }
 
+      // Refresh data to show updated thumbnails
+      if (result.fixed > 0) {
+        onLocationUpdated?.();
+      }
+
       setTimeout(() => { fixMessage = ''; }, 5000);
     } catch (err) {
       console.error('Fix images failed:', err);
@@ -254,6 +259,11 @@
         fixMessage = 'No videos to fix';
       } else {
         fixMessage = `Fixed ${result.fixed}/${result.total} videos${result.errors > 0 ? ` (${result.errors} errors)` : ''}`;
+      }
+
+      // Refresh data to show updated thumbnails
+      if (result.fixed > 0) {
+        onLocationUpdated?.();
       }
 
       setTimeout(() => { fixMessage = ''; }, 5000);
