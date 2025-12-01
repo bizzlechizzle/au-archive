@@ -83,9 +83,11 @@ export class FileImportService {
   // Extensions to skip entirely during import (not copied, not logged)
   // .aae = Apple photo adjustments (sidecar metadata, not actual media)
   // .psd/.psb = Photoshop project files (large, not archival media)
+  // .acr = Adobe Camera Raw settings (sidecar metadata, not actual media)
   private readonly SKIP_EXTENSIONS = [
     '.aae',                            // Apple photo adjustment sidecar
     '.psd', '.psb',                    // Photoshop project files
+    '.acr',                            // Adobe Camera Raw settings
   ];
 
   // Comprehensive format support based on ExifTool capabilities
