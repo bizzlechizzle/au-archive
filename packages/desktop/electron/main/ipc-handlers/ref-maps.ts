@@ -13,6 +13,7 @@ import { RefMapDedupService, type DuplicateMatch, type DedupeResult } from '../.
 // Migration 42: Add geocoding and region services for GPS enrichment
 import { GeocodingService } from '../../services/geocoding-service';
 import { calculateRegionFields } from '../../services/region-service';
+import { AddressNormalizer } from '../../services/address-normalizer';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database.types';
 
@@ -551,22 +552,26 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
           try {
             const geocodeResult = await geocodingService.reverseGeocode(point.lat, point.lng);
             if (geocodeResult?.address) {
+              // Normalize state to 2-letter code (constraint requires length = 2)
+              const normalizedState = AddressNormalizer.normalizeStateCode(geocodeResult.address.state);
               addressData = {
                 street: geocodeResult.address.street || null,
                 city: geocodeResult.address.city || null,
-                county: geocodeResult.address.county || null,
-                state: geocodeResult.address.state || null,
-                zipcode: geocodeResult.address.zipcode || null,
+                county: AddressNormalizer.normalizeCounty(geocodeResult.address.county) || null,
+                state: normalizedState,
+                zipcode: AddressNormalizer.normalizeZipcode(geocodeResult.address.zipcode) || null,
               };
-              console.log(`[RefMaps] Reverse geocoded ${point.name}: ${geocodeResult.displayName}`);
+              console.log(`[RefMaps] Reverse geocoded ${point.name}: ${geocodeResult.displayName} (state: ${normalizedState})`);
             }
           } catch (geoError) {
             console.warn(`[RefMaps] Reverse geocoding failed for ${point.name}, continuing with GPS only:`, geoError);
           }
 
           // Step 2: Calculate region fields from state/GPS
+          // Use normalized state, falling back to point.state (also normalized)
+          const stateForRegion = addressData.state || AddressNormalizer.normalizeStateCode(point.state) || null;
           const regionFields = calculateRegionFields({
-            state: addressData.state || point.state || null,
+            state: stateForRegion,
             county: addressData.county || null,
             lat: point.lat,
             lng: point.lng,
