@@ -22,7 +22,7 @@ import { haversineDistance } from './geo-utils';
 import { DUPLICATE_CONFIG } from '../../src/lib/constants';
 
 // Use centralized constants for duplicate detection
-const { GPS_RADIUS_METERS, NAME_SIMILARITY_THRESHOLD } = DUPLICATE_CONFIG;
+const { GPS_RADIUS_METERS, NAME_MATCH_RADIUS_METERS, NAME_SIMILARITY_THRESHOLD } = DUPLICATE_CONFIG;
 
 /**
  * Types for import preview and deduplication
@@ -537,8 +537,9 @@ export class RefMapDedupService {
           break; // Found match, move to next point
         }
 
-        // Check name similarity if GPS didn't match
-        if (point.name) {
+        // Check name similarity - ONLY if within NAME_MATCH_RADIUS_METERS (500m)
+        // Prevents false matches where locations share a town name but are far apart
+        if (point.name && distance <= NAME_MATCH_RADIUS_METERS) {
           const normalizedPointName = normalizeName(point.name);
           const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
@@ -631,8 +632,9 @@ export class RefMapDedupService {
           break;
         }
 
-        // Check name similarity
-        if (point.name) {
+        // Check name similarity - ONLY if within NAME_MATCH_RADIUS_METERS (500m)
+        // Prevents false matches where locations share a town name but are far apart
+        if (point.name && distance <= NAME_MATCH_RADIUS_METERS) {
           const normalizedPointName = normalizeName(point.name);
           const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 

@@ -135,7 +135,8 @@ export const SUCCESS_MESSAGES = {
 // Migration 38: Duplicate Detection Configuration
 // ADR: ADR-pin-conversion-duplicate-prevention.md
 export const DUPLICATE_CONFIG = {
-  GPS_RADIUS_METERS: 150,           // Same site threshold - locations within this distance are considered duplicates
+  GPS_RADIUS_METERS: 150,           // Same site threshold - locations within this distance are definite duplicates
+  NAME_MATCH_RADIUS_METERS: 500,    // Max distance for name similarity matches - prevents matching by town name alone
   NAME_SIMILARITY_THRESHOLD: 0.85,  // 85% Jaro-Winkler - high confidence matches only
   NEARBY_RADIUS_METERS: 400,        // ~0.25 miles - show "nearby" hint during creation
 } as const;

@@ -2366,7 +2366,7 @@
           <div class="mb-4">
             <h3 class="text-sm font-medium text-foreground mb-2">Duplicate Matches</h3>
             <p class="text-xs text-gray-500 mb-3">
-              Points matching existing data (name similarity 85%+ or within 150m)
+              Points matching existing data (GPS within 150m, or name 85%+ within 500m)
             </p>
 
             <!-- Catalogued Matches -->
