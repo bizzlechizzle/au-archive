@@ -3,8 +3,8 @@
    * Dashboard.svelte - Main dashboard
    *
    * Layout:
+   * - Stats row
    * - Projects (pinned/favorite locations)
-   * - Stats row (centered below Projects)
    * - Recent Locations / Recent Imports (2-col)
    * - Top Type / Top State (2-col, no thumbnails)
    */
@@ -12,6 +12,7 @@
   import { router } from '../stores/router';
   import { isImporting, importProgress, recentImports as storeRecentImports } from '../stores/import-store';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
+  import { LocationHero, type MediaImage } from '../components/location';
 
   interface ImportRecord {
     import_id: string;
@@ -61,12 +62,35 @@
 
   // Dashboard hero
   let dashboardHero = $state<{imgsha: string; focalX: number; focalY: number} | null>(null);
-  let dashboardHeroImage = $state<{thumb_path?: string; preview_path?: string; thumb_path_lg?: string} | null>(null);
+  let dashboardHeroImage = $state<{thumb_path?: string; preview_path?: string; thumb_path_lg?: string; thumb_path_sm?: string} | null>(null);
 
   let loading = $state(true);
 
   // Cache version for busting browser cache after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
+
+  // Build images array for LocationHero component (empty array = show empty state)
+  const heroImages = $derived<MediaImage[]>(() => {
+    if (!dashboardHero || !dashboardHeroImage) return [];
+    return [{
+      imgsha: dashboardHero.imgsha,
+      imgnam: 'Dashboard Hero',
+      imgloc: '',
+      locid: null,
+      subid: null,
+      meta_width: null,
+      meta_height: null,
+      meta_date_taken: null,
+      meta_camera_make: null,
+      meta_camera_model: null,
+      meta_gps_lat: null,
+      meta_gps_lng: null,
+      thumb_path: dashboardHeroImage.thumb_path || null,
+      thumb_path_sm: dashboardHeroImage.thumb_path_sm || null,
+      thumb_path_lg: dashboardHeroImage.thumb_path_lg || null,
+      preview_path: dashboardHeroImage.preview_path || null,
+    }];
+  });
 
   onMount(async () => {
     if (!window.electronAPI?.locations) {
@@ -151,49 +175,25 @@
   }
 </script>
 
-<!-- Dashboard Hero -->
-{#if dashboardHero && dashboardHeroImage}
-  <div class="w-full bg-[#fffbf7]">
-    <div class="relative w-full max-h-[40vh] mx-auto overflow-hidden" style="aspect-ratio: 2.35 / 1;">
-      <img
-        src={`media://${dashboardHeroImage.preview_path || dashboardHeroImage.thumb_path_lg || dashboardHeroImage.thumb_path}?v=${cacheVersion}`}
-        alt="Dashboard Hero"
-        class="absolute inset-0 w-full h-full object-cover"
-        style="object-position: {dashboardHero.focalX * 100}% {dashboardHero.focalY * 100}%;"
-      />
-      <!-- Gradient overlay (matches LocationHero) -->
-      <div
-        class="absolute bottom-0 left-0 right-0 h-[80%] pointer-events-none"
-        style="background: linear-gradient(to top,
-          #fffbf7 0%,
-          #fffbf7 12.5%,
-          rgba(255,251,247,0.95) 20%,
-          rgba(255,251,247,0.82) 30%,
-          rgba(255,251,247,0.62) 42%,
-          rgba(255,251,247,0.40) 54%,
-          rgba(255,251,247,0.22) 66%,
-          rgba(255,251,247,0.10) 78%,
-          rgba(255,251,247,0.03) 90%,
-          transparent 100%
-        );"
-      ></div>
+<div class="h-full overflow-auto">
+  <!-- Dashboard Hero (uses same component as Location pages) -->
+  <LocationHero
+    images={heroImages()}
+    heroImgsha={dashboardHero?.imgsha || null}
+    focalX={dashboardHero?.focalX ?? 0.5}
+    focalY={dashboardHero?.focalY ?? 0.5}
+  />
+
+  <!-- Title overlaps hero gradient -->
+  <div class="max-w-6xl mx-auto px-8 pb-4 relative z-20 -mt-10">
+    <div class="w-[88%] mx-auto text-center">
+      <h1 class="hero-title font-bold uppercase leading-tight text-center mb-0">
+        Dashboard
+      </h1>
     </div>
   </div>
-{/if}
 
-<!-- Title overlaps hero gradient: centered, premium text fitting -->
-<div class="max-w-6xl mx-auto px-8 pb-4 relative z-20 -mt-10">
-  <div class="w-[88%] mx-auto text-center">
-    <h1 class="hero-title font-bold uppercase leading-tight text-center mb-0">
-      Dashboard
-    </h1>
-    <p class="host-tagline block w-[90%] mx-auto mt-0 uppercase text-center">
-      Project Overview
-    </p>
-  </div>
-</div>
-
-<div class="max-w-6xl mx-auto px-8 pt-6 pb-8">
+  <div class="max-w-6xl mx-auto px-8 pt-6 pb-8">
   {#if loading}
     <div class="text-center py-12">
       <p class="text-gray-500">Loading...</p>
@@ -260,6 +260,30 @@
       </div>
     {/if}
 
+    <!-- Stats Row -->
+    <div class="flex justify-center gap-8 mb-8">
+      <div class="text-center">
+        <div class="text-2xl font-bold text-accent">{totalLocations}</div>
+        <div class="text-xs text-gray-500">locations</div>
+      </div>
+      <div class="text-center">
+        <div class="text-2xl font-bold text-accent">{totalImages}</div>
+        <div class="text-xs text-gray-500">images</div>
+      </div>
+      <div class="text-center">
+        <div class="text-2xl font-bold text-accent">{totalVideos}</div>
+        <div class="text-xs text-gray-500">videos</div>
+      </div>
+      <div class="text-center">
+        <div class="text-2xl font-bold text-accent">{totalDocuments}</div>
+        <div class="text-xs text-gray-500">documents</div>
+      </div>
+      <div class="text-center">
+        <div class="text-2xl font-bold text-accent">{totalBookmarks}</div>
+        <div class="text-xs text-gray-500">bookmarks</div>
+      </div>
+    </div>
+
     <!-- Projects (Pinned Locations) -->
     <div class="mb-6">
       <div class="bg-white rounded-lg shadow p-6">
@@ -293,30 +317,6 @@
         {:else}
           <p class="text-sm text-gray-400">No pinned locations yet</p>
         {/if}
-      </div>
-    </div>
-
-    <!-- Stats Row (centered below Projects) -->
-    <div class="flex justify-center gap-8 mb-8">
-      <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{totalLocations}</div>
-        <div class="text-xs text-gray-500">locations</div>
-      </div>
-      <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{totalImages}</div>
-        <div class="text-xs text-gray-500">images</div>
-      </div>
-      <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{totalVideos}</div>
-        <div class="text-xs text-gray-500">videos</div>
-      </div>
-      <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{totalDocuments}</div>
-        <div class="text-xs text-gray-500">documents</div>
-      </div>
-      <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{totalBookmarks}</div>
-        <div class="text-xs text-gray-500">bookmarks</div>
       </div>
     </div>
 
@@ -448,6 +448,7 @@
     </div>
   {/if}
 </div>
+</div>
 
 <style>
   /* Hero title: matches LocationDetail styling */
@@ -460,14 +461,5 @@
     text-wrap: balance; /* Balances word distribution across lines */
     /* Hand-painted sign style - hard offset shadow, accent gold */
     text-shadow: 3px 3px 0 rgba(185, 151, 92, 0.5);
-  }
-
-  /* Tagline (cinematic - tiny text under title) */
-  .host-tagline {
-    color: var(--color-accent, #b9975c); /* Accent color */
-    font-size: 18px; /* Taller tagline */
-    letter-spacing: 0.08em;
-    font-weight: 700; /* Bold */
-    white-space: nowrap; /* Single line ALWAYS */
   }
 </style>
