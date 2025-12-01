@@ -53,3 +53,7 @@ previews/
 resources/browsers/ungoogled-chromium/*/*.app/
 resources/browsers/ungoogled-chromium/*/chrome
 resources/browsers/ungoogled-chromium/*/chrome.exe
+
+# Electron Builder output
+build/
+release/
