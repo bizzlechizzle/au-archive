@@ -29,7 +29,7 @@
   let subType = $state('');
   let selectedState = $state('');
   let author = $state('');
-  let access = $state('');
+  let access = $state('Abandoned');
 
   // Host location & sub-location state (Migration 28)
   let isHostLocation = $state(false);  // This is a campus with multiple buildings
@@ -556,7 +556,7 @@
     subType = '';
     selectedState = '';
     author = '';
-    access = '';
+    access = 'Abandoned';
     isHostLocation = false;
     addFirstBuilding = false;
     subLocationName = '';
@@ -680,16 +680,15 @@
   >
     <!-- Modal - wider for 2-column layout -->
     <div
-      class="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative z-[100000]"
+      class="bg-[#fff8f2] rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative z-[100000]"
       onclick={(e) => e.stopPropagation()}
     >
       <!-- Header -->
-      <div class="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+      <div class="p-5 flex justify-between items-center bg-[#fff8f2]">
         <div>
           <h2 id="modal-title" class="text-xl font-semibold text-foreground">
             New Location
           </h2>
-          <p class="text-sm text-gray-500 mt-0.5">Add a new location to your archive</p>
         </div>
         <button
           onclick={handleCancel}
@@ -757,7 +756,7 @@
               bind:value={name}
               disabled={saving}
               placeholder="Enter location name"
-              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
             />
           </div>
           <div class="flex items-end pb-2 gap-4">
@@ -846,7 +845,7 @@
                 bind:value={subLocationName}
                 disabled={saving}
                 placeholder="e.g., Main Building, Powerhouse"
-                class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+                class="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
               />
               {#if subLocNameDuplicate}
                 <p class="text-xs text-red-600 mt-1">Name already exists</p>
@@ -877,7 +876,7 @@
             suggestions={getStateSuggestions()}
             id="loc-state"
             placeholder="NY or New York"
-            class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition uppercase"
+            class="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition uppercase"
           />
           <p class="text-xs text-gray-500 mt-1">Type 2-letter code or full state name</p>
         </div>
@@ -894,7 +893,7 @@
               suggestions={allTypes}
               id="loc-type"
               placeholder="e.g., Factory, Hospital"
-              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
             />
           </div>
           <div>
@@ -907,7 +906,7 @@
               suggestions={getSubTypeSuggestions()}
               id="loc-subtype"
               placeholder="e.g., Textile Mill, Asylum"
-              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
             />
           </div>
         </div>
@@ -941,7 +940,6 @@
               disabled={saving}
               class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition bg-white"
             >
-              <option value="">Select...</option>
               {#each ACCESS_OPTIONS as opt}
                 <option value={opt}>{opt}</option>
               {/each}
@@ -966,28 +964,28 @@
 
       <!-- Footer - hide when showing intelligence -->
       {#if !showIntelligence || intelligenceDismissed || !$importModal.prefilledData?.gps_lat}
-      <div class="p-5 border-t border-gray-200 bg-gray-50 flex justify-end items-center">
+      <div class="p-5 bg-[#fff8f2] flex justify-end items-center">
         <div class="flex gap-3">
           <button
             onclick={handleCancel}
             disabled={saving}
-            class="px-4 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 font-medium"
+            class="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 font-medium"
           >
             Cancel
           </button>
           <button
             onclick={handleCreate}
             disabled={saving}
-            class="px-5 py-2.5 bg-accent text-white rounded-lg hover:bg-accent/90 transition disabled:opacity-50 font-medium shadow-sm"
+            class="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition disabled:opacity-50 font-medium shadow-sm"
           >
             {saving ? 'Creating...' : 'Create'}
           </button>
           <button
             onclick={handleCreateAndAddMedia}
             disabled={saving}
-            class="px-5 py-2.5 border-2 border-accent text-accent bg-white rounded-lg hover:bg-accent hover:text-white transition disabled:opacity-50 font-medium"
+            class="px-3 py-1.5 text-sm border-2 border-accent text-accent bg-white rounded-lg hover:bg-accent hover:text-white transition disabled:opacity-50 font-medium"
           >
-            {saving ? 'Creating...' : 'Create + Add Media'}
+            {saving ? 'Adding...' : 'Add Media'}
           </button>
         </div>
       </div>
