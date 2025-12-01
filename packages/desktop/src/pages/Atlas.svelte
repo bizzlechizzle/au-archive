@@ -4,6 +4,7 @@
   import { openImportModal } from '../stores/import-modal-store';
   import { toasts } from '../stores/toast-store';
   import Map from '../components/Map.svelte';
+  import LinkLocationModal from '../components/LinkLocationModal.svelte';
   import type { Location } from '@au-archive/core';
 
   // Reference map point interface
@@ -26,6 +27,9 @@
   // Reference map layer toggle
   let showRefMapLayer = $state(false);
   let refMapPoints = $state<RefMapPoint[]>([]);
+  // Link modal state
+  let showLinkModal = $state(false);
+  let linkingPoint = $state<{ pointId: string; name: string; lat: number; lng: number } | null>(null);
 
   // DECISION-016: Read URL params from router store (hash-based routing)
   let routeQuery = $state<Record<string, string>>({});
@@ -190,6 +194,40 @@
     }
   }
 
+  // Handle clicking the Link button on a reference point popup
+  function handleLinkRefPoint(data: { pointId: string; name: string; lat: number; lng: number }) {
+    linkingPoint = data;
+    showLinkModal = true;
+  }
+
+  // Handle confirming the link to a location
+  async function handleConfirmLink(locationId: string) {
+    if (!linkingPoint) return;
+
+    try {
+      const result = await window.electronAPI.refMaps.linkToLocation(linkingPoint.pointId, locationId);
+      if (result.success) {
+        toasts.success(`Linked "${linkingPoint.name}" to location`);
+        // Refresh reference points to update map (linked points are filtered out)
+        await loadRefMapPoints();
+      } else {
+        toasts.error(result.error || 'Failed to link');
+      }
+    } catch (err) {
+      console.error('Error linking reference point:', err);
+      toasts.error('Failed to link reference point');
+    } finally {
+      showLinkModal = false;
+      linkingPoint = null;
+    }
+  }
+
+  // Close the link modal
+  function closeLinkModal() {
+    showLinkModal = false;
+    linkingPoint = null;
+  }
+
   onMount(() => {
     loadLocations();
     loadRefMapPoints(); // Load imported reference map points
@@ -242,16 +280,16 @@
           </select>
         </div>
       </div>
-      <!-- Import Pins checkbox for reference map points -->
+      <!-- Reference Pins checkbox for reference map points -->
       <div class="flex items-center gap-2 pt-3 mt-3 border-t border-gray-200">
         <input
           type="checkbox"
-          id="import-pins"
+          id="ref-pins"
           bind:checked={showRefMapLayer}
           class="w-4 h-4 accent-accent rounded"
         />
-        <label for="import-pins" class="text-sm text-gray-700 cursor-pointer">
-          Import Pins
+        <label for="ref-pins" class="text-sm text-gray-700 cursor-pointer">
+          Reference Pins
           {#if refMapPoints.length > 0}
             <span class="text-gray-400">({refMapPoints.length})</span>
           {/if}
@@ -272,6 +310,7 @@
       refMapPoints={refMapPoints}
       showRefMapLayer={showRefMapLayer}
       onCreateFromRefPoint={handleCreateFromRefPoint}
+      onLinkRefPoint={handleLinkRefPoint}
       onDeleteRefPoint={handleDeleteRefPoint}
       hideAttribution={true}
       fitBounds={true}
@@ -322,3 +361,12 @@
     {/if}
   </div>
 </div>
+
+<!-- Link Location Modal -->
+{#if showLinkModal && linkingPoint}
+  <LinkLocationModal
+    pointName={linkingPoint.name}
+    onClose={closeLinkModal}
+    onLink={handleConfirmLink}
+  />
+{/if}

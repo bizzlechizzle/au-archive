@@ -452,6 +452,8 @@ const api = {
     // Migration 42: GPS enrichment - apply ref point GPS to existing location
     applyEnrichment: (input) => invokeAuto("refMaps:applyEnrichment")(input),
     applyAllEnrichments: (enrichments) => invokeAuto("refMaps:applyAllEnrichments")(enrichments),
+    // Link ref point to existing location (manual association from Atlas)
+    linkToLocation: (pointId, locationId) => invokeAuto("refMaps:linkToLocation")({ pointId, locationId }),
   },
 
   // Import Intelligence - Smart location matching during import

@@ -196,6 +196,8 @@
     // Callback when user clicks "Create Location" on a reference point popup
     // Migration 38: Added pointId for deletion after location creation
     onCreateFromRefPoint?: (data: { pointId: string; name: string; lat: number; lng: number; state: string | null }) => void;
+    // Callback when user clicks "Link" on a reference point popup
+    onLinkRefPoint?: (data: { pointId: string; name: string; lat: number; lng: number }) => void;
     // Callback when user clicks "Delete" on a reference point popup
     onDeleteRefPoint?: (pointId: string, name: string) => void;
     // Auto-fit map to show all locations on load
@@ -225,6 +227,7 @@
     refMapPoints = [],
     showRefMapLayer = false,
     onCreateFromRefPoint,
+    onLinkRefPoint,
     onDeleteRefPoint,
     fitBounds = false
   }: Props = $props();
@@ -265,6 +268,8 @@
   let viewDetailsClickHandler: ((e: MouseEvent) => void) | null = null;
   // Event handler for "Create Location" button on reference point popups
   let createFromRefClickHandler: ((e: MouseEvent) => void) | null = null;
+  // Event handler for "Link" button on reference point popups
+  let linkRefClickHandler: ((e: MouseEvent) => void) | null = null;
   // Event handler for "Delete" button on reference point popups
   let deleteRefClickHandler: ((e: MouseEvent) => void) | null = null;
 
@@ -532,6 +537,25 @@
         }
       };
       document.addEventListener('click', createFromRefClickHandler);
+
+      // Event delegation for "Link" button on reference point popups
+      linkRefClickHandler = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        // Use closest() to handle clicks on SVG icon inside button
+        const btn = target.closest('.link-ref-btn') as HTMLElement | null;
+        if (btn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const pointId = btn.getAttribute('data-point-id');
+          const name = btn.getAttribute('data-name') || 'Unnamed Point';
+          const lat = parseFloat(btn.getAttribute('data-lat') || '0');
+          const lng = parseFloat(btn.getAttribute('data-lng') || '0');
+          if (onLinkRefPoint && pointId && lat !== 0 && lng !== 0) {
+            onLinkRefPoint({ pointId, name, lat, lng });
+          }
+        }
+      };
+      document.addEventListener('click', linkRefClickHandler);
 
       // Event delegation for "Delete" button on reference point popups
       deleteRefClickHandler = (e: MouseEvent) => {
@@ -866,7 +890,7 @@
           const category = point.category ? `<br/><span style="color: #888; font-size: 10px;">${escapeHtml(point.category)}</span>` : '';
 
           marker.bindPopup(`
-            <div class="ref-map-popup" style="min-width: 180px;">
+            <div class="ref-map-popup" style="min-width: 200px;">
               <strong style="font-size: 13px;">${escapeHtml(name)}</strong>
               ${desc}
               ${category}
@@ -878,8 +902,22 @@
                   data-lat="${point.lat}"
                   data-lng="${point.lng}"
                   data-state="${point.state || ''}"
+                  title="Create new location"
                 >
-                  + Create Location
+                  + Create
+                </button>
+                <button
+                  class="link-ref-btn"
+                  data-point-id="${point.pointId}"
+                  data-name="${escapeHtml(name)}"
+                  data-lat="${point.lat}"
+                  data-lng="${point.lng}"
+                  title="Link to existing location"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                  </svg>
                 </button>
                 <button
                   class="delete-ref-btn"
@@ -917,6 +955,11 @@
     if (createFromRefClickHandler) {
       document.removeEventListener('click', createFromRefClickHandler);
       createFromRefClickHandler = null;
+    }
+    // Clean up link reference point button listener
+    if (linkRefClickHandler) {
+      document.removeEventListener('click', linkRefClickHandler);
+      linkRefClickHandler = null;
     }
     // Clean up delete reference point button listener
     if (deleteRefClickHandler) {
@@ -999,6 +1042,23 @@
 
   :global(.create-from-ref-btn:hover) {
     background: #725A31; /* Olive Bark - gold dark variant */
+  }
+
+  :global(.link-ref-btn) {
+    padding: 4px 6px;
+    background: #e5e5e5;
+    color: #666;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  :global(.link-ref-btn:hover) {
+    background: #3b82f6; /* Blue for link action */
+    color: white;
   }
 
   :global(.delete-ref-btn) {

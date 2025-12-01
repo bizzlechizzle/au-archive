@@ -978,4 +978,64 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
       };
     }
   });
+
+  /**
+   * Link a reference point to an existing location.
+   * This marks the ref point as "used" without applying GPS enrichment.
+   * Used when user manually associates a ref point with a location from the Atlas.
+   */
+  ipcMain.handle('refMaps:linkToLocation', async (
+    _event,
+    input: { pointId: string; locationId: string }
+  ) => {
+    try {
+      const { pointId, locationId } = input;
+
+      if (!pointId || !locationId) {
+        return { success: false, error: 'Point ID and location ID are required' };
+      }
+
+      // Verify the ref point exists
+      const refPoint = await db
+        .selectFrom('ref_map_points')
+        .select(['point_id', 'name'])
+        .where('point_id', '=', pointId)
+        .executeTakeFirst();
+
+      if (!refPoint) {
+        return { success: false, error: 'Reference point not found' };
+      }
+
+      // Verify the location exists
+      const location = await db
+        .selectFrom('locs')
+        .select(['locid', 'locnam'])
+        .where('locid', '=', locationId)
+        .executeTakeFirst();
+
+      if (!location) {
+        return { success: false, error: 'Location not found' };
+      }
+
+      // Link the ref point to the location
+      await db
+        .updateTable('ref_map_points')
+        .set({
+          linked_locid: locationId,
+          linked_at: new Date().toISOString(),
+        })
+        .where('point_id', '=', pointId)
+        .execute();
+
+      console.log(`[RefMaps] Linked ref point "${refPoint.name}" to location "${location.locnam}"`);
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error linking reference point to location:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
 }
