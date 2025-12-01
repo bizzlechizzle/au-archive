@@ -337,6 +337,9 @@
     }));
     // Clear matches after applying
     refMapMatches = [];
+    // User already chose from RefMapMatches - skip ImportIntelligence panel
+    intelligenceDismissed = true;
+    showIntelligence = false;
     toasts.success(`GPS applied from "${match.name}"`);
   }
 
