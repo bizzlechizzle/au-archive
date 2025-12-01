@@ -13,6 +13,7 @@ import { initBrowserViewManager, destroyBrowserViewManager } from '../services/b
 import { startBookmarkAPIServer, stopBookmarkAPIServer } from '../services/bookmark-api-server';
 import { startWebSocketServer, stopWebSocketServer } from '../services/websocket-server';
 import { closeResearchBrowser } from '../services/research-browser-service';
+import { getDatabaseArchiveService } from '../services/database-archive-service';
 import { SQLiteBookmarksRepository } from '../repositories/sqlite-bookmarks-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
@@ -452,6 +453,24 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  // Export database to archive folder before quit
+  try {
+    const archiveService = getDatabaseArchiveService();
+    const archiveConfigured = await archiveService.isArchiveConfigured();
+
+    if (archiveConfigured) {
+      console.log('Exporting database to archive before quit...');
+      const result = await archiveService.exportToArchive();
+      if (result.success) {
+        console.log('Database exported to archive successfully');
+      } else {
+        console.error('Database archive export failed:', result.error);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to export database to archive:', error);
+  }
+
   // Close research browser (external Ungoogled Chromium)
   try {
     await closeResearchBrowser();

@@ -6,8 +6,9 @@
 2. Metadata services call ExifTool/FFmpeg/sharp, normalize results, and persist in SQLite via repositories.
 3. GPS pipeline enforces confidence rules and writes `gps_*` fields plus derived address data.
 4. BagIt service updates self-documenting archive files (manifest, bag-info) for each location after imports.
-5. Renderer queries locations/media via preload, hydrates UI stores, and updates map/list components.
-6. Exporters read from SQLite and the file store, producing CSV/GeoJSON/HTML bundles tied to SHA references.
+5. Database archive service exports SQLite snapshot to archive folder after backups and on app quit.
+6. Renderer queries locations/media via preload, hydrates UI stores, and updates map/list components.
+7. Exporters read from SQLite and the file store, producing CSV/GeoJSON/HTML bundles tied to SHA references.
 
 ## Import Spine
 

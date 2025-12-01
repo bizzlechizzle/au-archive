@@ -11,6 +11,7 @@ import {
   setCustomDatabasePath,
 } from '../../services/bootstrap-config';
 import { getBackupScheduler } from '../../services/backup-scheduler';
+import { getDatabaseArchiveService } from '../../services/database-archive-service';
 
 export function registerDatabaseHandlers() {
   ipcMain.handle('database:backup', async () => {
@@ -326,6 +327,95 @@ export function registerDatabaseHandlers() {
     } catch (error) {
       console.error('Error restoring from internal backup:', error);
       throw error;
+    }
+  });
+
+  // Database Archive Export: Manual trigger for exporting to archive folder
+  ipcMain.handle('database:archiveExport', async () => {
+    try {
+      const archiveService = getDatabaseArchiveService();
+      const isConfigured = await archiveService.isArchiveConfigured();
+
+      if (!isConfigured) {
+        return {
+          success: false,
+          message: 'Archive folder not configured. Set archive location in Settings first.',
+        };
+      }
+
+      const result = await archiveService.exportToArchive();
+
+      if (result.success) {
+        return {
+          success: true,
+          message: 'Database exported to archive folder',
+          path: result.path,
+          size: formatSize(result.size),
+          timestamp: result.timestamp,
+        };
+      } else {
+        return {
+          success: false,
+          message: result.error || 'Export failed',
+        };
+      }
+    } catch (error) {
+      console.error('Error exporting database to archive:', error);
+      throw error;
+    }
+  });
+
+  // Database Archive Export: Get status of last archive export
+  ipcMain.handle('database:archiveStatus', async () => {
+    try {
+      const archiveService = getDatabaseArchiveService();
+      const isConfigured = await archiveService.isArchiveConfigured();
+
+      if (!isConfigured) {
+        return {
+          configured: false,
+          exported: false,
+          verified: false,
+          lastExport: null,
+        };
+      }
+
+      const info = await archiveService.getLastExportInfo();
+      if (!info) {
+        return {
+          configured: true,
+          exported: false,
+          verified: false,
+          lastExport: null,
+        };
+      }
+
+      // Verify the export integrity
+      const verified = await archiveService.verifyExport();
+
+      return {
+        configured: true,
+        exported: true,
+        verified,
+        lastExport: {
+          exportedAt: info.exported_at,
+          appVersion: info.app_version,
+          locationCount: info.location_count,
+          imageCount: info.image_count,
+          videoCount: info.video_count,
+          documentCount: info.document_count,
+          mapCount: info.map_count,
+          checksum: info.checksum,
+        },
+      };
+    } catch (error) {
+      console.error('Error getting archive status:', error);
+      return {
+        configured: false,
+        exported: false,
+        verified: false,
+        lastExport: null,
+      };
     }
   });
 }

@@ -34,6 +34,23 @@ Each location has a BagIt package (RFC 8493) in its documents folder (`_archive/
 
 This ensures each location can stand alone for 35+ years without the database.
 
+## Database Archive Export
+
+The database is automatically exported to the archive folder to ensure complete portability:
+
+**Location**: `[archive]/_database/`
+**Files**:
+- `au-archive-snapshot.db`: Complete SQLite database copy
+- `snapshot.sha256`: SHA256 checksum for verification
+- `snapshot-info.json`: Export metadata (counts, version, timestamp)
+
+**Triggers**:
+- After each internal backup (automatic)
+- On app quit (automatic)
+- Manual trigger from Settings > Archive > Database
+
+This ensures the archive folder is a complete backup independent of the app installation.
+
 ## Logging Scope
 
 All operational logs stay local (filesystem or developer console). No remote log aggregation.

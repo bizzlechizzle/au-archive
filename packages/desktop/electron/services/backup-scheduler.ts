@@ -7,6 +7,8 @@ import { getLogger } from './logger-service';
 import { getConfigService } from './config-service';
 // FIX 5.4: Import sendToRenderer for backup notifications
 import { sendToRenderer } from '../main/index';
+// Database Archive Export: Also export to archive folder after internal backup
+import { getDatabaseArchiveService } from './database-archive-service';
 
 const logger = getLogger();
 
@@ -261,12 +263,36 @@ export class BackupScheduler {
 
   /**
    * FIX 5.5: Verify and return result after backup creation
+   * Also exports database snapshot to archive folder for complete portable backup
    */
   async createAndVerifyBackup(): Promise<BackupMetadata | null> {
     const backup = await this.createBackup();
     if (backup) {
       const verified = await this.verifyBackup(backup.backupId);
       backup.verified = verified;
+
+      // Database Archive Export: Also export to archive folder
+      try {
+        const archiveService = getDatabaseArchiveService();
+        const archiveConfigured = await archiveService.isArchiveConfigured();
+
+        if (archiveConfigured) {
+          const archiveResult = await archiveService.exportToArchive();
+          if (archiveResult.success) {
+            logger.info('BackupScheduler', 'Database also exported to archive folder', {
+              path: archiveResult.path,
+              size: archiveResult.size,
+            });
+          } else {
+            logger.warn('BackupScheduler', 'Archive export failed (non-fatal)', {
+              error: archiveResult.error,
+            });
+          }
+        }
+      } catch (archiveError) {
+        // Non-fatal: internal backup succeeded, archive export is a bonus
+        logger.warn('BackupScheduler', 'Archive export error (non-fatal)', archiveError as Error);
+      }
     }
     return backup;
   }

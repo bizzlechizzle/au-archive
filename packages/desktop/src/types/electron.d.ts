@@ -146,6 +146,52 @@ export interface ElectronAPI {
       newPath?: string;
       requiresRestart?: boolean;
     }>;
+    // Phase 2: Database stats and internal backup management
+    getStats: () => Promise<{
+      integrityOk: boolean;
+      backupCount: number;
+      lastBackup: string | null;
+    }>;
+    exportBackup: () => Promise<{ success: boolean; path?: string; message?: string }>;
+    listBackups: () => Promise<{
+      success: boolean;
+      message?: string;
+      backups: Array<{
+        id: string;
+        date: string;
+        size: string;
+        path: string;
+      }>;
+    }>;
+    restoreFromInternal: (backupId: string) => Promise<{
+      success: boolean;
+      message: string;
+      requiresRestart?: boolean;
+      autoBackupPath?: string;
+    }>;
+    // Database Archive Export: Export to archive folder for portable backup
+    archiveExport: () => Promise<{
+      success: boolean;
+      message: string;
+      path?: string;
+      size?: string;
+      timestamp?: string;
+    }>;
+    archiveStatus: () => Promise<{
+      configured: boolean;
+      exported: boolean;
+      verified: boolean;
+      lastExport: {
+        exportedAt: string;
+        appVersion: string;
+        locationCount: number;
+        imageCount: number;
+        videoCount: number;
+        documentCount: number;
+        mapCount: number;
+        checksum: string;
+      } | null;
+    }>;
   };
 
   imports: {

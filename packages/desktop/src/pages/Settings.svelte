@@ -184,6 +184,25 @@
   let validationProgress = $state<{ current: number; total: number; currentLocation: string } | null>(null);
   let bagValidationMessage = $state('');
 
+  // Database Archive Export state
+  let archiveExportStatus = $state<{
+    configured: boolean;
+    exported: boolean;
+    verified: boolean;
+    lastExport: {
+      exportedAt: string;
+      appVersion: string;
+      locationCount: number;
+      imageCount: number;
+      videoCount: number;
+      documentCount: number;
+      mapCount: number;
+      checksum: string;
+    } | null;
+  } | null>(null);
+  let archiveExporting = $state(false);
+  let archiveExportMessage = $state('');
+
   async function loadSettings() {
     try {
       loading = true;
@@ -1500,6 +1519,39 @@
     }
   }
 
+  // Database Archive Export: Load archive status
+  async function loadArchiveExportStatus() {
+    if (!window.electronAPI?.database?.archiveStatus) return;
+    try {
+      archiveExportStatus = await window.electronAPI.database.archiveStatus();
+    } catch (error) {
+      console.error('Failed to load archive export status:', error);
+    }
+  }
+
+  // Database Archive Export: Trigger manual export
+  async function exportToArchive() {
+    if (!window.electronAPI?.database?.archiveExport || archiveExporting) return;
+    try {
+      archiveExporting = true;
+      archiveExportMessage = '';
+
+      const result = await window.electronAPI.database.archiveExport();
+
+      if (result.success) {
+        archiveExportMessage = `Exported to archive (${result.size})`;
+        // Refresh the status
+        await loadArchiveExportStatus();
+      } else {
+        archiveExportMessage = result.message || 'Export failed';
+      }
+    } catch (error) {
+      archiveExportMessage = 'Export failed: ' + (error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      archiveExporting = false;
+    }
+  }
+
   // Helper to format bytes to human readable
   function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B';
@@ -1571,6 +1623,7 @@
     loadStorageStats();
     loadDatabaseHealth();
     loadBagSummary();
+    loadArchiveExportStatus();
   });
 </script>
 
@@ -1961,6 +2014,47 @@
                   {restoreMessage}
                 </p>
               {/if}
+
+              <!-- Archive Export Section -->
+              <div class="mt-4 pt-3 border-t border-gray-200">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-sm font-medium text-gray-700">Archive Snapshot</span>
+                  {#if archiveExportStatus?.configured}
+                    <span class="text-xs px-1.5 py-0.5 rounded {archiveExportStatus.verified ? 'bg-green-100 text-green-700' : archiveExportStatus.exported ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}">
+                      {archiveExportStatus.verified ? 'verified' : archiveExportStatus.exported ? 'exported' : 'none'}
+                    </span>
+                  {:else}
+                    <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                      not configured
+                    </span>
+                  {/if}
+                </div>
+
+                {#if archiveExportStatus?.lastExport}
+                  <p class="text-xs text-gray-500 mb-2">
+                    Last: {new Date(archiveExportStatus.lastExport.exportedAt).toLocaleString()}
+                  </p>
+                {/if}
+
+                <button
+                  onclick={exportToArchive}
+                  disabled={archiveExporting || !archiveExportStatus?.configured}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                  title={!archiveExportStatus?.configured ? 'Set archive location first' : 'Export database to archive folder'}
+                >
+                  {archiveExporting ? 'Exporting...' : 'Export to Archive'}
+                </button>
+
+                {#if archiveExportMessage}
+                  <p class="text-sm mt-2 {archiveExportMessage.includes('failed') || archiveExportMessage.includes('Error') ? 'text-red-600' : 'text-green-600'}">
+                    {archiveExportMessage}
+                  </p>
+                {/if}
+
+                <p class="text-xs text-gray-400 mt-2">
+                  Auto-exports on backup and quit. Stored in archive/_database/
+                </p>
+              </div>
             </div>
             {/if}
           </div>

@@ -27,7 +27,7 @@ Clean architecture with three rings (presentation, infrastructure, core domain) 
 
 - `packages/core/src/domain` — Location, sub-location, media entities, and enums
 - `packages/core/src/services` — Import, metadata extraction, GPS normalization, hashing, and address normalization services
-- `packages/desktop/electron/services` — BagIt archive (RFC 8493), backup scheduler, geocoding, health monitoring
+- `packages/desktop/electron/services` — BagIt archive (RFC 8493), backup scheduler, database archive export, geocoding, health monitoring
 - `packages/core/src/repositories` — Interfaces shared by SQLite implementations
 - `packages/desktop/electron/main` — App lifecycle, window creation, repository wiring, capability detection
 - `packages/desktop/electron/preload` — CommonJS bridge exposing typed APIs to renderer

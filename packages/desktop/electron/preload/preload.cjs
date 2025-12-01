@@ -194,6 +194,9 @@ const api = {
     exportBackup: () => invokeAuto("database:exportBackup")(),
     listBackups: () => invokeAuto("database:listBackups")(),
     restoreFromInternal: (backupId) => invokeAuto("database:restoreFromInternal")(backupId),
+    // Database Archive Export: Export to archive folder for portable backup
+    archiveExport: () => invokeAuto("database:archiveExport")(),
+    archiveStatus: () => invokeAuto("database:archiveStatus")(),
   },
 
   imports: {
