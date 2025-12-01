@@ -7,7 +7,7 @@
 import { writable } from 'svelte/store';
 
 // GPS source types for proper attribution
-type GpsSource = 'user_map_click' | 'ref_map_point' | 'photo_exif' | 'manual_entry';
+type GpsSource = 'user_map_click' | 'ref_map_point' | 'ref_map_import' | 'photo_exif' | 'manual_entry';
 
 interface ImportModalState {
   isOpen: boolean;

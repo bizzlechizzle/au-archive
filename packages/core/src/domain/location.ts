@@ -40,6 +40,8 @@ export const GPSCoordinatesSchema = z.object({
     'reverse_geocode',   // GPS was reverse geocoded to get address
     'manual',            // Legacy: same as manual_entry
     'user_input',        // Legacy: same as manual_entry
+    'ref_map_point',     // Location created from reference map point
+    'ref_map_import',    // Existing location enriched with GPS from reference map
   ]),
   verifiedOnMap: z.boolean().default(false),
   capturedAt: z.string().datetime().optional(),
