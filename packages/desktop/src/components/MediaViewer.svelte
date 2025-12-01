@@ -307,6 +307,28 @@
     isEditingFocal = false;
   }
 
+  /** Save current focal point as Dashboard hero */
+  async function saveDashboardHero() {
+    if (!currentMedia) return;
+    try {
+      await window.electronAPI.settings.set('dashboard_hero_imgsha', currentMedia.hash);
+      await window.electronAPI.settings.set('dashboard_hero_focal_x', String(pendingFocalX));
+      await window.electronAPI.settings.set('dashboard_hero_focal_y', String(pendingFocalY));
+      isEditingFocal = false;
+      settingHeroFor = null;
+    } catch (err) {
+      console.error('Error setting dashboard hero:', err);
+    }
+  }
+
+  /** Save current focal point as Host-Location hero (when viewing sub-location) */
+  function saveHostLocationHero() {
+    if (!currentMedia || !onSetHostHeroImage) return;
+    onSetHostHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
+    isEditingFocal = false;
+    settingHeroFor = null;
+  }
+
   // Handle escape key in focal editor
   function handleFocalKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -629,54 +651,35 @@
                     <!-- Status badge -->
                     {#if isCurrentHero}
                       <div class="absolute top-2 left-2">
-                        <span class="inline-flex items-center gap-1 px-2 py-1 bg-accent text-white text-xs font-medium rounded shadow-sm">
-                          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                          </svg>
+                        <span class="inline-flex items-center px-2 py-1 bg-accent text-white text-xs font-medium rounded shadow-sm">
                           Current Hero
                         </span>
                       </div>
                     {/if}
                   </div>
-                  <!-- Issue 7: Side-by-side buttons when both building and campus hero options available -->
+                  <!-- Side-by-side buttons when both building and host-location hero options available -->
                   {#if onSetHostHeroImage}
                     <div class="flex gap-2">
                       <button
                         onclick={() => startFocalEdit('building')}
-                        class="flex-1 px-3 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition flex items-center justify-center gap-1.5"
+                        class="flex-1 px-3 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition"
                       >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                        </svg>
-                        {isCurrentHero ? 'Adjust' : 'Building Hero'}
+                        Hero Image
                       </button>
                       <button
                         onclick={() => startFocalEdit('campus')}
-                        class="flex-1 px-3 py-2.5 text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 rounded-lg transition flex items-center justify-center gap-1.5"
+                        class="flex-1 px-3 py-2.5 text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 rounded-lg transition"
                       >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                        </svg>
-                        Campus Hero
+                        Host-Location
                       </button>
                     </div>
                   {:else}
                     <!-- Single button when only building hero option -->
                     <button
                       onclick={() => startFocalEdit('building')}
-                      class="w-full px-4 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition flex items-center justify-center gap-2"
+                      class="w-full px-4 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition"
                     >
-                      {#if isCurrentHero}
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" />
-                        </svg>
-                        Adjust Position
-                      {:else}
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                        </svg>
-                        Set as Hero Image
-                      {/if}
+                      Hero Image
                     </button>
                   {/if}
                 </div>
@@ -979,7 +982,6 @@
         <!-- Header -->
         <div class="px-6 py-4 border-b border-gray-200">
           <h3 class="text-lg font-semibold text-gray-900">Set Hero Focal Point</h3>
-          <p class="text-sm text-gray-500 mt-1">Drag the pin to set the center of the hero crop</p>
         </div>
 
         <!-- Large Preview (matches hero constraints) -->
@@ -1044,25 +1046,39 @@
         </div>
 
         <!-- Footer -->
-        <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex items-center justify-end gap-3">
-          <button
-            onclick={cancelFocalEdit}
-            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-          >
-            Cancel
-          </button>
-          <button
-            onclick={saveFocalEdit}
-            class="px-5 py-2 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 transition"
-          >
-            {#if isCurrentHero}
-              Save Position
-            {:else if settingHeroFor === 'campus'}
-              Set as Campus Hero
-            {:else}
-              Set as Hero Image
+        <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex items-center justify-between">
+          <!-- Left side: Additional hero destinations -->
+          <div class="flex gap-2">
+            <button
+              onclick={saveDashboardHero}
+              class="px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            >
+              Dashboard
+            </button>
+            {#if onSetHostHeroImage}
+              <button
+                onclick={saveHostLocationHero}
+                class="px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+              >
+                Host-Location
+              </button>
             {/if}
-          </button>
+          </div>
+          <!-- Right side: Cancel/Save -->
+          <div class="flex gap-3">
+            <button
+              onclick={cancelFocalEdit}
+              class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onclick={saveFocalEdit}
+              class="px-5 py-2 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 transition"
+            >
+              Save
+            </button>
+          </div>
         </div>
       </div>
     </div>

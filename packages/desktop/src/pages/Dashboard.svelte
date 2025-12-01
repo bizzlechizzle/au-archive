@@ -59,6 +59,10 @@
   let topTypes = $state<TypeStat[]>([]);
   let topStates = $state<StateStat[]>([]);
 
+  // Dashboard hero
+  let dashboardHero = $state<{imgsha: string; focalX: number; focalY: number} | null>(null);
+  let dashboardHeroImage = $state<{thumb_path?: string; preview_path?: string; thumb_path_lg?: string} | null>(null);
+
   let loading = $state(true);
 
   // Cache version for busting browser cache after thumbnail regeneration
@@ -124,6 +128,20 @@
       console.error('Failed to load top states:', e);
     }
 
+    // Load dashboard hero
+    try {
+      const imgsha = await window.electronAPI.settings.get('dashboard_hero_imgsha');
+      if (imgsha) {
+        const focalX = parseFloat(await window.electronAPI.settings.get('dashboard_hero_focal_x') || '0.5');
+        const focalY = parseFloat(await window.electronAPI.settings.get('dashboard_hero_focal_y') || '0.5');
+        dashboardHero = { imgsha, focalX, focalY };
+        // Load the image thumbnail paths
+        dashboardHeroImage = await window.electronAPI.media.findImageByHash(imgsha);
+      }
+    } catch (e) {
+      console.error('Failed to load dashboard hero:', e);
+    }
+
     loading = false;
   });
 
@@ -132,6 +150,36 @@
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 </script>
+
+<!-- Dashboard Hero -->
+{#if dashboardHero && dashboardHeroImage}
+  <div class="w-full bg-[#fffbf7]">
+    <div class="relative w-full max-h-[30vh] mx-auto overflow-hidden" style="aspect-ratio: 2.35 / 1;">
+      <img
+        src={`media://${dashboardHeroImage.preview_path || dashboardHeroImage.thumb_path_lg || dashboardHeroImage.thumb_path}?v=${cacheVersion}`}
+        alt="Dashboard Hero"
+        class="absolute inset-0 w-full h-full object-cover"
+        style="object-position: {dashboardHero.focalX * 100}% {dashboardHero.focalY * 100}%;"
+      />
+      <!-- Gradient overlay (matches LocationHero) -->
+      <div
+        class="absolute bottom-0 left-0 right-0 h-[80%] pointer-events-none"
+        style="background: linear-gradient(to top,
+          #fffbf7 0%,
+          #fffbf7 12.5%,
+          rgba(255,251,247,0.95) 20%,
+          rgba(255,251,247,0.82) 30%,
+          rgba(255,251,247,0.62) 42%,
+          rgba(255,251,247,0.40) 54%,
+          rgba(255,251,247,0.22) 66%,
+          rgba(255,251,247,0.10) 78%,
+          rgba(255,251,247,0.03) 90%,
+          transparent 100%
+        );"
+      ></div>
+    </div>
+  </div>
+{/if}
 
 <div class="p-8">
   <h1 class="text-3xl font-bold text-foreground mb-6">Dashboard</h1>

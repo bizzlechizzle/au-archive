@@ -225,6 +225,7 @@ const api = {
     },
     cancelImport: (importId) => invokeAuto("media:import:cancel")(importId),
     findByLocation: (locid) => invokeAuto("media:findByLocation")(locid),
+    findImageByHash: (hash) => invokeAuto("media:findImageByHash")(hash),
     // Media viewing and processing
     openFile: (filePath) => invokeAuto("media:openFile")(filePath),
     showInFolder: (filePath) => invokeAuto("media:showInFolder")(filePath),

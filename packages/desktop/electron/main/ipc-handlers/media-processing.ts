@@ -48,6 +48,20 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  ipcMain.handle('media:findImageByHash', async (_event, hash: unknown) => {
+    try {
+      const validatedHash = z.string().length(64).parse(hash);
+      const img = await mediaRepo.findImageByHash(validatedHash);
+      return img ? { thumb_path: img.thumb_path, thumb_path_sm: img.thumb_path_sm, thumb_path_lg: img.thumb_path_lg, preview_path: img.preview_path } : null;
+    } catch (error) {
+      console.error('Error finding image by hash:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
   ipcMain.handle('media:openFile', async (_event, filePath: unknown) => {
     try {
       const validatedPath = z.string().min(1).max(4096).parse(filePath);
