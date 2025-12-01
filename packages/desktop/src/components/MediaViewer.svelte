@@ -633,7 +633,7 @@
 
   <!-- Metadata Panel (Two-tier: Summary + All Fields + Hero Editor) -->
   {#if showExif && currentMedia}
-    <div class="absolute left-0 top-1/2 -translate-y-1/2 w-96 max-h-[80vh] bg-white/95 text-foreground overflow-y-auto shadow-lg border-r border-gray-200 rounded-r-lg">
+    <div class="absolute left-0 top-1/2 -translate-y-1/2 w-96 max-h-[80vh] bg-white/95 text-foreground overflow-y-auto shadow-lg border-r border-gray-200 rounded-r-lg z-[5]">
       <div class="p-4">
         <h3 class="text-lg font-semibold mb-4">Metadata</h3>
 
