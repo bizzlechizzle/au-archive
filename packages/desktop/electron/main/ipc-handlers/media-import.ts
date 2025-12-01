@@ -340,6 +340,13 @@ export function registerMediaImportHandlers(
       const abortController = new AbortController();
       activeImports.set(importId, abortController);
 
+      // FIX: Send importId immediately so cancel works before any file processing
+      try {
+        if (_event.sender && !_event.sender.isDestroyed()) {
+          _event.sender.send('media:import:started', { importId });
+        }
+      } catch (e) { console.warn('[media:import] Failed to send started event:', e); }
+
       let result;
       try {
         result = await fileImportService.importFiles(
@@ -400,7 +407,8 @@ export function registerMediaImportHandlers(
         } catch (e) { console.warn('[media:import] Failed to update BagIt manifest (non-fatal):', e); }
       }
 
-      return result;
+      // FIX: Return importId immediately so cancel can work before progress events arrive
+      return { ...result, importId };
     } catch (error) {
       console.error('Error importing media:', error);
       if (error instanceof z.ZodError) {
