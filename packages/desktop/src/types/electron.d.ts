@@ -609,7 +609,8 @@ export interface ElectronAPI {
     scan: (
       lat: number,
       lng: number,
-      hints?: { filename?: string; inferredType?: string; inferredState?: string }
+      hints?: { filename?: string; inferredType?: string; inferredState?: string },
+      excludeRefPointId?: string | null
     ) => Promise<IntelligenceScanResult>;
     hasNearby: (lat: number, lng: number) => Promise<{
       hasNearby: boolean;

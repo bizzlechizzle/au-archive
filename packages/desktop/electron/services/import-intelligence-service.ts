@@ -77,6 +77,7 @@ export class ImportIntelligenceService {
   /**
    * Scan the archive for matches near a GPS point.
    * This is the main entry point for import intelligence.
+   * @param excludeRefPointId - Optional ref point ID to exclude from results (e.g., when creating from that point)
    */
   async scan(
     lat: number,
@@ -85,7 +86,8 @@ export class ImportIntelligenceService {
       filename?: string;
       inferredType?: string;
       inferredState?: string;
-    }
+    },
+    excludeRefPointId?: string | null
   ): Promise<IntelligenceScanResult> {
     const startTime = Date.now();
     const allMatches: IntelligenceMatch[] = [];
@@ -97,7 +99,7 @@ export class ImportIntelligenceService {
     const [locationMatches, sublocationMatches, refmapMatches] = await Promise.all([
       this.scanLocations(lat, lng, bbox, hints),
       this.scanSublocations(lat, lng, bbox, hints),
-      this.scanRefmaps(lat, lng, bbox, hints),
+      this.scanRefmaps(lat, lng, bbox, hints, excludeRefPointId),
     ]);
 
     allMatches.push(...locationMatches.matches);
@@ -244,12 +246,14 @@ export class ImportIntelligenceService {
 
   /**
    * Scan reference map points
+   * @param excludeRefPointId - Optional ref point ID to exclude (e.g., when creating a location from that point)
    */
   private async scanRefmaps(
     lat: number,
     lng: number,
     bbox: { minLat: number; maxLat: number; minLng: number; maxLng: number },
-    hints?: { filename?: string; inferredType?: string; inferredState?: string }
+    hints?: { filename?: string; inferredType?: string; inferredState?: string },
+    excludeRefPointId?: string | null
   ): Promise<{ matches: IntelligenceMatch[]; count: number }> {
     // Query reference points within bounding box
     const candidates = await this.db
@@ -273,6 +277,11 @@ export class ImportIntelligenceService {
     const matches: IntelligenceMatch[] = [];
 
     for (const candidate of candidates) {
+      // Skip the ref point we're creating from (prevents self-matching)
+      if (excludeRefPointId && candidate.point_id === excludeRefPointId) {
+        continue;
+      }
+
       const distance = haversineDistance(lat, lng, candidate.lat, candidate.lng);
       if (distance > INTELLIGENCE_CONFIG.SCAN_RADIUS_METERS) continue;
 

@@ -453,8 +453,8 @@ const api = {
 
   // Import Intelligence - Smart location matching during import
   importIntelligence: {
-    // Full scan for matches near GPS point
-    scan: (lat, lng, hints) => invokeAuto("import-intelligence:scan")(lat, lng, hints),
+    // Full scan for matches near GPS point (excludeRefPointId filters out a specific ref point)
+    scan: (lat, lng, hints, excludeRefPointId) => invokeAuto("import-intelligence:scan")(lat, lng, hints, excludeRefPointId),
     // Quick check if GPS has nearby matches
     hasNearby: (lat, lng) => invokeAuto("import-intelligence:hasNearby")(lat, lng),
     // Add AKA name to existing location

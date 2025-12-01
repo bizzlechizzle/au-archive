@@ -712,6 +712,7 @@
               inferredState: selectedState || undefined,
             }}
             proposedName={name || $importModal.prefilledData?.name || undefined}
+            excludeRefPointId={creatingFromRefPointId}
             onSelectLocation={handleIntelligenceSelectLocation}
             onSelectSubLocation={handleIntelligenceSelectSubLocation}
             onCreateFromRefPoint={handleIntelligenceCreateFromRefPoint}

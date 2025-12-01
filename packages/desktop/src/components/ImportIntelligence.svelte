@@ -29,6 +29,8 @@
     onCreateNew?: () => void;
     // For AKA flow: what name is the user trying to add?
     proposedName?: string;
+    // Exclude a specific ref point from results (e.g., when already creating from it)
+    excludeRefPointId?: string | null;
   }
 
   let {
@@ -40,6 +42,7 @@
     onCreateFromRefPoint,
     onCreateNew,
     proposedName,
+    excludeRefPointId,
   }: Props = $props();
 
   let scanning = $state(true);
@@ -68,7 +71,7 @@
         return;
       }
 
-      const result = await window.electronAPI.importIntelligence.scan(lat, lng, hints);
+      const result = await window.electronAPI.importIntelligence.scan(lat, lng, hints, excludeRefPointId);
       scanResult = result;
     } catch (err) {
       console.error('[ImportIntelligence] Scan failed:', err);

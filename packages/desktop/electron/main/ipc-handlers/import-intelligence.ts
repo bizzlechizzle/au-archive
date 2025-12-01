@@ -23,7 +23,8 @@ export function registerImportIntelligenceHandlers(db: Kysely<Database>) {
       _event,
       lat: number,
       lng: number,
-      hints?: { filename?: string; inferredType?: string; inferredState?: string }
+      hints?: { filename?: string; inferredType?: string; inferredState?: string },
+      excludeRefPointId?: string | null
     ) => {
       try {
         // Validate GPS coordinates
@@ -34,12 +35,13 @@ export function registerImportIntelligenceHandlers(db: Kysely<Database>) {
           throw new Error('Invalid longitude');
         }
 
-        const result = await intelligenceService.scan(lat, lng, hints);
+        const result = await intelligenceService.scan(lat, lng, hints, excludeRefPointId);
 
         console.log(
           `[Import Intelligence] Scanned ${result.scanned.locations} locations, ` +
             `${result.scanned.sublocations} sub-locations, ${result.scanned.refmaps} ref points. ` +
-            `Found ${result.matches.length} matches in ${result.scanTimeMs}ms`
+            `Found ${result.matches.length} matches in ${result.scanTimeMs}ms` +
+            (excludeRefPointId ? ` (excluding ref point ${excludeRefPointId})` : '')
         );
 
         return result;
