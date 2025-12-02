@@ -1089,22 +1089,28 @@
       aria-labelledby="attribution-title"
     >
       <div
-        class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4"
+        class="bg-[#fff8f2] rounded-lg shadow-xl w-full max-w-md mx-4"
         onclick={(e) => e.stopPropagation()}
       >
-        <div class="p-4 border-b">
-          <h2 id="attribution-title" class="text-lg font-semibold text-foreground">
-            Import Attribution
+        <div class="p-5 flex justify-between items-center">
+          <h2 id="attribution-title" class="text-xl font-semibold text-foreground">
+            Import Author
           </h2>
-          <p class="text-sm text-gray-500 mt-1">
-            {pendingImportPaths.length} file{pendingImportPaths.length !== 1 ? 's' : ''} ready to import
-          </p>
+          <button
+            onclick={cancelImport}
+            class="text-gray-400 hover:text-gray-600 transition p-1 rounded hover:bg-gray-200"
+            aria-label="Close"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
-        <div class="p-4 space-y-4">
+        <div class="p-5 space-y-4">
           <!-- Current user or Someone Else -->
           <div class="space-y-3">
-            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {!isSomeoneElse ? 'border-accent bg-accent/5' : 'border-gray-200'}">
+            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition bg-white {!isSomeoneElse ? 'border-accent' : 'border-gray-200'}">
               <input
                 type="radio"
                 name="attribution"
@@ -1112,13 +1118,10 @@
                 onchange={() => { isSomeoneElse = false; selectedAuthor = ''; contributionSource = ''; }}
                 class="w-4 h-4 text-accent"
               />
-              <div>
-                <p class="font-medium text-foreground">{users.find(u => u.username === currentUser)?.display_name || currentUser}</p>
-                <p class="text-sm text-gray-500">I shot these</p>
-              </div>
+              <span class="font-medium text-foreground">{users.find(u => u.username === currentUser)?.display_name || currentUser}</span>
             </label>
 
-            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {isSomeoneElse ? 'border-accent bg-accent/5' : 'border-gray-200'}">
+            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition bg-white {isSomeoneElse ? 'border-accent' : 'border-gray-200'}">
               <input
                 type="radio"
                 name="attribution"
@@ -1126,10 +1129,7 @@
                 onchange={() => isSomeoneElse = true}
                 class="w-4 h-4 text-accent"
               />
-              <div>
-                <p class="font-medium text-foreground">Someone Else</p>
-                <p class="text-sm text-gray-500">Another user or external contributor</p>
-              </div>
+              <span class="font-medium text-foreground">Someone Else</span>
             </label>
           </div>
 
@@ -1172,17 +1172,17 @@
           {/if}
         </div>
 
-        <div class="p-4 border-t flex justify-end gap-2">
+        <div class="p-5 flex justify-end gap-3">
           <button
             onclick={cancelImport}
-            class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200 transition"
+            class="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition font-medium"
           >
             Cancel
           </button>
           <button
             onclick={confirmImport}
             disabled={isSomeoneElse && !selectedAuthor || (selectedAuthor === 'external' && !contributionSource.trim())}
-            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            class="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm"
           >
             Import
           </button>
