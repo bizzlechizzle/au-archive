@@ -202,7 +202,8 @@
   let applyingEnrichment = $state<string | null>(null); // Track which one is being applied
 
   // Phase 4: Purge catalogued points state
-  let cataloguedCount = $state(0);
+  let cataloguedCount = $state<number | null>(null);  // null = not calculated yet
+  let loadingCatalogued = $state(false);  // OPT-048: Loading state for on-demand calculation
   let purgingPoints = $state(false);
   let purgeMessage = $state('');
 
@@ -877,6 +878,7 @@
 
   /**
    * Load reference maps list
+   * OPT-048: Removed findCataloguedPoints() call - was O(N×M) blocking operation
    */
   async function loadRefMaps() {
     if (!window.electronAPI?.refMaps) return;
@@ -884,14 +886,28 @@
       refMaps = await window.electronAPI.refMaps.findAll();
       const stats = await window.electronAPI.refMaps.getStats();
       refMapStats = { mapCount: stats.mapCount, pointCount: stats.pointCount };
+      // OPT-048: cataloguedCount is now calculated on-demand via loadCataloguedCount()
+    } catch (error) {
+      console.error('Failed to load reference maps:', error);
+    }
+  }
 
-      // Load catalogued points count for purge button
+  /**
+   * OPT-048: Load catalogued count on-demand (expensive O(N×M) operation)
+   * Called when user clicks "Calculate" button, not on page load
+   */
+  async function loadCataloguedCount() {
+    if (!window.electronAPI?.refMaps?.findCataloguedPoints || loadingCatalogued) return;
+    try {
+      loadingCatalogued = true;
       const cataloguedResult = await window.electronAPI.refMaps.findCataloguedPoints();
       if (cataloguedResult.success) {
         cataloguedCount = cataloguedResult.count;
       }
     } catch (error) {
-      console.error('Failed to load reference maps:', error);
+      console.error('Failed to load catalogued count:', error);
+    } finally {
+      loadingCatalogued = false;
     }
   }
 
@@ -2279,7 +2295,17 @@
 
               <!-- Buttons -->
               <div class="flex justify-end gap-2">
-                {#if cataloguedCount > 0}
+                <!-- OPT-048: Calculate catalogued count on-demand (was blocking page load) -->
+                {#if cataloguedCount === null}
+                  <button
+                    onclick={loadCataloguedCount}
+                    disabled={loadingCatalogued}
+                    class="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition disabled:opacity-50"
+                    title="Find reference points that match existing locations (may take a moment)"
+                  >
+                    {loadingCatalogued ? 'Checking...' : 'Check Duplicates'}
+                  </button>
+                {:else if cataloguedCount > 0}
                   <button
                     onclick={purgeCataloguedPoints}
                     disabled={purgingPoints}
