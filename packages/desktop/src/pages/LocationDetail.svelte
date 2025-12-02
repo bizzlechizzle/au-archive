@@ -153,17 +153,22 @@
     'centre', 'asylum', 'sanitarium', 'sanatorium', 'prison', 'jail',
     'penitentiary', 'cemetery', 'memorial', 'monument', 'cathedral',
     'chapel', 'temple', 'synagogue', 'mosque', 'abbey', 'monastery',
-    'convent', 'rectory', 'parsonage', 'vicarage', 'catholic'
+    'convent', 'rectory', 'parsonage', 'vicarage', 'catholic',
+    'works', 'facility', 'site', 'company', 'co', 'corp', 'inc'
   ]);
 
   function generateHeroName(name: string, type?: string, subtype?: string): string {
     let words = name.split(/\s+/).filter(w => w.length > 0);
 
-    // Strip leading "The" - the toggle can add it back
-    if (words.length > 0 && words[0].toLowerCase() === 'the') {
+    // NEVER shorten names with 3 or fewer words - return unchanged
+    if (words.length <= 3) return words.join(' ');
+
+    // Strip leading "The" for longer names - the toggle can add it back
+    if (words[0].toLowerCase() === 'the') {
       words = words.slice(1);
     }
 
+    // After stripping "The", check again - don't over-shorten
     if (words.length <= 3) return words.join(' ');
 
     const suffixesToStrip = new Set<string>(LOCATION_SUFFIXES);
@@ -206,7 +211,7 @@
     if (!el || !container) return;
 
     const maxSize = 128; // Max size cap
-    const minSize = 14;
+    const minSize = 24;  // Min size ensures readability for long titles
 
     // Count words in the display name
     const wordCount = heroDisplayName.split(/\s+/).filter(w => w.length > 0).length;
