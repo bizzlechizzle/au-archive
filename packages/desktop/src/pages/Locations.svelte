@@ -3,6 +3,7 @@
   import { router } from '../stores/router';
   import { createVirtualizer } from '@tanstack/svelte-virtual';
   import type { Location } from '@au-archive/core';
+  import SkeletonLoader from '../components/SkeletonLoader.svelte';
 
   // OPT-036: Locations now loaded with database-side filtering
   let locations = $state<Location[]>([]);
@@ -465,8 +466,17 @@
   </div>
 
   {#if loading}
-    <div class="bg-white rounded-lg shadow p-6 text-center">
-      <p class="text-gray-500">Loading locations...</p>
+    <!-- OPT-040: Premium skeleton loaders for table -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+      <!-- Header skeleton -->
+      <div class="grid grid-cols-[1fr_150px_200px_80px] bg-gray-50 border-b border-gray-200">
+        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</div>
+        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</div>
+        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</div>
+        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GPS</div>
+      </div>
+      <!-- Row skeletons -->
+      <SkeletonLoader type="table-row" count={10} />
     </div>
   {:else if filteredLocations().length > 0}
     <!-- OPT-038: Virtual scrolling for performance with 4K+ locations -->

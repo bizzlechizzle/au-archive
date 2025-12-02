@@ -13,6 +13,7 @@
   import { isImporting, importProgress, recentImports as storeRecentImports } from '../stores/import-store';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
   import { LocationHero, type MediaImage } from '../components/location';
+  import SkeletonLoader from '../components/SkeletonLoader.svelte';
 
   interface ImportRecord {
     import_id: string;
@@ -262,8 +263,33 @@
 
   <div class="max-w-6xl mx-auto px-8 pt-6 pb-8">
   {#if loading}
-    <div class="text-center py-12">
-      <p class="text-gray-500">Loading...</p>
+    <!-- OPT-040: Premium skeleton loaders instead of "Loading..." text -->
+    <div class="space-y-6">
+      <!-- Stats skeleton -->
+      <div class="flex justify-center gap-8 mb-8">
+        {#each Array(5) as _}
+          <div class="text-center space-y-1">
+            <div class="skeleton-shimmer h-8 w-12 bg-gray-200 rounded mx-auto"></div>
+            <div class="skeleton-shimmer h-3 w-16 bg-gray-200 rounded"></div>
+          </div>
+        {/each}
+      </div>
+      <!-- Projects skeleton -->
+      <div class="bg-white rounded-lg shadow p-6">
+        <div class="skeleton-shimmer h-5 w-24 bg-gray-200 rounded mb-4"></div>
+        <SkeletonLoader type="row" count={3} />
+      </div>
+      <!-- Two-column skeleton -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="skeleton-shimmer h-5 w-32 bg-gray-200 rounded mb-4"></div>
+          <SkeletonLoader type="row" count={3} />
+        </div>
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="skeleton-shimmer h-5 w-28 bg-gray-200 rounded mb-4"></div>
+          <SkeletonLoader type="row" count={3} />
+        </div>
+      </div>
     </div>
   {:else}
     <!-- Active Import Status -->
@@ -527,5 +553,32 @@
     text-wrap: balance; /* Balances word distribution across lines */
     /* Hand-painted sign style - hard offset shadow, accent gold */
     text-shadow: 3px 3px 0 rgba(185, 151, 92, 0.5);
+  }
+
+  /* OPT-040: Skeleton shimmer animation */
+  .skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .skeleton-shimmer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.4) 50%,
+      transparent 100%
+    );
+    animation: shimmer 1.5s infinite;
+  }
+
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
   }
 </style>
