@@ -787,6 +787,83 @@ export class SQLiteLocationRepository implements LocationRepository {
   }
 
   /**
+   * OPT-037: Find locations within map viewport bounds
+   * Spatial query for Atlas - only loads visible locations
+   * @param bounds Map viewport bounds (north, south, east, west)
+   * @param limit Maximum locations to return (default 500)
+   * @returns Locations with GPS within bounds
+   */
+  async findInBounds(bounds: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+  }, limit: number = 500): Promise<Location[]> {
+    // Handle date line crossing (east < west)
+    let query = this.db
+      .selectFrom('locs')
+      .selectAll()
+      .where('gps_lat', 'is not', null)
+      .where('gps_lng', 'is not', null)
+      .where('gps_lat', '<=', bounds.north)
+      .where('gps_lat', '>=', bounds.south);
+
+    if (bounds.east >= bounds.west) {
+      // Normal case: east is greater than west
+      query = query
+        .where('gps_lng', '<=', bounds.east)
+        .where('gps_lng', '>=', bounds.west);
+    } else {
+      // Date line crossing: longitude wraps around
+      query = query.where((eb) =>
+        eb.or([
+          eb('gps_lng', '>=', bounds.west),
+          eb('gps_lng', '<=', bounds.east),
+        ])
+      );
+    }
+
+    query = query.limit(limit);
+
+    const rows = await query.execute();
+    return rows.map((row) => this.mapRowToLocation(row));
+  }
+
+  /**
+   * OPT-037: Count locations visible in viewport (for UI feedback)
+   */
+  async countInBounds(bounds: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+  }): Promise<number> {
+    let query = this.db
+      .selectFrom('locs')
+      .select((eb) => eb.fn.countAll().as('count'))
+      .where('gps_lat', 'is not', null)
+      .where('gps_lng', 'is not', null)
+      .where('gps_lat', '<=', bounds.north)
+      .where('gps_lat', '>=', bounds.south);
+
+    if (bounds.east >= bounds.west) {
+      query = query
+        .where('gps_lng', '<=', bounds.east)
+        .where('gps_lng', '>=', bounds.west);
+    } else {
+      query = query.where((eb) =>
+        eb.or([
+          eb('gps_lng', '>=', bounds.west),
+          eb('gps_lng', '<=', bounds.east),
+        ])
+      );
+    }
+
+    const result = await query.executeTakeFirst();
+    return Number(result?.count || 0);
+  }
+
+  /**
    * Find project locations (project flag set) with hero thumbnails for dashboard
    */
   async findProjects(limit: number = 5): Promise<Array<Location & { heroThumbPath?: string }>> {

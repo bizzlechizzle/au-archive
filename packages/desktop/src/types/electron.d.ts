@@ -29,6 +29,9 @@ export interface ElectronAPI {
     favorites: () => Promise<Location[]>;
     toggleFavorite: (id: string) => Promise<boolean>;
     findNearby: (lat: number, lng: number, radiusKm: number) => Promise<Array<Location & { distance: number }>>;
+    // OPT-037: Viewport-based spatial queries for Atlas
+    findInBounds: (bounds: { north: number; south: number; east: number; west: number }) => Promise<Location[]>;
+    countInBounds: (bounds: { north: number; south: number; east: number; west: number }) => Promise<number>;
     // OPT-036: Get all filter options in one efficient call
     getFilterOptions: () => Promise<{
       states: string[];
@@ -573,6 +576,8 @@ export interface ElectronAPI {
     findAll: () => Promise<RefMap[]>;
     findById: (mapId: string) => Promise<RefMapWithPoints | null>;
     getAllPoints: () => Promise<RefMapPoint[]>;
+    // OPT-037: Viewport-based spatial query for reference points
+    getPointsInBounds: (bounds: { north: number; south: number; east: number; west: number }) => Promise<RefMapPoint[]>;
     update: (mapId: string, updates: { mapName?: string }) => Promise<RefMap | null>;
     delete: (mapId: string) => Promise<{ success: boolean; error?: string }>;
     getStats: () => Promise<{

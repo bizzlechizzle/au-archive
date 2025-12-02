@@ -172,6 +172,9 @@ const api = {
     findRecentlyViewed: (limit) => invokeAuto("location:findRecentlyViewed")(limit),
     // Dashboard: Project locations with hero thumbnails
     findProjects: (limit) => invokeAuto("location:findProjects")(limit),
+    // OPT-037: Viewport-based spatial queries for Atlas
+    findInBounds: (bounds) => invokeAuto("location:findInBounds")(bounds),
+    countInBounds: (bounds) => invokeAuto("location:countInBounds")(bounds),
   },
 
   stats: {
@@ -463,6 +466,8 @@ const api = {
     findAll: () => invokeAuto("refMaps:findAll")(),
     findById: (mapId) => invokeAuto("refMaps:findById")(mapId),
     getAllPoints: () => invokeAuto("refMaps:getAllPoints")(),
+    // OPT-037: Viewport-based spatial query for reference points
+    getPointsInBounds: (bounds) => invokeAuto("refMaps:getPointsInBounds")(bounds),
     update: (mapId, updates) => invokeAuto("refMaps:update")(mapId, updates),
     delete: (mapId) => invokeAuto("refMaps:delete")(mapId),
     getStats: () => invokeAuto("refMaps:getStats")(),

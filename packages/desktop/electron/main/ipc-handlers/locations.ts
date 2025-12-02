@@ -212,6 +212,48 @@ export function registerLocationHandlers(db: Kysely<Database>) {
     }
   });
 
+  /**
+   * OPT-037: Find locations within map viewport bounds
+   * Spatial query for Atlas - only loads visible locations
+   */
+  ipcMain.handle('location:findInBounds', async (_event, bounds: unknown) => {
+    try {
+      const BoundsSchema = z.object({
+        north: z.number().min(-90).max(90),
+        south: z.number().min(-90).max(90),
+        east: z.number().min(-180).max(180),
+        west: z.number().min(-180).max(180),
+      });
+      const validatedBounds = BoundsSchema.parse(bounds);
+      return await locationRepo.findInBounds(validatedBounds);
+    } catch (error) {
+      console.error('Error finding locations in bounds:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * OPT-037: Count locations within map viewport bounds
+   */
+  ipcMain.handle('location:countInBounds', async (_event, bounds: unknown) => {
+    try {
+      const BoundsSchema = z.object({
+        north: z.number().min(-90).max(90),
+        south: z.number().min(-90).max(90),
+        east: z.number().min(-180).max(180),
+        west: z.number().min(-180).max(180),
+      });
+      const validatedBounds = BoundsSchema.parse(bounds);
+      return await locationRepo.countInBounds(validatedBounds);
+    } catch (error) {
+      console.error('Error counting locations in bounds:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle('location:findNearby', async (_event, lat: number, lng: number, radiusKm: number) => {
     try {
       if (typeof lat !== 'number' || lat < -90 || lat > 90) {
