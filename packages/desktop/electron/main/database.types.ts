@@ -316,6 +316,11 @@ export interface VidsTable {
 
   // Migration 44 (OPT-047): File size tracking for archive size queries
   file_size_bytes: number | null;
+
+  // Migration 46 (OPT-055): DJI SRT telemetry data
+  // JSON summary of parsed telemetry from matching SRT file
+  // Contains: frames, duration_sec, gps_bounds, altitude_range, speed_max_ms
+  srt_telemetry: string | null;
 }
 
 // Documents table

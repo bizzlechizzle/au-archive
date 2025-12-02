@@ -21,6 +21,13 @@ import { PreviewExtractorService } from './preview-extractor-service';
 import { PosterFrameService } from './poster-frame-service';
 // OPT-053: Import video proxy service for instant playback (Immich model)
 import { generateProxy as generateVideoProxy } from './video-proxy-service';
+// OPT-055: Import SRT telemetry service for DJI drone video metadata
+import {
+  isDjiTelemetry,
+  parseDjiSrt,
+  findMatchingVideoHash,
+  type TelemetrySummary,
+} from './srt-telemetry-service';
 import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
@@ -371,6 +378,11 @@ export class FileImportService {
     console.log('[FileImport] Step 10: Detecting Live Photos and SDR duplicates...');
     await this.detectAndHideLivePhotosAndSDR(locid);
 
+    // OPT-055: Process SRT telemetry files and link to matching videos
+    // Runs after all files imported so SRT can find its matching video
+    console.log('[FileImport] Step 10b: Processing SRT telemetry files (OPT-055)...');
+    await this.processSrtTelemetryFiles(locid);
+
     // Step 11: Auto-set hero image if location has no hero and we imported images
     // This ensures dashboard thumbnails appear immediately after first import
     if (imported > 0) {
@@ -492,6 +504,101 @@ export class FileImportService {
       console.log(`[FileImport] Detection complete: ${livePhotosHidden} Live Photo videos hidden, ${sdrHidden} SDR duplicates hidden`);
     } catch (error) {
       console.warn('[FileImport] Live Photo/SDR detection failed (non-fatal):', error);
+    }
+  }
+
+  /**
+   * OPT-055: Process SRT telemetry files and link to matching videos
+   * - Finds all .srt documents for the location
+   * - Checks if each is DJI telemetry format
+   * - Parses telemetry and stores summary on matching video record
+   */
+  private async processSrtTelemetryFiles(locid: string): Promise<void> {
+    try {
+      // Get all documents for this location (SRT files are imported as documents)
+      const docs = await this.db
+        .selectFrom('docs')
+        .select(['docsha', 'docnam', 'docnamo', 'docloc'])
+        .where('locid', '=', locid)
+        .execute();
+
+      // Filter to just .srt files
+      const srtDocs = docs.filter(doc =>
+        doc.docnamo.toLowerCase().endsWith('.srt')
+      );
+
+      if (srtDocs.length === 0) {
+        console.log('[FileImport] No SRT files found for location');
+        return;
+      }
+
+      console.log(`[FileImport] Found ${srtDocs.length} SRT files to check for telemetry`);
+
+      // Get all videos for this location (for matching by filename)
+      const videos = await this.db
+        .selectFrom('vids')
+        .select(['vidsha', 'vidnamo'])
+        .where('locid', '=', locid)
+        .execute();
+
+      if (videos.length === 0) {
+        console.log('[FileImport] No videos found for location, skipping SRT telemetry linking');
+        return;
+      }
+
+      let telemetryLinked = 0;
+
+      for (const srtDoc of srtDocs) {
+        try {
+          // Read SRT file content
+          const content = await fs.readFile(srtDoc.docloc, 'utf-8');
+
+          // Check if it's DJI telemetry format
+          if (!isDjiTelemetry(content)) {
+            console.log(`[FileImport] SRT is standard subtitle format (not telemetry): ${srtDoc.docnamo}`);
+            continue;
+          }
+
+          console.log(`[FileImport] DJI telemetry detected: ${srtDoc.docnamo}`);
+
+          // Parse telemetry
+          const telemetry = parseDjiSrt(content, srtDoc.docnamo);
+
+          // Find matching video by filename (DJI_0001.SRT -> DJI_0001.MP4)
+          const matchingVidsha = findMatchingVideoHash(srtDoc.docnamo, videos);
+
+          if (!matchingVidsha) {
+            console.log(`[FileImport] No matching video found for SRT: ${srtDoc.docnamo}`);
+            continue;
+          }
+
+          // Store telemetry summary on video record
+          await this.db
+            .updateTable('vids')
+            .set({ srt_telemetry: JSON.stringify(telemetry) })
+            .where('vidsha', '=', matchingVidsha)
+            .execute();
+
+          telemetryLinked++;
+          console.log(`[FileImport] Telemetry linked: ${srtDoc.docnamo} -> video (${telemetry.frames} frames, ${telemetry.duration_sec}s)`);
+
+          // Log GPS bounds if available
+          if (telemetry.gps_bounds) {
+            const bounds = telemetry.gps_bounds;
+            console.log(`[FileImport]   GPS bounds: (${bounds.min_lat.toFixed(4)}, ${bounds.min_lng.toFixed(4)}) to (${bounds.max_lat.toFixed(4)}, ${bounds.max_lng.toFixed(4)})`);
+          }
+          if (telemetry.altitude_range) {
+            console.log(`[FileImport]   Altitude: ${telemetry.altitude_range.min_m}m - ${telemetry.altitude_range.max_m}m`);
+          }
+        } catch (srtError) {
+          console.warn(`[FileImport] Failed to process SRT file ${srtDoc.docnamo}:`, srtError);
+          // Continue with other SRT files
+        }
+      }
+
+      console.log(`[FileImport] SRT telemetry processing complete: ${telemetryLinked} files linked to videos`);
+    } catch (error) {
+      console.warn('[FileImport] SRT telemetry processing failed (non-fatal):', error);
     }
   }
 

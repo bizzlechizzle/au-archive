@@ -1687,6 +1687,19 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 45 completed: proxy_version added, Immich model ready');
     }
+
+    // Migration 46: SRT Telemetry column for DJI drone videos (OPT-055)
+    // Stores parsed telemetry summary (GPS bounds, altitude range, duration) from
+    // DJI SRT files that accompany drone videos. SRT file itself stays in docs table,
+    // but parsed telemetry data is stored on the matching video record for queries.
+    const vidsHasSrtTelemetry = sqlite.prepare('PRAGMA table_info(vids)').all() as Array<{ name: string }>;
+    if (!vidsHasSrtTelemetry.some(col => col.name === 'srt_telemetry')) {
+      console.log('Running migration 46: Adding srt_telemetry column to vids (OPT-055)');
+
+      sqlite.exec('ALTER TABLE vids ADD COLUMN srt_telemetry TEXT');
+
+      console.log('Migration 46 completed: srt_telemetry column added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
