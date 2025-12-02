@@ -34,21 +34,18 @@
 <nav class="w-64 h-screen bg-background text-foreground flex flex-col border-r border-gray-200">
   <!-- macOS: Top padding for traffic light buttons (hiddenInset titlebar) -->
   <div class="pt-8">
-    <div class="p-6 border-b border-gray-200 text-center">
+    <div class="p-6 text-center">
       <img src={logo} alt="Abandoned Upstate" class="h-20 w-auto mx-auto mb-2" />
       <p class="text-sm font-heading font-semibold text-accent tracking-wide">Archive Tool</p>
     </div>
   </div>
 
   <!-- P1: New Location button - opens global import modal -->
-  <div class="px-4 py-3 border-b border-gray-200">
+  <div class="px-4 py-3">
     <button
       onclick={() => openImportModal()}
-      class="w-full px-4 py-2 bg-accent text-white rounded-lg hover:opacity-90 transition font-medium text-sm flex items-center justify-center gap-2"
+      class="w-full px-4 py-2 bg-accent text-white rounded-lg hover:opacity-90 transition font-medium text-sm flex items-center justify-center"
     >
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-      </svg>
       New Location
     </button>
   </div>

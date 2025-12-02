@@ -560,7 +560,7 @@
           onclick={() => openImportModal()}
           class="w-full px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition text-sm font-medium"
         >
-          + New Location
+          New Location
         </button>
         <p class="text-xs text-gray-500 mt-2">Create a new location to save bookmarks to</p>
       </div>

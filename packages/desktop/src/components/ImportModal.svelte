@@ -977,18 +977,18 @@
             Cancel
           </button>
           <button
-            onclick={handleCreate}
-            disabled={saving}
-            class="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition disabled:opacity-50 font-medium shadow-sm"
-          >
-            {saving ? 'Creating...' : 'Create'}
-          </button>
-          <button
             onclick={handleCreateAndAddMedia}
             disabled={saving}
             class="px-3 py-1.5 text-sm border-2 border-accent text-accent bg-white rounded-lg hover:bg-accent hover:text-white transition disabled:opacity-50 font-medium"
           >
             {saving ? 'Adding...' : 'Add Media'}
+          </button>
+          <button
+            onclick={handleCreate}
+            disabled={saving}
+            class="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition disabled:opacity-50 font-medium shadow-sm"
+          >
+            {saving ? 'Creating...' : 'Create'}
           </button>
         </div>
       </div>
