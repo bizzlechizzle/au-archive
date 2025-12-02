@@ -363,6 +363,81 @@ export class SqliteRefMapsRepository {
   }
 
   /**
+   * OPT-037: Get points within map viewport bounds
+   * Spatial query for Atlas - only loads visible reference points
+   * Excludes linked points (already associated with locations)
+   * @param bounds Map viewport bounds (north, south, east, west)
+   * @param limit Maximum points to return (default 1000)
+   * @returns Reference points within bounds
+   */
+  async getPointsInBounds(bounds: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+  }, limit: number = 1000): Promise<RefMapPoint[]> {
+    let query = this.db
+      .selectFrom('ref_map_points')
+      .selectAll()
+      .where('lat', '<=', bounds.north)
+      .where('lat', '>=', bounds.south)
+      .where('linked_locid', 'is', null); // Exclude linked points
+
+    if (bounds.east >= bounds.west) {
+      // Normal case
+      query = query
+        .where('lng', '<=', bounds.east)
+        .where('lng', '>=', bounds.west);
+    } else {
+      // Date line crossing
+      query = query.where((eb) =>
+        eb.or([
+          eb('lng', '>=', bounds.west),
+          eb('lng', '<=', bounds.east),
+        ])
+      );
+    }
+
+    query = query.limit(limit);
+
+    const rows = await query.execute();
+    return rows.map(rowToRefMapPoint);
+  }
+
+  /**
+   * OPT-037: Count reference points in viewport
+   */
+  async countPointsInBounds(bounds: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+  }): Promise<number> {
+    let query = this.db
+      .selectFrom('ref_map_points')
+      .select(({ fn }) => fn.count<number>('point_id').as('count'))
+      .where('lat', '<=', bounds.north)
+      .where('lat', '>=', bounds.south)
+      .where('linked_locid', 'is', null);
+
+    if (bounds.east >= bounds.west) {
+      query = query
+        .where('lng', '<=', bounds.east)
+        .where('lng', '>=', bounds.west);
+    } else {
+      query = query.where((eb) =>
+        eb.or([
+          eb('lng', '>=', bounds.west),
+          eb('lng', '<=', bounds.east),
+        ])
+      );
+    }
+
+    const result = await query.executeTakeFirst();
+    return result?.count ?? 0;
+  }
+
+  /**
    * Migration 38: Delete a single ref_map_point after conversion to location
    * ADR: ADR-pin-conversion-duplicate-prevention.md
    *

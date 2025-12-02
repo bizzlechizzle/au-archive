@@ -4,9 +4,11 @@
    * Sub-accordion within Original Assets
    * Per DECISION-020: 4x2 grid, opens in MediaViewer
    * Premium UX: Accent ring hover, hero badge
+   * OPT-039: Virtual scrolling for "Show All" mode with 10K+ images
    */
   import type { MediaImage } from './types';
   import { thumbnailCache } from '../../stores/thumbnail-cache-store';
+  import { createVirtualizer } from '@tanstack/svelte-virtual';
 
   interface Props {
     images: MediaImage[];
@@ -16,11 +18,56 @@
 
   let { images, heroImgsha, onOpenLightbox }: Props = $props();
 
-  const IMAGE_LIMIT = 8; // 4x2 grid
+  const IMAGE_LIMIT = 8; // 4x2 grid for preview
+  const COLUMNS = 4; // Grid columns for virtual mode
+  const ROW_HEIGHT = 140; // Height of each row in pixels (aspect ratio ~1.618:1)
+  const VIRTUAL_THRESHOLD = 100; // Use virtual scrolling above this count
+
   let isOpen = $state(true); // Expanded by default when parent opens
   let showAllImages = $state(false);
+  let scrollContainerRef = $state<HTMLDivElement | null>(null);
 
+  // Determine if we should use virtual scrolling
+  const useVirtual = $derived(showAllImages && images.length > VIRTUAL_THRESHOLD);
+
+  // For virtual mode: calculate number of rows needed
+  const rowCount = $derived(Math.ceil(images.length / COLUMNS));
+
+  // Create virtualizer for row-based scrolling
+  let virtualizer = $derived.by(() => {
+    if (!useVirtual) return null;
+    return createVirtualizer({
+      count: rowCount,
+      getScrollElement: () => scrollContainerRef,
+      estimateSize: () => ROW_HEIGHT,
+      overscan: 3, // Render 3 extra rows above/below
+    });
+  });
+
+  // For non-virtual mode: display limited images
   const displayedImages = $derived(showAllImages ? images : images.slice(0, IMAGE_LIMIT));
+
+  // OPT-036: Pre-compute index map for O(1) lookups
+  const imageIndexMap = $derived(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < images.length; i++) {
+      map.set(images[i].imgsha, i);
+    }
+    return map;
+  });
+
+  // Get images for a specific row (for virtual mode)
+  function getRowImages(rowIndex: number): { image: MediaImage; globalIndex: number }[] {
+    const startIdx = rowIndex * COLUMNS;
+    const rowImages: { image: MediaImage; globalIndex: number }[] = [];
+    for (let col = 0; col < COLUMNS; col++) {
+      const idx = startIdx + col;
+      if (idx < images.length) {
+        rowImages.push({ image: images[idx], globalIndex: idx });
+      }
+    }
+    return rowImages;
+  }
 
   // Cache-bust param to force reload after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
@@ -47,45 +94,99 @@
 
     {#if isOpen}
       <div class="pb-4">
-        <!-- 4x2 Grid -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {#each displayedImages as image, displayIndex}
-            {@const actualIndex = images.findIndex(img => img.imgsha === image.imgsha)}
-            {@const isHero = heroImgsha === image.imgsha}
-            <button
-              onclick={() => onOpenLightbox(actualIndex)}
-              class="image-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"
+        {#if useVirtual && virtualizer}
+          <!-- OPT-039: Virtual scrolling grid for large collections -->
+          <div
+            bind:this={scrollContainerRef}
+            class="overflow-auto rounded-lg"
+            style="height: 500px; max-height: 60vh;"
+          >
+            <div
+              style="height: {virtualizer.getTotalSize()}px; width: 100%; position: relative;"
             >
-              {#if image.thumb_path_sm || image.thumb_path}
-                <img
-                  src={`media://${image.thumb_path_sm || image.thumb_path}?v=${cacheVersion}`}
-                  srcset={`
-                    media://${image.thumb_path_sm || image.thumb_path}?v=${cacheVersion} 1x
-                    ${image.thumb_path_lg ? `, media://${image.thumb_path_lg}?v=${cacheVersion} 2x` : ''}
-                  `}
-                  alt={image.imgnam}
-                  loading="lazy"
-                  class="w-full h-full object-cover"
-                />
-              {:else}
-                <div class="absolute inset-0 flex items-center justify-center text-gray-400">
-                  <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                </div>
-              {/if}
+              {#each virtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
+                <div
+                  class="grid grid-cols-2 md:grid-cols-4 gap-3 absolute top-0 left-0 w-full px-0.5"
+                  style="height: {virtualRow.size}px; transform: translateY({virtualRow.start}px);"
+                >
+                  {#each getRowImages(virtualRow.index) as { image, globalIndex }}
+                    {@const isHero = heroImgsha === image.imgsha}
+                    <button
+                      onclick={() => onOpenLightbox(globalIndex)}
+                      class="image-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"
+                    >
+                      {#if image.thumb_path_sm || image.thumb_path}
+                        <img
+                          src={`media://${image.thumb_path_sm || image.thumb_path}?v=${cacheVersion}`}
+                          srcset={`
+                            media://${image.thumb_path_sm || image.thumb_path}?v=${cacheVersion} 1x
+                            ${image.thumb_path_lg ? `, media://${image.thumb_path_lg}?v=${cacheVersion} 2x` : ''}
+                          `}
+                          alt={image.imgnam}
+                          loading="lazy"
+                          class="w-full h-full object-cover"
+                        />
+                      {:else}
+                        <div class="absolute inset-0 flex items-center justify-center text-gray-400">
+                          <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                      {/if}
 
-              <!-- Hero badge (always visible on hero) -->
-              {#if isHero}
-                <div class="absolute top-2 left-2 px-2 py-0.5 bg-accent text-white text-xs font-medium rounded shadow-sm">
-                  Hero
+                      <!-- Hero badge -->
+                      {#if isHero}
+                        <div class="absolute top-2 left-2 px-2 py-0.5 bg-accent text-white text-xs font-medium rounded shadow-sm">
+                          Hero
+                        </div>
+                      {/if}
+                    </button>
+                  {/each}
                 </div>
-              {/if}
-            </button>
-          {/each}
-        </div>
+              {/each}
+            </div>
+          </div>
+        {:else}
+          <!-- Standard grid (non-virtual) for preview or smaller collections -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {#each displayedImages as image, displayIndex}
+              {@const actualIndex = imageIndexMap().get(image.imgsha) ?? displayIndex}
+              {@const isHero = heroImgsha === image.imgsha}
+              <button
+                onclick={() => onOpenLightbox(actualIndex)}
+                class="image-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"
+              >
+                {#if image.thumb_path_sm || image.thumb_path}
+                  <img
+                    src={`media://${image.thumb_path_sm || image.thumb_path}?v=${cacheVersion}`}
+                    srcset={`
+                      media://${image.thumb_path_sm || image.thumb_path}?v=${cacheVersion} 1x
+                      ${image.thumb_path_lg ? `, media://${image.thumb_path_lg}?v=${cacheVersion} 2x` : ''}
+                    `}
+                    alt={image.imgnam}
+                    loading="lazy"
+                    class="w-full h-full object-cover"
+                  />
+                {:else}
+                  <div class="absolute inset-0 flex items-center justify-center text-gray-400">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                {/if}
 
-        <!-- Show more -->
+                <!-- Hero badge -->
+                {#if isHero}
+                  <div class="absolute top-2 left-2 px-2 py-0.5 bg-accent text-white text-xs font-medium rounded shadow-sm">
+                    Hero
+                  </div>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Show more/less toggle -->
         {#if images.length > IMAGE_LIMIT}
           <div class="mt-3 text-center">
             <button

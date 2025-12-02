@@ -136,6 +136,39 @@ export class SQLiteMediaRepository {
     return rows;
   }
 
+  /**
+   * OPT-037: Find images by location with pagination
+   * For infinite scroll / lazy loading in galleries
+   */
+  async findImagesByLocationPaginated(locid: string, limit: number, offset: number): Promise<{
+    images: MediaImage[];
+    total: number;
+    hasMore: boolean;
+  }> {
+    const [rows, countResult] = await Promise.all([
+      this.db
+        .selectFrom('imgs')
+        .selectAll()
+        .where('locid', '=', locid)
+        .orderBy('imgadd', 'desc')
+        .limit(limit)
+        .offset(offset)
+        .execute(),
+      this.db
+        .selectFrom('imgs')
+        .select((eb) => eb.fn.countAll().as('count'))
+        .where('locid', '=', locid)
+        .executeTakeFirst(),
+    ]);
+
+    const total = Number(countResult?.count || 0);
+    return {
+      images: rows,
+      total,
+      hasMore: offset + rows.length < total,
+    };
+  }
+
   async imageExists(imgsha: string): Promise<boolean> {
     const result = await this.db
       .selectFrom('imgs')

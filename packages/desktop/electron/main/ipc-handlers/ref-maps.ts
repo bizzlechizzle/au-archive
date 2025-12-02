@@ -258,6 +258,34 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
   });
 
   /**
+   * OPT-037: Get reference points within map viewport bounds
+   * Spatial query for Atlas - only loads visible reference points
+   */
+  ipcMain.handle('refMaps:getPointsInBounds', async (_event, bounds: { north: number; south: number; east: number; west: number }) => {
+    try {
+      if (!bounds || typeof bounds.north !== 'number' || typeof bounds.south !== 'number' ||
+          typeof bounds.east !== 'number' || typeof bounds.west !== 'number') {
+        throw new Error('Invalid bounds object');
+      }
+      const points = await repository.getPointsInBounds(bounds);
+      return points.map(p => ({
+        pointId: p.pointId,
+        mapId: p.mapId,
+        name: p.name,
+        description: p.description,
+        lat: p.lat,
+        lng: p.lng,
+        state: p.state,
+        category: p.category,
+        rawMetadata: p.rawMetadata,
+      }));
+    } catch (error) {
+      console.error('Error getting reference points in bounds:', error);
+      return [];
+    }
+  });
+
+  /**
    * Get all points from all maps (for Atlas layer)
    * Filters out:
    * - Points already catalogued in the locs table (GPS proximity match)

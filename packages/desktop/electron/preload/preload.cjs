@@ -162,6 +162,8 @@ const api = {
     // Autocomplete helpers for Type/Sub-Type
     getDistinctTypes: () => invokeAuto("location:getDistinctTypes")(),
     getDistinctSubTypes: () => invokeAuto("location:getDistinctSubTypes")(),
+    // OPT-036: Get all filter options in one efficient call
+    getFilterOptions: () => invokeAuto("location:getFilterOptions")(),
     // Migration 34: View tracking
     trackView: (id) => invokeAuto("location:trackView")(id),
     getViewStats: (id) => invokeAuto("location:getViewStats")(id),
@@ -170,6 +172,9 @@ const api = {
     findRecentlyViewed: (limit) => invokeAuto("location:findRecentlyViewed")(limit),
     // Dashboard: Project locations with hero thumbnails
     findProjects: (limit) => invokeAuto("location:findProjects")(limit),
+    // OPT-037: Viewport-based spatial queries for Atlas
+    findInBounds: (bounds) => invokeAuto("location:findInBounds")(bounds),
+    countInBounds: (bounds) => invokeAuto("location:countInBounds")(bounds),
   },
 
   stats: {
@@ -254,6 +259,8 @@ const api = {
     },
     cancelImport: (importId) => invokeAuto("media:import:cancel")(importId),
     findByLocation: (locid) => invokeAuto("media:findByLocation")(locid),
+    // OPT-039: Paginated image loading for scale
+    findImagesPaginated: (params) => invokeAuto("media:findImagesPaginated")(params),
     findImageByHash: (hash) => invokeAuto("media:findImageByHash")(hash),
     // Media viewing and processing
     openFile: (filePath) => invokeAuto("media:openFile")(filePath),
@@ -461,6 +468,8 @@ const api = {
     findAll: () => invokeAuto("refMaps:findAll")(),
     findById: (mapId) => invokeAuto("refMaps:findById")(mapId),
     getAllPoints: () => invokeAuto("refMaps:getAllPoints")(),
+    // OPT-037: Viewport-based spatial query for reference points
+    getPointsInBounds: (bounds) => invokeAuto("refMaps:getPointsInBounds")(bounds),
     update: (mapId, updates) => invokeAuto("refMaps:update")(mapId, updates),
     delete: (mapId) => invokeAuto("refMaps:delete")(mapId),
     getStats: () => invokeAuto("refMaps:getStats")(),

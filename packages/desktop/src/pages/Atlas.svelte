@@ -19,6 +19,14 @@
     category: string | null;
   }
 
+  // OPT-037: Viewport bounds type for spatial queries
+  interface ViewportBounds {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+  }
+
   let locations = $state<Location[]>([]);
   let loading = $state(true);
   let showFilters = $state(false);
@@ -27,6 +35,10 @@
   // Reference map layer toggle
   let showRefMapLayer = $state(false);
   let refMapPoints = $state<RefMapPoint[]>([]);
+  // OPT-037: Current viewport bounds for spatial queries
+  let currentBounds = $state<ViewportBounds | null>(null);
+  let boundsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const BOUNDS_DEBOUNCE_MS = 300; // Debounce viewport changes to avoid spam
   // Link modal state
   let showLinkModal = $state(false);
   let linkingPoint = $state<{ pointId: string; name: string; lat: number; lng: number } | null>(null);
@@ -40,8 +52,12 @@
   });
 
   // OPT-016: Clean up router subscription on component destroy
+  // OPT-037: Clean up bounds debounce timer
   onDestroy(() => {
     unsubscribeRouter();
+    if (boundsDebounceTimer) {
+      clearTimeout(boundsDebounceTimer);
+    }
   });
 
   const highlightLocid = $derived(routeQuery.locid || null);
@@ -89,6 +105,68 @@
     return Array.from(types).sort();
   });
 
+  /**
+   * OPT-037: Load locations within current viewport bounds
+   * Uses spatial SQL query instead of loading all locations
+   */
+  async function loadLocationsInBounds(bounds: ViewportBounds) {
+    try {
+      loading = true;
+      if (!window.electronAPI?.locations?.findInBounds) {
+        // Fallback to old behavior if API not available
+        console.warn('findInBounds API not available, falling back to findAll');
+        const allLocations = await window.electronAPI.locations.findAll();
+        locations = allLocations;
+        return;
+      }
+      const boundsLocations = await window.electronAPI.locations.findInBounds(bounds);
+      locations = boundsLocations;
+    } catch (error) {
+      console.error('Error loading locations in bounds:', error);
+    } finally {
+      loading = false;
+    }
+  }
+
+  /**
+   * OPT-037: Load reference points within current viewport bounds
+   */
+  async function loadRefPointsInBounds(bounds: ViewportBounds) {
+    if (!window.electronAPI?.refMaps?.getPointsInBounds) {
+      // Fallback to old behavior
+      await loadRefMapPoints();
+      return;
+    }
+    try {
+      const points = await window.electronAPI.refMaps.getPointsInBounds(bounds);
+      refMapPoints = points;
+    } catch (err) {
+      console.error('Error loading reference points in bounds:', err);
+    }
+  }
+
+  /**
+   * OPT-037: Handle viewport bounds change from Map component
+   * Debounced to avoid excessive queries during pan/zoom
+   */
+  function handleBoundsChange(bounds: ViewportBounds) {
+    currentBounds = bounds;
+
+    // Clear existing debounce timer
+    if (boundsDebounceTimer) {
+      clearTimeout(boundsDebounceTimer);
+    }
+
+    // Debounce the actual data loading
+    boundsDebounceTimer = setTimeout(() => {
+      loadLocationsInBounds(bounds);
+      if (showRefMapLayer) {
+        loadRefPointsInBounds(bounds);
+      }
+    }, BOUNDS_DEBOUNCE_MS);
+  }
+
+  // Legacy function for initial load (before bounds are known)
   async function loadLocations() {
     try {
       loading = true;
@@ -96,7 +174,7 @@
         console.error('Electron API not available - preload script may have failed to load');
         return;
       }
-      // Load ALL locations - filtering for mappable ones happens in filteredLocations
+      // Initial load - will be replaced by viewport query once bounds are available
       const allLocations = await window.electronAPI.locations.findAll();
       locations = allLocations;
     } catch (error) {
@@ -229,12 +307,30 @@
   }
 
   onMount(() => {
-    loadLocations();
-    loadRefMapPoints(); // Load imported reference map points
+    // OPT-038: Don't call loadLocations() here - viewport-based loading handles it
+    // The Map component emits onBoundsChange when initialized, triggering loadLocationsInBounds
+    // This prevents double-loading (previously loaded ALL then reloaded in viewport)
+
+    // Load ref map points (small dataset, OK to load all)
+    loadRefMapPoints();
+
+    // Safety fallback: if no bounds received within 3s, load all locations
+    // This handles edge case where Map fails to emit initial bounds
+    const fallbackTimer = setTimeout(() => {
+      if (locations.length === 0 && !currentBounds) {
+        console.warn('[Atlas] No bounds received from Map, falling back to full load');
+        loadLocations();
+      }
+    }, 3000);
+
     // Close context menu on click outside
     const handleClickOutside = () => closeContextMenu();
     document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+
+    return () => {
+      clearTimeout(fallbackTimer);
+      document.removeEventListener('click', handleClickOutside);
+    };
   });
 </script>
 
@@ -314,6 +410,7 @@
       onDeleteRefPoint={handleDeleteRefPoint}
       hideAttribution={true}
       fitBounds={true}
+      onBoundsChange={handleBoundsChange}
     />
     {#if loading}
       <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded shadow-lg z-10">

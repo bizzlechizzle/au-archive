@@ -4,10 +4,12 @@
    * Sub-accordion within Original Assets
    * Per DECISION-020: 4x2 grid, opens in MediaViewer
    * Premium UX: Accent ring hover, play overlay
+   * OPT-039: Virtual scrolling for "Show All" mode with large video collections
    */
   import type { MediaVideo } from './types';
   import { formatDuration } from './types';
   import { thumbnailCache } from '../../stores/thumbnail-cache-store';
+  import { createVirtualizer } from '@tanstack/svelte-virtual';
 
   interface Props {
     videos: MediaVideo[];
@@ -16,11 +18,55 @@
 
   let { videos, onOpenLightbox }: Props = $props();
 
-  const VIDEO_LIMIT = 8; // 4x2 grid
+  const VIDEO_LIMIT = 8; // 4x2 grid for preview
+  const COLUMNS = 4; // Grid columns for virtual mode
+  const ROW_HEIGHT = 140; // Height of each row in pixels
+  const VIRTUAL_THRESHOLD = 100; // Use virtual scrolling above this count
+
   let isOpen = $state(true); // Expanded by default
   let showAllVideos = $state(false);
+  let scrollContainerRef = $state<HTMLDivElement | null>(null);
+
+  // Determine if we should use virtual scrolling
+  const useVirtual = $derived(showAllVideos && videos.length > VIRTUAL_THRESHOLD);
+
+  // For virtual mode: calculate number of rows needed
+  const rowCount = $derived(Math.ceil(videos.length / COLUMNS));
+
+  // Create virtualizer for row-based scrolling
+  let virtualizer = $derived.by(() => {
+    if (!useVirtual) return null;
+    return createVirtualizer({
+      count: rowCount,
+      getScrollElement: () => scrollContainerRef,
+      estimateSize: () => ROW_HEIGHT,
+      overscan: 3,
+    });
+  });
 
   const displayedVideos = $derived(showAllVideos ? videos : videos.slice(0, VIDEO_LIMIT));
+
+  // OPT-036: Pre-compute index map for O(1) lookups
+  const videoIndexMap = $derived(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < videos.length; i++) {
+      map.set(videos[i].vidsha, i);
+    }
+    return map;
+  });
+
+  // Get videos for a specific row (for virtual mode)
+  function getRowVideos(rowIndex: number): { video: MediaVideo; globalIndex: number }[] {
+    const startIdx = rowIndex * COLUMNS;
+    const rowVideos: { video: MediaVideo; globalIndex: number }[] = [];
+    for (let col = 0; col < COLUMNS; col++) {
+      const idx = startIdx + col;
+      if (idx < videos.length) {
+        rowVideos.push({ video: videos[idx], globalIndex: idx });
+      }
+    }
+    return rowVideos;
+  }
 
   // Cache-bust param to force reload after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
@@ -47,48 +93,105 @@
 
     {#if isOpen}
       <div class="pb-4">
-        <!-- 4x2 Grid -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {#each displayedVideos as video, displayIndex}
-            {@const actualIndex = videos.findIndex(v => v.vidsha === video.vidsha)}
-            <button
-              onclick={() => onOpenLightbox(actualIndex)}
-              class="video-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"
+        {#if useVirtual && virtualizer}
+          <!-- OPT-039: Virtual scrolling grid for large collections -->
+          <div
+            bind:this={scrollContainerRef}
+            class="overflow-auto rounded-lg"
+            style="height: 500px; max-height: 60vh;"
+          >
+            <div
+              style="height: {virtualizer.getTotalSize()}px; width: 100%; position: relative;"
             >
-              {#if video.thumb_path_sm || video.thumb_path}
-                <img
-                  src={`media://${video.thumb_path_sm || video.thumb_path}?v=${cacheVersion}`}
-                  alt={video.vidnam}
-                  loading="lazy"
-                  class="w-full h-full object-cover"
-                />
-              {:else}
-                <!-- Fallback: video icon -->
-                <div class="absolute inset-0 flex items-center justify-center text-gray-400 bg-gray-200">
-                  <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                </div>
-              {/if}
+              {#each virtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
+                <div
+                  class="grid grid-cols-2 md:grid-cols-4 gap-3 absolute top-0 left-0 w-full px-0.5"
+                  style="height: {virtualRow.size}px; transform: translateY({virtualRow.start}px);"
+                >
+                  {#each getRowVideos(virtualRow.index) as { video, globalIndex }}
+                    <button
+                      onclick={() => onOpenLightbox(globalIndex)}
+                      class="video-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"
+                    >
+                      {#if video.thumb_path_sm || video.thumb_path}
+                        <img
+                          src={`media://${video.thumb_path_sm || video.thumb_path}?v=${cacheVersion}`}
+                          alt={video.vidnam}
+                          loading="lazy"
+                          class="w-full h-full object-cover"
+                        />
+                      {:else}
+                        <div class="absolute inset-0 flex items-center justify-center text-gray-400 bg-gray-200">
+                          <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                      {/if}
 
-              <!-- Play button overlay (center, on hover) -->
-              <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                <div class="w-12 h-12 bg-black/60 rounded-full flex items-center justify-center">
-                  <svg class="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </div>
-              </div>
+                      <!-- Play button overlay -->
+                      <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div class="w-12 h-12 bg-black/60 rounded-full flex items-center justify-center">
+                          <svg class="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </div>
+                      </div>
 
-              <!-- Duration badge (always visible, bottom-left) -->
-              {#if video.meta_duration}
-                <div class="absolute bottom-2 left-2 px-2 py-0.5 bg-black/70 text-white text-xs font-medium rounded">
-                  {formatDuration(video.meta_duration)}
+                      <!-- Duration badge -->
+                      {#if video.meta_duration}
+                        <div class="absolute bottom-2 left-2 px-2 py-0.5 bg-black/70 text-white text-xs font-medium rounded">
+                          {formatDuration(video.meta_duration)}
+                        </div>
+                      {/if}
+                    </button>
+                  {/each}
                 </div>
-              {/if}
-            </button>
-          {/each}
-        </div>
+              {/each}
+            </div>
+          </div>
+        {:else}
+          <!-- Standard grid for preview or smaller collections -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {#each displayedVideos as video, displayIndex}
+              {@const actualIndex = videoIndexMap().get(video.vidsha) ?? displayIndex}
+              <button
+                onclick={() => onOpenLightbox(actualIndex)}
+                class="video-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"
+              >
+                {#if video.thumb_path_sm || video.thumb_path}
+                  <img
+                    src={`media://${video.thumb_path_sm || video.thumb_path}?v=${cacheVersion}`}
+                    alt={video.vidnam}
+                    loading="lazy"
+                    class="w-full h-full object-cover"
+                  />
+                {:else}
+                  <div class="absolute inset-0 flex items-center justify-center text-gray-400 bg-gray-200">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                {/if}
+
+                <!-- Play button overlay -->
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div class="w-12 h-12 bg-black/60 rounded-full flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </div>
+                </div>
+
+                <!-- Duration badge -->
+                {#if video.meta_duration}
+                  <div class="absolute bottom-2 left-2 px-2 py-0.5 bg-black/70 text-white text-xs font-medium rounded">
+                    {formatDuration(video.meta_duration)}
+                  </div>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
 
         <!-- Show more -->
         {#if videos.length > VIDEO_LIMIT}

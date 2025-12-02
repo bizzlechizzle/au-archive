@@ -202,6 +202,8 @@
     onDeleteRefPoint?: (pointId: string, name: string) => void;
     // Auto-fit map to show all locations on load
     fitBounds?: boolean;
+    // OPT-037: Callback when map viewport changes (for viewport-based data loading)
+    onBoundsChange?: (bounds: { north: number; south: number; east: number; west: number }) => void;
   }
 
   let {
@@ -229,7 +231,8 @@
     onCreateFromRefPoint,
     onLinkRefPoint,
     onDeleteRefPoint,
-    fitBounds = false
+    fitBounds = false,
+    onBoundsChange,
   }: Props = $props();
 
   /**
@@ -576,6 +579,16 @@
 
       map.on('zoomend moveend', () => {
         updateClusters(L);
+        // OPT-037: Notify parent of viewport bounds change
+        if (onBoundsChange && map) {
+          const mapBounds = map.getBounds();
+          onBoundsChange({
+            north: mapBounds.getNorth(),
+            south: mapBounds.getSouth(),
+            east: mapBounds.getEast(),
+            west: mapBounds.getWest(),
+          });
+        }
       });
 
       initCluster();

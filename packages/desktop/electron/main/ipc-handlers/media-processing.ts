@@ -49,6 +49,28 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  /**
+   * OPT-039: Paginated image loading for locations with many images
+   * Returns a chunk of images plus total count and hasMore flag
+   */
+  ipcMain.handle('media:findImagesPaginated', async (_event, params: unknown) => {
+    try {
+      const schema = z.object({
+        locid: z.string().uuid(),
+        limit: z.number().min(1).max(500).default(50),
+        offset: z.number().min(0).default(0),
+      });
+      const { locid, limit, offset } = schema.parse(params);
+      return await mediaRepo.findImagesByLocationPaginated(locid, limit, offset);
+    } catch (error) {
+      console.error('Error finding paginated images:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
   ipcMain.handle('media:findImageByHash', async (_event, hash: unknown) => {
     try {
       const validatedHash = z.string().length(64).parse(hash);

@@ -9,7 +9,15 @@ export interface ElectronAPI {
   platform: string;
 
   locations: {
-    findAll: (filters?: LocationFilters) => Promise<Location[]>;
+    findAll: (filters?: LocationFilters & {
+      // OPT-036: Extended filters for database-side filtering
+      censusRegion?: string;
+      censusDivision?: string;
+      culturalRegion?: string;
+      city?: string;
+      limit?: number;
+      offset?: number;
+    }) => Promise<Location[]>;
     findById: (id: string) => Promise<Location | null>;
     create: (input: LocationInput) => Promise<Location>;
     update: (id: string, input: Partial<LocationInput>) => Promise<Location>;
@@ -21,6 +29,20 @@ export interface ElectronAPI {
     favorites: () => Promise<Location[]>;
     toggleFavorite: (id: string) => Promise<boolean>;
     findNearby: (lat: number, lng: number, radiusKm: number) => Promise<Array<Location & { distance: number }>>;
+    // OPT-037: Viewport-based spatial queries for Atlas
+    findInBounds: (bounds: { north: number; south: number; east: number; west: number }) => Promise<Location[]>;
+    countInBounds: (bounds: { north: number; south: number; east: number; west: number }) => Promise<number>;
+    // OPT-036: Get all filter options in one efficient call
+    getFilterOptions: () => Promise<{
+      states: string[];
+      types: string[];
+      stypes: string[];
+      cities: string[];
+      counties: string[];
+      censusRegions: string[];
+      censusDivisions: string[];
+      culturalRegions: string[];
+    }>;
     // Kanye9: Check for duplicate locations by address
     checkDuplicates: (address: {
       street?: string | null;
@@ -259,6 +281,12 @@ export interface ElectronAPI {
       images: unknown[];
       videos: unknown[];
       documents: unknown[];
+    }>;
+    // OPT-039: Paginated image loading for scale
+    findImagesPaginated: (params: { locid: string; limit?: number; offset?: number }) => Promise<{
+      images: unknown[];
+      total: number;
+      hasMore: boolean;
     }>;
     // Media viewing and processing
     openFile: (filePath: string) => Promise<{ success: boolean }>;
@@ -554,6 +582,8 @@ export interface ElectronAPI {
     findAll: () => Promise<RefMap[]>;
     findById: (mapId: string) => Promise<RefMapWithPoints | null>;
     getAllPoints: () => Promise<RefMapPoint[]>;
+    // OPT-037: Viewport-based spatial query for reference points
+    getPointsInBounds: (bounds: { north: number; south: number; east: number; west: number }) => Promise<RefMapPoint[]>;
     update: (mapId: string, updates: { mapName?: string }) => Promise<RefMap | null>;
     delete: (mapId: string) => Promise<{ success: boolean; error?: string }>;
     getStats: () => Promise<{
