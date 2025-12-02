@@ -89,7 +89,7 @@
       const unsubscribe = window.electronAPI.media.onImportProgress((progress) => {
         progressCurrent = progress.current;
         progressTotal = progress.total;
-        importProgress = `Importing ${progress.current} of ${progress.total} files...`;
+        importProgress = 'Importing...';
       });
 
       // Clean up listener on unmount
@@ -290,12 +290,8 @@
       for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
         const chunk = chunks[chunkIdx];
 
-        // Update progress with chunk info for large imports
-        if (chunks.length > 1) {
-          importProgress = `Chunk ${chunkIdx + 1}/${chunks.length}: importing ${chunk.length} files...`;
-        } else {
-          importProgress = `Importing ${chunk.length} files...`;
-        }
+        // Update progress message (chunk details hidden from user per OPT-035)
+        importProgress = 'Importing...';
 
         const filesForImport = chunk.map((filePath) => {
           const parts = filePath.split(/[\\/]/);

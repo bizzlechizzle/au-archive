@@ -14,7 +14,7 @@
         </span>
       </div>
       <span class="text-xs text-gray-500">
-        {$importProgress.current}/{$importProgress.total}
+        {$importProgress.percent}%
       </span>
     </div>
 
@@ -26,11 +26,8 @@
       ></div>
     </div>
 
-    <!-- Footer row: percentage + cancel -->
-    <div class="flex items-center justify-between">
-      <span class="text-xs text-gray-500">
-        {$importProgress.percent}%
-      </span>
+    <!-- Footer row: cancel button -->
+    <div class="flex items-center justify-end">
       <button
         onclick={() => importStore.cancelImport()}
         class="text-xs text-accent hover:text-red-600 hover:underline"

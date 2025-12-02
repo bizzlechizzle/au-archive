@@ -27,7 +27,7 @@
     <div class="flex items-center gap-2 shrink-0">
       <div class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
       <span class="text-sm font-medium text-gray-700">
-        Importing {$importProgress.current}/{$importProgress.total}
+        Importing...
       </span>
     </div>
 

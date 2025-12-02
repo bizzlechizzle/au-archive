@@ -666,7 +666,7 @@
       ? `${location.locnam} / ${currentSubLocation.subnam}`
       : location.locnam;
     importStore.startJob(location.locid, jobLabel, filePaths.length);
-    importProgress = `Import started (${filePaths.length} files${chunks.length > 1 ? ` in ${chunks.length} chunks` : ''})`;
+    importProgress = 'Import started';
 
     // Aggregate results across all chunks
     let totalImported = 0;
