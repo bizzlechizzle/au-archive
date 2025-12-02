@@ -14,6 +14,10 @@ export const OffsetSchema = z.number().int().nonnegative().default(0);
 export const FilePathSchema = z.string().min(1).max(4096);
 export const UrlSchema = z.string().url().max(2048);
 
+// OPT-058: Chunk progress tracking for unified progress bars
+export const ChunkOffsetSchema = z.number().int().min(0).default(0);
+export const TotalOverallSchema = z.number().int().min(1).optional();
+
 // Validation helper function
 export function validate<T>(schema: z.ZodType<T>, data: unknown): T {
   try {

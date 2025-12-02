@@ -51,34 +51,82 @@ export function createTestDatabase(): {
 }
 
 /**
- * Create test location data
+ * Create test location data with all required fields per database.types.ts
  */
 export function createTestLocation(overrides: Partial<any> = {}) {
   return {
+    // Identity
     locid: crypto.randomUUID(),
-    loc12: `L-${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+    loc12: `L-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
     locnam: 'Test Location',
-    gps_lat: 45.5,
-    gps_lng: -122.6,
+
+    // GPS verification flags (required numbers)
+    gps_verified_on_map: 0,
+
+    // Address verification flags (required numbers)
+    address_verified: 0,
+
+    // Location verification (required numbers)
+    location_verified: 0,
+    country_cultural_region_verified: 0,
+    local_cultural_region_verified: 0,
+
+    // Status flags (required numbers)
+    historic: 0,
+    favorite: 0,
+    project: 0,
+
+    // Documentation flags (required numbers)
+    doc_interior: 0,
+    doc_exterior: 0,
+    doc_drone: 0,
+    doc_web_history: 0,
+    doc_map_find: 0,
+
+    // Name verification flags (required numbers)
+    locnam_verified: 0,
+    historical_name_verified: 0,
+    akanam_verified: 0,
+    locnam_use_the: 0,
+
+    // Hero image focal points (required numbers)
+    hero_focal_x: 0.5,
+    hero_focal_y: 0.5,
+
+    // View tracking (required number)
+    view_count: 0,
+
+    // Timestamps
     locadd: new Date().toISOString(),
     locup: new Date().toISOString(),
+
     ...overrides,
   };
 }
 
 /**
- * Create test image data
+ * Create test image data with all required fields per database.types.ts
  */
 export function createTestImage(locid: string, overrides: Partial<any> = {}) {
   const hash = crypto.randomUUID().replace(/-/g, '');
   return {
+    // Identity
     imgsha: hash,
-    imgnam: `test-image-${hash.slice(0, 8)}.jpg`,
+    imgnam: `${hash}.jpg`,
     imgnamo: 'test-image.jpg',
     imgloc: `/archive/images/${hash}.jpg`,
     imgloco: '/original/path/test-image.jpg',
     locid,
     imgadd: new Date().toISOString(),
+    auth_imp: 'Test User',
+
+    // Required number flags
+    preview_extracted: 0,
+    xmp_synced: 0,
+    hidden: 0,
+    is_live_photo: 0,
+    is_contributed: 0,
+
     ...overrides,
   };
 }

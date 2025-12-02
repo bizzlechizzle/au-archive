@@ -7,6 +7,8 @@ import {
   FilePathSchema,
   UrlSchema,
   PaginationSchema,
+  ChunkOffsetSchema,
+  TotalOverallSchema,
 } from '../../main/ipc-validation';
 import { z } from 'zod';
 
@@ -168,6 +170,57 @@ describe('IPC Validation', () => {
       expect(() => PaginationSchema.parse({ limit: -1, offset: 0 })).toThrow();
       expect(() => PaginationSchema.parse({ limit: 10, offset: -1 })).toThrow();
       expect(() => PaginationSchema.parse({ limit: 2000, offset: 0 })).toThrow();
+    });
+  });
+
+  // OPT-058: Unified progress tracking schemas
+  describe('ChunkOffsetSchema', () => {
+    it('should accept valid chunk offsets', () => {
+      expect(ChunkOffsetSchema.parse(0)).toBe(0);
+      expect(ChunkOffsetSchema.parse(50)).toBe(50);
+      expect(ChunkOffsetSchema.parse(100)).toBe(100);
+      expect(ChunkOffsetSchema.parse(1000)).toBe(1000);
+    });
+
+    it('should use default value of 0 when undefined', () => {
+      expect(ChunkOffsetSchema.parse(undefined)).toBe(0);
+    });
+
+    it('should reject negative chunk offsets', () => {
+      expect(() => ChunkOffsetSchema.parse(-1)).toThrow();
+      expect(() => ChunkOffsetSchema.parse(-50)).toThrow();
+    });
+
+    it('should reject non-integer chunk offsets', () => {
+      expect(() => ChunkOffsetSchema.parse(10.5)).toThrow();
+      expect(() => ChunkOffsetSchema.parse(50.99)).toThrow();
+    });
+  });
+
+  describe('TotalOverallSchema', () => {
+    it('should accept valid total counts', () => {
+      expect(TotalOverallSchema.parse(1)).toBe(1);
+      expect(TotalOverallSchema.parse(50)).toBe(50);
+      expect(TotalOverallSchema.parse(150)).toBe(150);
+      expect(TotalOverallSchema.parse(10000)).toBe(10000);
+    });
+
+    it('should allow undefined (optional)', () => {
+      expect(TotalOverallSchema.parse(undefined)).toBeUndefined();
+    });
+
+    it('should reject zero', () => {
+      expect(() => TotalOverallSchema.parse(0)).toThrow();
+    });
+
+    it('should reject negative totals', () => {
+      expect(() => TotalOverallSchema.parse(-1)).toThrow();
+      expect(() => TotalOverallSchema.parse(-100)).toThrow();
+    });
+
+    it('should reject non-integer totals', () => {
+      expect(() => TotalOverallSchema.parse(10.5)).toThrow();
+      expect(() => TotalOverallSchema.parse(99.99)).toThrow();
     });
   });
 
