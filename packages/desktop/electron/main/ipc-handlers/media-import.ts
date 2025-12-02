@@ -125,9 +125,18 @@ async function getMediaFilesForBagIt(
   return files;
 }
 
+// Phone-camera image formats that can have Live Photo video companions
+// Excludes professional RAW formats (DNG, CR2, NEF, ARW, etc.) which are
+// standalone files, not Live Photo pairs - fixes OPT-054 false positives
+const LIVE_PHOTO_IMAGE_EXTENSIONS = new Set([
+  '.heic', '.heif', '.hif',  // Apple iPhone formats
+  '.jpg', '.jpeg', '.jpe',   // Common phone formats
+]);
+
 /**
  * Migration 23 FIX: Auto-detect Live Photos and SDR duplicates for a location
  * This function matches IMG_xxxx.HEIC with IMG_xxxx.MOV and hides the video component
+ * Only matches phone-camera formats (HEIC/JPEG) - DNG/RAW files are excluded
  * Also detects _sdr duplicate images and hides them
  */
 async function detectLivePhotosForLocation(
@@ -141,31 +150,31 @@ async function detectLivePhotosForLocation(
 
   console.log(`[detectLivePhotos] Scanning ${images.length} images and ${videos.length} videos for location ${locid}`);
 
-  // Build set of image base names for fast lookup
-  const imageBaseNames = new Map<string, string>();
+  // Build map of image base names to {sha, ext} for fast lookup
+  const imageBaseNames = new Map<string, { imgsha: string; ext: string }>();
   for (const img of images) {
-    const ext = path.extname(img.imgnamo);
+    const ext = path.extname(img.imgnamo).toLowerCase();
     const baseName = path.basename(img.imgnamo, ext).toLowerCase();
-    imageBaseNames.set(baseName, img.imgsha);
+    imageBaseNames.set(baseName, { imgsha: img.imgsha, ext });
   }
 
   let livePhotosHidden = 0;
   let sdrHidden = 0;
 
   // Detect Live Photo videos (IMG_xxxx.MOV paired with IMG_xxxx.HEIC)
+  // Only match phone-camera formats - DNG/RAW files are NOT Live Photos
   for (const vid of videos) {
     const ext = path.extname(vid.vidnamo).toLowerCase();
     if (ext === '.mov' || ext === '.mp4') {
       const baseName = path.basename(vid.vidnamo, ext).toLowerCase();
-      if (imageBaseNames.has(baseName)) {
+      const matchingImage = imageBaseNames.get(baseName);
+      // Only treat as Live Photo if the matching image is a phone-camera format
+      if (matchingImage && LIVE_PHOTO_IMAGE_EXTENSIONS.has(matchingImage.ext)) {
         await mediaRepo.setVideoHidden(vid.vidsha, true, 'live_photo');
         await mediaRepo.setVideoLivePhoto(vid.vidsha, true);
-        const imgsha = imageBaseNames.get(baseName);
-        if (imgsha) {
-          await mediaRepo.setImageLivePhoto(imgsha, true);
-        }
+        await mediaRepo.setImageLivePhoto(matchingImage.imgsha, true);
         livePhotosHidden++;
-        console.log(`[detectLivePhotos] Detected Live Photo pair: ${baseName}`);
+        console.log(`[detectLivePhotos] Detected Live Photo pair: ${baseName} (${matchingImage.ext})`);
       }
     }
   }
