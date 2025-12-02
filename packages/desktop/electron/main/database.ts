@@ -1410,6 +1410,238 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 42 completed: ref_map_points linking columns added');
     }
+
+    // Migration 43: Add ON DELETE CASCADE to media tables (imgs, vids, docs, maps)
+    // OPT-036: Location deletion was failing with FOREIGN KEY constraint error
+    // SQLite requires table rebuild to modify foreign key constraints
+    const imgsFkCheck = sqlite.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='imgs'"
+    ).get() as { sql: string } | undefined;
+    const needsCascadeFix = imgsFkCheck?.sql && !imgsFkCheck.sql.includes('ON DELETE CASCADE');
+
+    if (needsCascadeFix) {
+      console.log('Running migration 43: Adding ON DELETE CASCADE to media tables');
+
+      // Disable FK checks during table rebuild
+      sqlite.exec('PRAGMA foreign_keys = OFF');
+
+      try {
+        // ===== REBUILD imgs TABLE =====
+        // Get all current columns dynamically
+        const imgCols = sqlite.prepare('PRAGMA table_info(imgs)').all() as Array<{
+          name: string; type: string; notnull: number; dflt_value: string | null; pk: number
+        }>;
+        const imgColNames = imgCols.map(c => c.name).join(', ');
+
+        sqlite.exec(`
+          CREATE TABLE imgs_new (
+            imgsha TEXT PRIMARY KEY,
+            imgnam TEXT NOT NULL,
+            imgnamo TEXT NOT NULL,
+            imgloc TEXT NOT NULL,
+            imgloco TEXT NOT NULL,
+            locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+            subid TEXT REFERENCES slocs(subid) ON DELETE SET NULL,
+            auth_imp TEXT,
+            imgadd TEXT,
+            meta_exiftool TEXT,
+            meta_width INTEGER,
+            meta_height INTEGER,
+            meta_date_taken TEXT,
+            meta_camera_make TEXT,
+            meta_camera_model TEXT,
+            meta_gps_lat REAL,
+            meta_gps_lng REAL,
+            thumb_path TEXT,
+            preview_path TEXT,
+            preview_extracted INTEGER DEFAULT 0,
+            xmp_synced INTEGER DEFAULT 0,
+            xmp_modified_at TEXT,
+            thumb_path_sm TEXT,
+            thumb_path_lg TEXT,
+            darktable_path TEXT,
+            darktable_processed INTEGER DEFAULT 0,
+            darktable_processed_at TEXT,
+            hidden INTEGER DEFAULT 0,
+            hidden_reason TEXT,
+            is_live_photo INTEGER DEFAULT 0,
+            imported_by_id TEXT,
+            imported_by TEXT,
+            media_source TEXT,
+            is_contributed INTEGER DEFAULT 0,
+            contribution_source TEXT,
+            preview_quality TEXT DEFAULT 'embedded'
+          )
+        `);
+
+        sqlite.exec(`INSERT INTO imgs_new (${imgColNames}) SELECT ${imgColNames} FROM imgs`);
+        sqlite.exec('DROP TABLE imgs');
+        sqlite.exec('ALTER TABLE imgs_new RENAME TO imgs');
+
+        // Recreate indexes for imgs
+        sqlite.exec(`
+          CREATE INDEX IF NOT EXISTS idx_imgs_locid ON imgs(locid);
+          CREATE INDEX IF NOT EXISTS idx_imgs_subid ON imgs(subid);
+          CREATE INDEX IF NOT EXISTS idx_imgs_sha ON imgs(imgsha);
+          CREATE INDEX IF NOT EXISTS idx_imgs_thumb_path ON imgs(thumb_path);
+          CREATE INDEX IF NOT EXISTS idx_imgs_thumb_sm ON imgs(thumb_path_sm);
+          CREATE INDEX IF NOT EXISTS idx_imgs_darktable ON imgs(darktable_processed) WHERE darktable_processed = 0;
+          CREATE INDEX IF NOT EXISTS idx_imgs_hidden ON imgs(hidden) WHERE hidden = 1;
+          CREATE INDEX IF NOT EXISTS idx_imgs_live_photo ON imgs(is_live_photo) WHERE is_live_photo = 1;
+          CREATE INDEX IF NOT EXISTS idx_imgs_imported_by_id ON imgs(imported_by_id) WHERE imported_by_id IS NOT NULL;
+          CREATE INDEX IF NOT EXISTS idx_imgs_preview_quality ON imgs(preview_quality) WHERE preview_quality = 'low'
+        `);
+
+        // ===== REBUILD vids TABLE =====
+        const vidCols = sqlite.prepare('PRAGMA table_info(vids)').all() as Array<{
+          name: string; type: string; notnull: number; dflt_value: string | null; pk: number
+        }>;
+        const vidColNames = vidCols.map(c => c.name).join(', ');
+
+        sqlite.exec(`
+          CREATE TABLE vids_new (
+            vidsha TEXT PRIMARY KEY,
+            vidnam TEXT NOT NULL,
+            vidnamo TEXT NOT NULL,
+            vidloc TEXT NOT NULL,
+            vidloco TEXT NOT NULL,
+            locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+            subid TEXT REFERENCES slocs(subid) ON DELETE SET NULL,
+            auth_imp TEXT,
+            vidadd TEXT,
+            meta_ffmpeg TEXT,
+            meta_exiftool TEXT,
+            meta_duration REAL,
+            meta_width INTEGER,
+            meta_height INTEGER,
+            meta_codec TEXT,
+            meta_fps REAL,
+            meta_date_taken TEXT,
+            meta_gps_lat REAL,
+            meta_gps_lng REAL,
+            thumb_path TEXT,
+            poster_extracted INTEGER DEFAULT 0,
+            xmp_synced INTEGER DEFAULT 0,
+            xmp_modified_at TEXT,
+            thumb_path_sm TEXT,
+            thumb_path_lg TEXT,
+            preview_path TEXT,
+            hidden INTEGER DEFAULT 0,
+            hidden_reason TEXT,
+            is_live_photo INTEGER DEFAULT 0,
+            imported_by_id TEXT,
+            imported_by TEXT,
+            media_source TEXT,
+            is_contributed INTEGER DEFAULT 0,
+            contribution_source TEXT
+          )
+        `);
+
+        sqlite.exec(`INSERT INTO vids_new (${vidColNames}) SELECT ${vidColNames} FROM vids`);
+        sqlite.exec('DROP TABLE vids');
+        sqlite.exec('ALTER TABLE vids_new RENAME TO vids');
+
+        // Recreate indexes for vids
+        sqlite.exec(`
+          CREATE INDEX IF NOT EXISTS idx_vids_locid ON vids(locid);
+          CREATE INDEX IF NOT EXISTS idx_vids_subid ON vids(subid);
+          CREATE INDEX IF NOT EXISTS idx_vids_thumb_path ON vids(thumb_path);
+          CREATE INDEX IF NOT EXISTS idx_vids_thumb_sm ON vids(thumb_path_sm);
+          CREATE INDEX IF NOT EXISTS idx_vids_hidden ON vids(hidden) WHERE hidden = 1;
+          CREATE INDEX IF NOT EXISTS idx_vids_live_photo ON vids(is_live_photo) WHERE is_live_photo = 1;
+          CREATE INDEX IF NOT EXISTS idx_vids_imported_by_id ON vids(imported_by_id) WHERE imported_by_id IS NOT NULL
+        `);
+
+        // ===== REBUILD docs TABLE =====
+        const docCols = sqlite.prepare('PRAGMA table_info(docs)').all() as Array<{
+          name: string; type: string; notnull: number; dflt_value: string | null; pk: number
+        }>;
+        const docColNames = docCols.map(c => c.name).join(', ');
+
+        sqlite.exec(`
+          CREATE TABLE docs_new (
+            docsha TEXT PRIMARY KEY,
+            docnam TEXT NOT NULL,
+            docnamo TEXT NOT NULL,
+            docloc TEXT NOT NULL,
+            docloco TEXT NOT NULL,
+            locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+            subid TEXT REFERENCES slocs(subid) ON DELETE SET NULL,
+            auth_imp TEXT,
+            docadd TEXT,
+            meta_exiftool TEXT,
+            meta_page_count INTEGER,
+            meta_author TEXT,
+            meta_title TEXT,
+            hidden INTEGER DEFAULT 0,
+            hidden_reason TEXT,
+            imported_by_id TEXT,
+            imported_by TEXT,
+            media_source TEXT,
+            is_contributed INTEGER DEFAULT 0,
+            contribution_source TEXT
+          )
+        `);
+
+        sqlite.exec(`INSERT INTO docs_new (${docColNames}) SELECT ${docColNames} FROM docs`);
+        sqlite.exec('DROP TABLE docs');
+        sqlite.exec('ALTER TABLE docs_new RENAME TO docs');
+
+        // Recreate indexes for docs
+        sqlite.exec(`
+          CREATE INDEX IF NOT EXISTS idx_docs_locid ON docs(locid);
+          CREATE INDEX IF NOT EXISTS idx_docs_hidden ON docs(hidden) WHERE hidden = 1
+        `);
+
+        // ===== REBUILD maps TABLE =====
+        const mapCols = sqlite.prepare('PRAGMA table_info(maps)').all() as Array<{
+          name: string; type: string; notnull: number; dflt_value: string | null; pk: number
+        }>;
+        const mapColNames = mapCols.map(c => c.name).join(', ');
+
+        sqlite.exec(`
+          CREATE TABLE maps_new (
+            mapsha TEXT PRIMARY KEY,
+            mapnam TEXT NOT NULL,
+            mapnamo TEXT NOT NULL,
+            maploc TEXT NOT NULL,
+            maploco TEXT NOT NULL,
+            locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+            subid TEXT REFERENCES slocs(subid) ON DELETE SET NULL,
+            auth_imp TEXT,
+            mapadd TEXT,
+            meta_exiftool TEXT,
+            meta_map TEXT,
+            meta_gps_lat REAL,
+            meta_gps_lng REAL,
+            reference TEXT,
+            map_states TEXT,
+            map_verified INTEGER DEFAULT 0,
+            thumb_path_sm TEXT,
+            thumb_path_lg TEXT,
+            preview_path TEXT,
+            imported_by_id TEXT,
+            imported_by TEXT,
+            media_source TEXT
+          )
+        `);
+
+        sqlite.exec(`INSERT INTO maps_new (${mapColNames}) SELECT ${mapColNames} FROM maps`);
+        sqlite.exec('DROP TABLE maps');
+        sqlite.exec('ALTER TABLE maps_new RENAME TO maps');
+
+        // Recreate indexes for maps
+        sqlite.exec(`
+          CREATE INDEX IF NOT EXISTS idx_maps_locid ON maps(locid);
+          CREATE INDEX IF NOT EXISTS idx_maps_thumb_sm ON maps(thumb_path_sm)
+        `);
+
+        console.log('Migration 43 completed: ON DELETE CASCADE added to imgs, vids, docs, maps');
+      } finally {
+        // Re-enable FK checks
+        sqlite.exec('PRAGMA foreign_keys = ON');
+      }
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

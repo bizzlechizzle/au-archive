@@ -1,6 +1,9 @@
 import Database from 'better-sqlite3';
-import { getDatabasePath } from '../main/database';
+import { getDatabasePath, getDatabase } from '../main/database';
 import { getLogger } from './logger-service';
+// OPT-037: Import enrichment services for GPS/address gap repair
+import { GeocodingService } from './geocoding-service';
+import { LocationEnrichmentService, GPSSource } from './location-enrichment-service';
 
 const logger = getLogger();
 
@@ -361,6 +364,100 @@ export class IntegrityChecker {
 
     // Run check every 6 hours
     return hoursSinceLastCheck >= 6;
+  }
+
+  /**
+   * OPT-037: Check and fix GPS/address consistency gaps
+   *
+   * Finds locations that have GPS coordinates but are missing address data
+   * (specifically county, which is needed for cultural region calculation).
+   * Auto-repairs by running reverse geocoding + region enrichment.
+   *
+   * This is a self-healing mechanism that catches locations that were created
+   * before repository-level enrichment was implemented, or where enrichment
+   * failed during creation.
+   *
+   * @returns Summary of found gaps and repair results
+   */
+  async checkGpsAddressConsistency(): Promise<{
+    found: number;
+    fixed: number;
+    errors: string[];
+  }> {
+    const errors: string[] = [];
+    let found = 0;
+    let fixed = 0;
+
+    logger.info('IntegrityChecker', 'Starting GPS/address consistency check');
+
+    try {
+      const dbPath = getDatabasePath();
+      const db = new Database(dbPath);
+
+      // Find locations with GPS but no county (indicates missing geocode)
+      const gaps = db.prepare(`
+        SELECT locid, locnam, gps_lat, gps_lng, address_state, gps_source
+        FROM locs
+        WHERE gps_lat IS NOT NULL
+          AND gps_lng IS NOT NULL
+          AND (address_county IS NULL OR address_county = '')
+      `).all() as Array<{
+        locid: string;
+        locnam: string;
+        gps_lat: number;
+        gps_lng: number;
+        address_state: string | null;
+        gps_source: string | null;
+      }>;
+
+      found = gaps.length;
+      db.close();
+
+      if (found > 0) {
+        logger.warn('IntegrityChecker', `Found ${found} locations with GPS but no address`, {
+          locations: gaps.map(g => g.locnam).slice(0, 10), // Log first 10
+        });
+
+        // Use Kysely connection for enrichment
+        const kyselyDb = getDatabase();
+        const geocodingService = new GeocodingService(kyselyDb);
+        const enrichmentService = new LocationEnrichmentService(kyselyDb, geocodingService);
+
+        for (const gap of gaps) {
+          try {
+            // Use existing GPS source or default to 'integrity_fix'
+            const source: GPSSource = (gap.gps_source as GPSSource) || 'manual';
+
+            await enrichmentService.enrichFromGPS(gap.locid, {
+              lat: gap.gps_lat,
+              lng: gap.gps_lng,
+              source,
+              stateHint: gap.address_state,
+            });
+            fixed++;
+            logger.info('IntegrityChecker', `Fixed GPS/address gap for: ${gap.locnam}`);
+          } catch (e) {
+            const errMsg = e instanceof Error ? e.message : String(e);
+            errors.push(`Failed to fix ${gap.locnam}: ${errMsg}`);
+            logger.warn('IntegrityChecker', `Failed to fix gap for ${gap.locnam}`, { error: errMsg });
+          }
+        }
+
+        logger.info('IntegrityChecker', `GPS/address consistency check complete`, {
+          found,
+          fixed,
+          errors: errors.length,
+        });
+      } else {
+        logger.info('IntegrityChecker', 'No GPS/address gaps found');
+      }
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      errors.push(`GPS consistency check error: ${errMsg}`);
+      logger.error('IntegrityChecker', 'GPS consistency check failed', error as Error);
+    }
+
+    return { found, fixed, errors };
   }
 }
 

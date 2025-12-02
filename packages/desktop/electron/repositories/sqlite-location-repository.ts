@@ -1,5 +1,7 @@
 import { Kysely } from 'kysely';
 import { randomUUID } from 'crypto';
+import path from 'path';
+import fs from 'fs/promises';
 import type { Database, LocsTable } from '../main/database.types';
 import {
   LocationRepository,
@@ -17,9 +19,29 @@ import { GPSValidator } from '../services/gps-validator';
 import { calculateRegionFields } from '../services/region-service';
 // ADV-005: Import logger for deletion audit
 import { getLogger } from '../services/logger-service';
+// OPT-036: MediaPathService for thumbnail/preview path derivation
+import { MediaPathService } from '../services/media-path-service';
+// OPT-037: LocationEnrichmentService for auto-enrichment from GPS
+import { LocationEnrichmentService, GPSSource } from '../services/location-enrichment-service';
+import { GeocodingService } from '../services/geocoding-service';
 
 export class SQLiteLocationRepository implements LocationRepository {
+  // OPT-037: Lazy-initialized enrichment service to avoid circular dependencies
+  private enrichmentService: LocationEnrichmentService | null = null;
+
   constructor(private readonly db: Kysely<Database>) {}
+
+  /**
+   * OPT-037: Get or create the enrichment service (lazy initialization)
+   * This avoids circular dependencies at construction time.
+   */
+  private getEnrichmentService(): LocationEnrichmentService {
+    if (!this.enrichmentService) {
+      const geocodingService = new GeocodingService(this.db);
+      this.enrichmentService = new LocationEnrichmentService(this.db, geocodingService);
+    }
+    return this.enrichmentService;
+  }
 
   async create(input: LocationInput): Promise<Location> {
     const locid = randomUUID();
@@ -147,6 +169,26 @@ export class SQLiteLocationRepository implements LocationRepository {
         modified_at: locadd,
       })
       .execute();
+
+    // OPT-037: Auto-enrich from GPS if coordinates were provided
+    // This runs reverse geocoding to get address + region data
+    if (input.gps?.lat != null && input.gps?.lng != null) {
+      try {
+        const enrichment = this.getEnrichmentService();
+        // Map input source to GPSSource type, default to 'manual'
+        const source: GPSSource = (input.gps.source as GPSSource) || 'manual';
+        await enrichment.enrichFromGPS(locid, {
+          lat: input.gps.lat,
+          lng: input.gps.lng,
+          source,
+          stateHint: input.address?.state,
+        });
+        console.log(`[LocationRepository] Auto-enriched location ${locid} from GPS`);
+      } catch (enrichError) {
+        // Non-fatal: log and continue - location was created successfully
+        console.warn(`[LocationRepository] Auto-enrichment failed for ${locid}:`, enrichError);
+      }
+    }
 
     const location = await this.findById(locid);
     if (!location) {
@@ -403,6 +445,35 @@ export class SQLiteLocationRepository implements LocationRepository {
       .where('locid', '=', id)
       .execute();
 
+    // OPT-037: Re-enrich from GPS when coordinates change
+    // This handles the case where GPS is updated but address was not provided
+    const gpsUpdated = input.gps?.lat !== undefined || input.gps?.lng !== undefined;
+    const inputAnyGps = input as any;
+    const flatGpsUpdated = inputAnyGps.gps_lat !== undefined || inputAnyGps.gps_lng !== undefined;
+
+    if (gpsUpdated || flatGpsUpdated) {
+      // Get the updated location to check if we need enrichment
+      const updatedLoc = await this.findById(id);
+
+      // Only enrich if we have GPS but missing county (indicates need for reverse geocode)
+      if (updatedLoc?.gps?.lat != null && updatedLoc?.gps?.lng != null && !updatedLoc.address?.county) {
+        try {
+          const enrichment = this.getEnrichmentService();
+          const source: GPSSource = (updatedLoc.gps.source as GPSSource) || 'manual';
+          await enrichment.enrichFromGPS(id, {
+            lat: updatedLoc.gps.lat,
+            lng: updatedLoc.gps.lng,
+            source,
+            stateHint: updatedLoc.address?.state,
+          });
+          console.log(`[LocationRepository] Re-enriched location ${id} after GPS update`);
+        } catch (enrichError) {
+          // Non-fatal: log and continue
+          console.warn(`[LocationRepository] Re-enrichment failed for ${id}:`, enrichError);
+        }
+      }
+    }
+
     const location = await this.findById(id);
     if (!location) {
       throw new Error('Failed to update location');
@@ -410,39 +481,156 @@ export class SQLiteLocationRepository implements LocationRepository {
     return location;
   }
 
+  /**
+   * OPT-036: Delete location with full file cleanup
+   *
+   * 1. Collects all media SHAs for thumbnail/preview cleanup
+   * 2. Deletes DB records (CASCADE handles media tables)
+   * 3. Background cleanup of files (non-blocking for fast UI response)
+   *    - Location folder (original media + BagIt archive)
+   *    - Thumbnails/previews/posters (global hash-bucketed)
+   *    - Video proxies
+   */
   async delete(id: string): Promise<void> {
-    // ADV-005: Log deletion for audit trail before cascade deletes occur
     const logger = getLogger();
-    try {
-      const location = await this.findById(id);
-      if (location) {
-        // Get counts of associated media for audit log
-        const imgCount = await this.db.selectFrom('imgs').select((eb) => eb.fn.countAll().as('count')).where('locid', '=', id).executeTakeFirst();
-        const vidCount = await this.db.selectFrom('vids').select((eb) => eb.fn.countAll().as('count')).where('locid', '=', id).executeTakeFirst();
-        const docCount = await this.db.selectFrom('docs').select((eb) => eb.fn.countAll().as('count')).where('locid', '=', id).executeTakeFirst();
 
-        logger.info('LocationRepository', `DELETION AUDIT: Deleting location`, {
-          locid: id,
-          locnam: location.locnam,
-          state: location.address?.state,
-          type: location.type,
-          cascade_media: {
-            images: Number(imgCount?.count || 0),
-            videos: Number(vidCount?.count || 0),
-            documents: Number(docCount?.count || 0),
-          },
-          deleted_at: new Date().toISOString(),
-        });
-      }
-    } catch (auditError) {
-      // Don't block deletion if audit logging fails
-      console.warn('[LocationRepository] Audit logging failed:', auditError);
+    // 1. Get location for folder path construction
+    const location = await this.findById(id);
+    if (!location) {
+      throw new Error(`Location not found: ${id}`);
     }
 
-    await this.db
-      .deleteFrom('locs')
+    // 2. Collect all media SHAs with separate queries (simpler, reliable)
+    const imgShas = await this.db
+      .selectFrom('imgs')
+      .select('imgsha as sha')
       .where('locid', '=', id)
       .execute();
+
+    const vidShas = await this.db
+      .selectFrom('vids')
+      .select('vidsha as sha')
+      .where('locid', '=', id)
+      .execute();
+
+    const docShas = await this.db
+      .selectFrom('docs')
+      .select('docsha as sha')
+      .where('locid', '=', id)
+      .execute();
+
+    // Combine with type annotations
+    const mediaShas: Array<{ sha: string; type: 'img' | 'vid' | 'doc' }> = [
+      ...imgShas.map(r => ({ sha: r.sha, type: 'img' as const })),
+      ...vidShas.map(r => ({ sha: r.sha, type: 'vid' as const })),
+      ...docShas.map(r => ({ sha: r.sha, type: 'doc' as const })),
+    ];
+
+    // 3. Get video proxy paths (separate table with trigger cleanup)
+    const videoShas = mediaShas.filter(m => m.type === 'vid').map(m => m.sha);
+    const proxyPaths: string[] = [];
+    if (videoShas.length > 0) {
+      const proxies = await this.db
+        .selectFrom('video_proxies')
+        .select('proxy_path')
+        .where('vidsha', 'in', videoShas)
+        .execute();
+      proxyPaths.push(...proxies.map(p => p.proxy_path).filter((p): p is string => !!p));
+    }
+
+    // 4. Audit log BEFORE deletion
+    logger.info('LocationRepository', `DELETION AUDIT: Deleting location with files`, {
+      locid: id,
+      locnam: location.locnam,
+      loc12: location.loc12,
+      state: location.address?.state,
+      type: location.type,
+      media_count: mediaShas.length,
+      video_proxies: proxyPaths.length,
+      deleted_at: new Date().toISOString(),
+    });
+
+    // 5. Delete DB records FIRST (fast, atomic with CASCADE)
+    await this.db.deleteFrom('locs').where('locid', '=', id).execute();
+
+    // 6. Background file cleanup (non-blocking for instant UI response)
+    const archivePath = await this.getArchivePath();
+    const loc12 = location.loc12;
+    const state = location.address?.state?.toUpperCase() || 'XX';
+    const locType = location.type || 'Unknown';
+    const slocnam = location.slocnam || location.locnam.substring(0, 12);
+
+    setImmediate(async () => {
+      try {
+        // 6a. Delete location folder (contains all original media + BagIt)
+        if (archivePath && loc12) {
+          // Sanitize folder name components (remove special chars)
+          const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 50);
+          const locationFolder = path.join(
+            archivePath,
+            'locations',
+            `${state}-${sanitize(locType)}`,
+            `${sanitize(slocnam)}-${loc12}`
+          );
+
+          try {
+            await fs.rm(locationFolder, { recursive: true, force: true });
+            logger.info('LocationRepository', `Deleted location folder: ${locationFolder}`);
+          } catch (folderErr) {
+            // Folder might not exist if no media was ever imported
+            logger.warn('LocationRepository', `Could not delete folder (may not exist): ${locationFolder}`);
+          }
+        }
+
+        // 6b. Delete thumbnails/previews/posters by SHA
+        if (archivePath && mediaShas.length > 0) {
+          const mediaPathService = new MediaPathService(archivePath);
+
+          for (const { sha, type } of mediaShas) {
+            // Thumbnails (all sizes including legacy)
+            for (const size of [400, 800, 1920, undefined] as const) {
+              const thumbPath = mediaPathService.getThumbnailPath(sha, size as 400 | 800 | 1920 | undefined);
+              await fs.unlink(thumbPath).catch(() => {});
+            }
+
+            // Previews (images/RAW only)
+            if (type === 'img') {
+              const previewPath = mediaPathService.getPreviewPath(sha);
+              await fs.unlink(previewPath).catch(() => {});
+            }
+
+            // Posters (videos only)
+            if (type === 'vid') {
+              const posterPath = mediaPathService.getPosterPath(sha);
+              await fs.unlink(posterPath).catch(() => {});
+            }
+          }
+        }
+
+        // 6c. Delete video proxies
+        for (const proxyPath of proxyPaths) {
+          await fs.unlink(proxyPath).catch(() => {});
+        }
+
+        logger.info('LocationRepository', `File cleanup complete for location ${id}`);
+      } catch (err) {
+        logger.warn('LocationRepository', `Background file cleanup error for ${id}`, {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    });
+  }
+
+  /**
+   * Get archive path from settings
+   */
+  private async getArchivePath(): Promise<string | null> {
+    const result = await this.db
+      .selectFrom('settings')
+      .select('value')
+      .where('key', '=', 'archive_path')
+      .executeTakeFirst();
+    return result?.value || null;
   }
 
   async count(filters?: LocationFilters): Promise<number> {

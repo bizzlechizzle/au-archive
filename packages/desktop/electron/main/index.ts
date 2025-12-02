@@ -8,6 +8,8 @@ import { getHealthMonitor } from '../services/health-monitor';
 import { getRecoverySystem } from '../services/recovery-system';
 import { getConfigService } from '../services/config-service';
 import { getLogger } from '../services/logger-service';
+// OPT-037: Import integrity checker for GPS/address gap repair
+import { getIntegrityChecker } from '../services/integrity-checker';
 import { getBackupScheduler } from '../services/backup-scheduler';
 import { initBrowserViewManager, destroyBrowserViewManager } from '../services/browser-view-manager';
 import { startBookmarkAPIServer, stopBookmarkAPIServer } from '../services/bookmark-api-server';
@@ -229,6 +231,21 @@ async function startupOrchestrator(): Promise<void> {
       }
     } else {
       logger.info('Main', 'Database health check passed, no recovery needed');
+    }
+
+    // OPT-037: Step 4b - Check and fix GPS/address consistency gaps
+    logger.info('Main', 'Step 4b: Checking GPS/address consistency');
+    try {
+      const integrityChecker = getIntegrityChecker();
+      const gpsCheck = await integrityChecker.checkGpsAddressConsistency();
+      if (gpsCheck.found > 0) {
+        logger.info('Main', `Fixed ${gpsCheck.fixed}/${gpsCheck.found} GPS/address gaps`);
+      } else {
+        logger.info('Main', 'No GPS/address gaps found');
+      }
+    } catch (gpsCheckError) {
+      // Non-fatal: log warning but continue startup
+      logger.warn('Main', 'GPS/address consistency check failed', gpsCheckError as Error);
     }
 
     // Step 5: Register IPC handlers

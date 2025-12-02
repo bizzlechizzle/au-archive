@@ -14,7 +14,12 @@
 
 - Media tables reference files by SHA (primary key) plus location/sub-location IDs.
 - Imports remain idempotent; rerunning import on same directory only adds links, not bytes.
-- Deletions mark records inactive but never delete bytes without user command.
+- **Location deletion is permanent and destructive** (OPT-036):
+  - Requires PIN confirmation as explicit "user command"
+  - Cascade deletes all linked media records (imgs, vids, docs, maps)
+  - Removes original media files from the location folder
+  - Removes generated thumbnails, previews, posters, and video proxies
+  - Cannot be undone — backup before deleting
 
 ## Audit Trail
 

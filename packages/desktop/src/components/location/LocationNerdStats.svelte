@@ -820,7 +820,7 @@
     </div>
     <div class="bg-red-50 border border-red-200 rounded p-4 mb-4">
       <p class="text-sm text-red-700 mb-2">This action cannot be undone.</p>
-      <p class="text-sm text-red-600">Media files will remain on disk.</p>
+      <p class="text-sm text-red-600 font-medium">All media files will be permanently deleted.</p>
     </div>
     <div class="mb-4">
       <label for="delete-pin" class="block text-sm font-medium text-gray-700 mb-1">Enter PIN to confirm</label>
