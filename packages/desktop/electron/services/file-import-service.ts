@@ -72,6 +72,15 @@ export interface ImportResult {
   // Returned from transaction so enrichment can run outside critical path
   _gpsForEnrichment?: { lat: number; lng: number } | null;
   _locid?: string;
+  // OPT-059: Video proxy data for post-transaction generation (fixes SQLite deadlock)
+  // Proxy generation moved outside transaction because it writes to video_proxies table
+  // using main db connection, which would deadlock waiting for transaction to release write lock
+  _videoProxyData?: {
+    vidsha: string;
+    archivePath: string;
+    width: number;
+    height: number;
+  } | null;
 }
 
 export interface ImportSessionResult {
@@ -327,6 +336,29 @@ export class FileImportService {
         if (result.success && !result.duplicate && result._gpsForEnrichment && result._locid) {
           this.runPostImportEnrichment(result._locid, result._gpsForEnrichment, location).catch(err => {
             console.warn('[FileImport] Post-import enrichment failed (non-blocking):', err);
+          });
+        }
+
+        // OPT-059: Generate video proxy fire-and-forget AFTER progress fires
+        // CRITICAL: This runs OUTSIDE the transaction to avoid SQLite deadlock
+        // The proxy generation writes to video_proxies table using main db connection
+        if (result.success && !result.duplicate && result._videoProxyData) {
+          const proxyData = result._videoProxyData;
+          console.log('[FileImport] Step 7b: Generating video proxy (post-transaction, non-blocking)...');
+          generateVideoProxy(
+            this.db,
+            this.archivePath,
+            proxyData.vidsha,
+            proxyData.archivePath,
+            { width: proxyData.width, height: proxyData.height }
+          ).then(proxyResult => {
+            if (proxyResult.success) {
+              console.log(`[FileImport] Video proxy generated: ${proxyResult.proxyPath}`);
+            } else {
+              console.warn('[FileImport] Video proxy generation failed (non-fatal):', proxyResult.error);
+            }
+          }).catch(err => {
+            console.warn('[FileImport] Video proxy generation error (non-fatal):', err);
           });
         }
       } catch (error) {
@@ -889,34 +921,20 @@ export class FileImportService {
     );
     console.log('[FileImport] Step 7 complete in', Date.now() - insertStart, 'ms');
 
-    // OPT-053: Step 7b - Generate video proxy for instant playback (Immich model)
-    // Proxy is generated AFTER file is organized so it's placed alongside the video
-    // Non-fatal: if proxy fails, import still succeeds (fallback to original on playback)
+    // OPT-059: Video proxy data prepared for post-transaction generation
+    // CRITICAL: Proxy generation moved OUTSIDE transaction to fix SQLite deadlock
+    // The deadlock occurred because generateVideoProxy writes to video_proxies table
+    // using the main db connection while the transaction holds the write lock
+    // Now we return metadata and generate proxy fire-and-forget after progress fires
+    let videoProxyData: ImportResult['_videoProxyData'] = null;
     if (type === 'video' && metadata?.width && metadata?.height) {
-      console.log('[FileImport] Step 7b: Generating 720p video proxy (OPT-053 Immich model)...');
-      const proxyStart = Date.now();
-      try {
-        const proxyResult = await generateVideoProxy(
-          this.db,
-          this.archivePath,
-          hash,
-          archivePath, // Use organized path (where video now lives)
-          { width: metadata.width, height: metadata.height }
-        );
-        if (proxyResult.success) {
-          console.log('[FileImport] Step 7b complete in', Date.now() - proxyStart, 'ms');
-          console.log(`[FileImport]   Proxy: ${proxyResult.proxyPath} (${proxyResult.proxyWidth}x${proxyResult.proxyHeight})`);
-        } else {
-          // Non-fatal: log warning but don't fail import
-          console.warn('[FileImport] Video proxy generation failed (non-fatal):', proxyResult.error);
-          warnings.push(`Video proxy generation failed: ${proxyResult.error}`);
-        }
-      } catch (proxyError) {
-        // Non-fatal: catch any unexpected errors
-        const errMsg = proxyError instanceof Error ? proxyError.message : String(proxyError);
-        console.warn('[FileImport] Video proxy generation error (non-fatal):', errMsg);
-        warnings.push(`Video proxy generation error: ${errMsg}`);
-      }
+      videoProxyData = {
+        vidsha: hash,
+        archivePath: archivePath,
+        width: metadata.width,
+        height: metadata.height,
+      };
+      console.log('[FileImport] Step 7b: Video proxy data prepared for post-transaction generation');
     }
 
     // FIX-PROGRESS: Steps 8a-8b (GPS enrichment, geocoding) moved to importFiles()
@@ -949,6 +967,9 @@ export class FileImportService {
       // Processed outside transaction after progress fires
       _gpsForEnrichment: gpsForGeocode,
       _locid: file.locid,
+      // OPT-059: Return video proxy data for post-transaction generation
+      // Fixes SQLite deadlock by moving proxy write outside transaction
+      _videoProxyData: videoProxyData,
     };
   }
 
