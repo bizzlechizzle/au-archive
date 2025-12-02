@@ -288,19 +288,16 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
   /**
    * Get all points from all maps (for Atlas layer)
    * OPT-046: Removed O(N×M) findCataloguedRefPoints call that was blocking
-   * main process for ~9 seconds. Now only filters out linked points (fast).
-   * Catalogued filtering moved to Settings page where it's expected to be slow.
+   * main process for ~9 seconds. Catalogued filtering moved to Settings page.
+   * OPT-049: Linked point filtering now done in SQL with LIMIT for performance.
    */
   ipcMain.handle('refMaps:getAllPoints', async () => {
     try {
+      // OPT-049: Repository now handles linked filtering and limit in SQL
+      // No JS filtering needed - query already returns only unlinked points
       const points = await repository.getAllPoints();
 
-      // OPT-046: Only filter out linked points (database query, fast)
-      // Previously called findCataloguedRefPoints() which did O(N×M) haversine
-      // calculations blocking the main thread for 9+ seconds
-      const unlinkedPoints = points.filter(p => !p.linkedLocid);
-
-      return unlinkedPoints.map(p => ({
+      return points.map(p => ({
         pointId: p.pointId,
         mapId: p.mapId,
         name: p.name,
@@ -525,6 +522,9 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
       let pointsToImport = parseResult.points;
       let mergedCount = 0;
       let enrichedCount = 0;
+      // OPT-049: Track enriched point coordinates to filter from import
+      // Points used for enrichment should NOT be imported as ref_map_points
+      const enrichedCoords = new Set<string>();
 
       // If skipping duplicates, filter them and merge names into existing points
       if (options.skipDuplicates) {
@@ -577,6 +577,9 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
 
           if (enrichResult.success) {
             enrichedCount++;
+            // OPT-049: Track this point's coordinates so we don't import it as a duplicate
+            // The GPS data is now on the location - no need to also have it as a ref point
+            enrichedCoords.add(`${point.lat},${point.lng}`);
             console.log(`[RefMaps] Enriched location ${enrichment.existingLocId}: GPS + address=${enrichResult.updated.address}, regions=${enrichResult.updated.regions} for "${point.name}"`);
             // Verification: Warn if GPS applied but regions failed
             if (!enrichResult.updated.regions) {
@@ -586,6 +589,18 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
           } else {
             console.warn(`[RefMaps] Enrichment failed for ${enrichment.existingLocId}: ${enrichResult.error}`);
           }
+        }
+      }
+
+      // OPT-049: Filter out enriched points from import
+      // These points have transferred their GPS to locations - importing them would create
+      // duplicate pins on the map (location pin + ref point pin at same coords)
+      if (enrichedCoords.size > 0) {
+        const beforeCount = pointsToImport.length;
+        pointsToImport = pointsToImport.filter(p => !enrichedCoords.has(`${p.lat},${p.lng}`));
+        const filteredCount = beforeCount - pointsToImport.length;
+        if (filteredCount > 0) {
+          console.log(`[RefMaps] Filtered ${filteredCount} enriched points from import (GPS already applied to locations)`);
         }
       }
 

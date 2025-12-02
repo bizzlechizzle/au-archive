@@ -342,8 +342,12 @@
       const result = await window.electronAPI.refMaps.deletePoint(pointId);
       if (result.success) {
         toasts.success(`Deleted "${name}"`);
-        // Refresh reference points to update map
-        await loadRefMapPoints();
+        // OPT-049: Refresh reference points using viewport bounds if available
+        if (currentBounds) {
+          await loadRefPointsInBounds(currentBounds);
+        } else {
+          await loadRefMapPoints();
+        }
       } else {
         toasts.error(result.error || 'Failed to delete point');
       }
@@ -367,8 +371,13 @@
       const result = await window.electronAPI.refMaps.linkToLocation(linkingPoint.pointId, locationId);
       if (result.success) {
         toasts.success(`Linked "${linkingPoint.name}" to location`);
-        // Refresh reference points to update map (linked points are filtered out)
-        await loadRefMapPoints();
+        // OPT-049: Refresh reference points using viewport bounds if available
+        // Linked points are filtered out by the query
+        if (currentBounds) {
+          await loadRefPointsInBounds(currentBounds);
+        } else {
+          await loadRefMapPoints();
+        }
       } else {
         toasts.error(result.error || 'Failed to link');
       }
@@ -398,8 +407,9 @@
     // DO NOT load all locations here - that causes beach ball freezing
     // The Map component will emit bounds after leaflet initializes
 
-    // Load ref map points (small dataset, OK to load all)
-    loadRefMapPoints();
+    // OPT-049: Reference points loaded on-demand when checkbox toggled, not on mount
+    // This prevents loading 10k+ points before user even wants to see them
+    // See $effect below that triggers on showRefMapLayer change
 
     // Close context menu on click outside
     const handleClickOutside = () => closeContextMenu();
@@ -433,6 +443,14 @@
           );
         }
       }
+    }
+  });
+
+  // OPT-049: Load reference points on-demand when checkbox toggled ON
+  // Only loads if we have bounds available and data hasn't been loaded yet
+  $effect(() => {
+    if (showRefMapLayer && refMapPoints.length === 0 && currentBounds) {
+      loadRefPointsInBounds(currentBounds);
     }
   });
 </script>

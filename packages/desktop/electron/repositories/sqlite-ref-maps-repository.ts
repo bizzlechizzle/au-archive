@@ -213,12 +213,16 @@ export class SqliteRefMapsRepository {
   }
 
   /**
-   * Get all points from all maps (for Atlas display)
+   * Get all unlinked points from all maps (for Atlas display)
+   * OPT-049: Filters linked points in SQL and applies limit for performance
+   * @param limit Maximum points to return (default 5000)
    */
-  async getAllPoints(): Promise<RefMapPoint[]> {
+  async getAllPoints(limit: number = 5000): Promise<RefMapPoint[]> {
     const rows = await this.db
       .selectFrom('ref_map_points')
       .selectAll()
+      .where('linked_locid', 'is', null)  // Filter linked points in SQL, not JS
+      .limit(limit)
       .execute();
 
     return rows.map(rowToRefMapPoint);
