@@ -259,6 +259,8 @@ const api = {
     },
     cancelImport: (importId) => invokeAuto("media:import:cancel")(importId),
     findByLocation: (locid) => invokeAuto("media:findByLocation")(locid),
+    // OPT-039: Paginated image loading for scale
+    findImagesPaginated: (params) => invokeAuto("media:findImagesPaginated")(params),
     findImageByHash: (hash) => invokeAuto("media:findImageByHash")(hash),
     // Media viewing and processing
     openFile: (filePath) => invokeAuto("media:openFile")(filePath),

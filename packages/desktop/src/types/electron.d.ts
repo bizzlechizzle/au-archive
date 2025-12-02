@@ -282,6 +282,12 @@ export interface ElectronAPI {
       videos: unknown[];
       documents: unknown[];
     }>;
+    // OPT-039: Paginated image loading for scale
+    findImagesPaginated: (params: { locid: string; limit?: number; offset?: number }) => Promise<{
+      images: unknown[];
+      total: number;
+      hasMore: boolean;
+    }>;
     // Media viewing and processing
     openFile: (filePath: string) => Promise<{ success: boolean }>;
     generateThumbnail: (sourcePath: string, hash: string) => Promise<string | null>;
