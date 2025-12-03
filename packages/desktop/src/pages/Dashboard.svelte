@@ -143,13 +143,15 @@
     }
 
     try {
-      recentLocations = await window.electronAPI.locations.findRecentlyViewed(5);
+      // OPT-068: Fetch extra to ensure 4 remain after deduplication
+      recentLocations = await window.electronAPI.locations.findRecentlyViewed(15);
     } catch (e) {
       console.error('Failed to load recent locations:', e);
     }
 
     try {
-      recentImports = await window.electronAPI.imports.findRecent(5) as ImportRecord[];
+      // OPT-068: Fetch extra to ensure 4 remain after deduplication
+      recentImports = await window.electronAPI.imports.findRecent(15) as ImportRecord[];
     } catch (e) {
       console.error('Failed to load recent imports:', e);
     }
@@ -179,6 +181,20 @@
     } catch (e) {
       console.error('Failed to load dashboard hero:', e);
     }
+
+    // OPT-068: Deduplicate locations across sections (Projects > Imports > Recent)
+    // Priority: Projects > Imports > Recent. Each location appears only once.
+    const projectIds = new Set(projects.map(p => p.locid));
+    recentImports = recentImports
+      .filter(imp => !imp.locid || !projectIds.has(imp.locid))
+      .slice(0, 4);
+    const shownIds = new Set([
+      ...projectIds,
+      ...recentImports.filter(imp => imp.locid).map(imp => imp.locid!)
+    ]);
+    recentLocations = recentLocations
+      .filter(loc => !shownIds.has(loc.locid))
+      .slice(0, 4);
 
     loading = false;
   });
