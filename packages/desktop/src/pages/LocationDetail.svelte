@@ -283,8 +283,9 @@
   });
 
   // Load functions
-  // Migration 28: Check if this is a host location (has sub-locations)
-  const isHostLocation = $derived(sublocations.length > 0);
+  // Migration 28 + OPT-062: Check if this is a host location
+  // Use database flag OR existing sub-locations (flag allows host-only without sub-locations yet)
+  const isHostLocation = $derived(location?.isHostOnly || sublocations.length > 0);
 
   async function loadLocation() {
     try {
