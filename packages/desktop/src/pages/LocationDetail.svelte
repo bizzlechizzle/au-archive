@@ -936,14 +936,16 @@
     </div>
   {:else}
     <!-- Hero outside max-w container for full-width stretch -->
+    <!-- OPT-065: Pass allImagesForAuthors so hero can be found even when filtered images is empty -->
     <LocationHero
-      {images}
+      images={allImagesForAuthors.length > 0 ? allImagesForAuthors : images}
       heroImgsha={currentSubLocation?.hero_imgsha || location.hero_imgsha || null}
       focalX={currentSubLocation ? 0.5 : (location.hero_focal_x ?? 0.5)}
       focalY={currentSubLocation ? 0.5 : (location.hero_focal_y ?? 0.5)}
       onRegeneratePreview={async (imgsha) => {
         // Issue 1: Regenerate preview for low-quality hero image
-        const img = images.find(i => i.imgsha === imgsha);
+        // OPT-065: Search all images, not just filtered
+        const img = allImagesForAuthors.find(i => i.imgsha === imgsha) || images.find(i => i.imgsha === imgsha);
         if (img && window.electronAPI?.media?.regenerateSingleFile) {
           await window.electronAPI.media.regenerateSingleFile(imgsha, img.imgloc);
           await loadLocation(); // Refresh to get new thumbnail paths
