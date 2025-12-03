@@ -448,6 +448,36 @@ export class FileImportService {
       }
     }
 
+    // Step 11b: Auto-set hero image for sub-location (OPT-061)
+    // When importing to a sub-location, also set the sub-location's hero image
+    // This ensures sub-location thumbnails appear on the host location page immediately
+    const subid = files[0]?.subid;
+    if (subid && imported > 0) {
+      try {
+        const subLocation = await this.db
+          .selectFrom('slocs')
+          .select(['subid', 'hero_imgsha'])
+          .where('subid', '=', subid)
+          .executeTakeFirst();
+
+        if (subLocation && !subLocation.hero_imgsha) {
+          // Find the first successfully imported image (not duplicate, not skipped)
+          const firstImage = results.find(r => r.type === 'image' && r.success && !r.duplicate && !r.skipped);
+          if (firstImage && firstImage.hash) {
+            await this.db
+              .updateTable('slocs')
+              .set({ hero_imgsha: firstImage.hash })
+              .where('subid', '=', subid)
+              .execute();
+            console.log('[FileImport] Step 11b: Auto-set sub-location hero image:', firstImage.hash.slice(0, 12) + '...');
+          }
+        }
+      } catch (subHeroError) {
+        // Non-fatal - don't fail import if sub-location auto-hero fails
+        console.warn('[FileImport] Step 11b: Sub-location auto-hero failed (non-fatal):', subHeroError);
+      }
+    }
+
     return {
       total: files.length,
       imported,
