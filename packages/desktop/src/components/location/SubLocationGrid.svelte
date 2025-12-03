@@ -92,12 +92,6 @@
               </h3>
             </div>
 
-            <!-- Primary badge -->
-            {#if subloc.is_primary}
-              <div class="absolute top-2 right-2 px-2.5 py-0.5 bg-amber-500 text-white text-xs font-medium rounded-full shadow-sm">
-                Primary
-              </div>
-            {/if}
           </div>
         </button>
       {/each}

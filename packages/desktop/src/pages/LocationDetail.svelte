@@ -104,6 +104,10 @@
   let heroTitleFontSize = $state(108); // Start at max, shrink as needed
   let heroContainerEl = $state<HTMLElement | null>(null);
 
+  // OPT-066: Track if sub-locations tagline wraps to multiple lines
+  let sublocTaglineEl = $state<HTMLElement | null>(null);
+  let sublocTaglineWraps = $state(false);
+
   // Derived: Combined media list for MediaViewer (images first, then videos)
   const imageMediaList = $derived(images.map(img => ({
     hash: img.imgsha, path: img.imgloc,
@@ -278,6 +282,28 @@
     if (container) {
       resizeObserver.observe(container);
     }
+
+    return () => resizeObserver.disconnect();
+  });
+
+  // OPT-066: Detect if sub-locations tagline wraps to multiple lines
+  function checkTaglineWrap() {
+    const el = sublocTaglineEl;
+    if (!el) { sublocTaglineWraps = false; return; }
+    // Compare scroll height to single line height (font-size 18px * ~1.5 line-height ≈ 27px)
+    // If taller than ~32px, it's wrapping
+    sublocTaglineWraps = el.scrollHeight > 32;
+  }
+
+  $effect(() => {
+    const el = sublocTaglineEl;
+    const subs = sublocations; // Track dependency
+    if (!el) return;
+
+    requestAnimationFrame(checkTaglineWrap);
+
+    const resizeObserver = new ResizeObserver(checkTaglineWrap);
+    resizeObserver.observe(el);
 
     return () => resizeObserver.disconnect();
   });
@@ -973,9 +999,12 @@
           </button>
         {:else if isHostLocation && sublocations.length > 0}
           <!-- Buildings tagline (host location view) - list building names -->
-          <div class="host-tagline block w-[90%] mx-auto mt-0 uppercase text-center">
-            {#each sublocations as subloc, i}
-              {#if i > 0}<span class="mx-2"></span>{/if}
+          <!-- OPT-066: Wrap to second row if wider than hero title; add top margin when wrapped for balance -->
+          <div
+            bind:this={sublocTaglineEl}
+            class="host-tagline flex flex-wrap justify-center gap-x-4 gap-y-1 w-[88%] mx-auto uppercase text-center {sublocTaglineWraps ? 'mt-2' : 'mt-0'}"
+          >
+            {#each sublocations as subloc}
               <button
                 onclick={() => router.navigate(`/location/${locationId}/sub/${subloc.subid}`)}
                 class="hover:underline"
@@ -1297,11 +1326,11 @@
   }
 
   /* Host location tagline (cinematic - tiny link under title) */
+  /* OPT-066: Allow wrapping for many sub-locations */
   .host-tagline {
     color: var(--color-accent, #b9975c); /* Accent color */
     font-size: 18px; /* Taller tagline */
     letter-spacing: 0.08em;
     font-weight: 700; /* Bold */
-    white-space: nowrap; /* Single line ALWAYS */
   }
 </style>
