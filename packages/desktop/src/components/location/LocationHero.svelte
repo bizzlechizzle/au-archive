@@ -1,6 +1,9 @@
 <script lang="ts">
   /**
-   * LocationHero - Cinematic hero image with seamless gradient fade
+   * LocationHero - Hero image display (pure photograph, no overlay)
+   * DESIGN_SYSTEM: Ulm School / Functional Minimalism
+   * - Photography is the hero - no gradient overlays
+   * - Solid metadata bar handled by parent (LocationDetail)
    * Per LILBITS: ~100 lines, single responsibility
    * Per PUEA: Show placeholder with import prompt if no images
    * Migration 22: Uses focal point from location data
@@ -69,24 +72,21 @@
   const objectPosition = $derived(`${focalX * 100}% ${focalY * 100}%`);
 </script>
 
-<!-- Hero with 2.35:1 aspect, capped at 40% viewport height -->
+<!-- DESIGN_SYSTEM: Hero with 2.35:1 aspect, capped at 40vh, NO gradient overlay -->
 {#if images.length > 0 && heroImage}
-  <div class="w-full bg-[#fffbf7]">
-    <div
-      class="relative w-full max-h-[40vh] mx-auto overflow-hidden"
-      style="aspect-ratio: 2.35 / 1;"
-    >
+  <div class="hero-container">
+    <div class="hero-wrapper">
       {#if heroSrc}
         <img
           src={`media://${heroSrc}?v=${cacheVersion}`}
           alt={heroImage.imgnam || 'Hero Image'}
-          class="absolute inset-0 w-full h-full object-cover"
+          class="hero-image"
           style="object-position: {objectPosition};"
         />
         <!-- Issue 1: Quality indicator and regenerate button for low-quality hero -->
         {#if isLowQuality && onRegeneratePreview}
-          <div class="absolute top-3 right-3 z-10 flex items-center gap-2">
-            <span class="px-2 py-1 bg-amber-500/90 text-white text-xs font-medium rounded-full shadow-sm flex items-center gap-1">
+          <div class="quality-indicator">
+            <span class="quality-badge">
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
@@ -95,7 +95,7 @@
             <button
               onclick={handleRegenerate}
               disabled={regenerating}
-              class="px-2 py-1 bg-white/90 hover:bg-white text-gray-700 text-xs font-medium rounded-full shadow-sm flex items-center gap-1 transition disabled:opacity-50"
+              class="regenerate-btn"
               title="Regenerate higher quality preview"
             >
               {#if regenerating}
@@ -113,46 +113,135 @@
           </div>
         {/if}
         {#if regenerateError}
-          <div class="absolute top-12 right-3 z-10 px-2 py-1 bg-red-500/90 text-white text-xs rounded shadow-sm">
+          <div class="error-toast">
             {regenerateError}
           </div>
         {/if}
       {:else}
-        <div class="absolute inset-0 flex items-center justify-center text-gray-400">
+        <div class="hero-placeholder">
           <svg class="w-24 h-24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         </div>
       {/if}
-      <!-- Seamless light gradient: bottom 12.5% solid, S-curve fade to 80% -->
-      <div
-        class="absolute bottom-0 left-0 right-0 h-[80%] pointer-events-none"
-        style="background: linear-gradient(to top,
-          #fffbf7 0%,
-          #fffbf7 12.5%,
-          rgba(255,251,247,0.95) 20%,
-          rgba(255,251,247,0.82) 30%,
-          rgba(255,251,247,0.62) 42%,
-          rgba(255,251,247,0.40) 54%,
-          rgba(255,251,247,0.22) 66%,
-          rgba(255,251,247,0.10) 78%,
-          rgba(255,251,247,0.03) 90%,
-          transparent 100%
-        );"
-      ></div>
+      <!-- DESIGN_SYSTEM: NO gradient overlay - pure photograph per DESIGN.md -->
     </div>
   </div>
 {:else}
   <!-- PUEA: Graceful empty state - matches hero constraints -->
-  <div class="w-full bg-[#fffbf7]">
-    <div class="w-full max-h-[40vh] mx-auto bg-gradient-to-br from-gray-100 to-[#fffbf7] flex items-center justify-center" style="aspect-ratio: 2.35 / 1;">
-    <div class="text-center text-gray-400">
-      <svg class="w-24 h-24 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-      </svg>
-      <p class="text-lg">No Hero Image</p>
-      <p class="text-sm mt-1">Import images to set a hero image</p>
-    </div>
+  <div class="hero-container">
+    <div class="hero-wrapper hero-empty">
+      <div class="empty-content">
+        <svg class="w-24 h-24 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        <p class="text-lg">No Hero Image</p>
+        <p class="text-sm mt-1">Import images to set a hero image</p>
+      </div>
     </div>
   </div>
 {/if}
+
+<style>
+  /* DESIGN_SYSTEM: Hero uses design tokens, no gradient overlay */
+  .hero-container {
+    width: 100%;
+    background: var(--color-bg);
+  }
+
+  .hero-wrapper {
+    position: relative;
+    width: 100%;
+    max-height: 40vh;
+    margin: 0 auto;
+    overflow: hidden;
+    aspect-ratio: 2.35 / 1;
+  }
+
+  .hero-image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .hero-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-muted);
+  }
+
+  .hero-empty {
+    background: var(--color-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .empty-content {
+    text-align: center;
+    color: var(--color-text-muted);
+  }
+
+  .quality-indicator {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-3);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .quality-badge {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    background: rgba(245, 158, 11, 0.9); /* warning color with opacity */
+    color: white;
+    font-size: var(--text-xs);
+    font-weight: var(--font-medium);
+    border-radius: var(--radius-full);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .regenerate-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--neutral-700);
+    font-size: var(--text-xs);
+    font-weight: var(--font-medium);
+    border-radius: var(--radius-full);
+    box-shadow: var(--shadow-sm);
+    transition: background var(--duration-fast) var(--ease-out);
+  }
+
+  .regenerate-btn:hover {
+    background: white;
+  }
+
+  .regenerate-btn:disabled {
+    opacity: 0.5;
+  }
+
+  .error-toast {
+    position: absolute;
+    top: 48px;
+    right: var(--space-3);
+    z-index: 10;
+    padding: var(--space-1) var(--space-2);
+    background: rgba(239, 68, 68, 0.9); /* error color with opacity */
+    color: white;
+    font-size: var(--text-xs);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-sm);
+  }
+</style>

@@ -54,6 +54,52 @@
   // FIX 5.4: Backup status listener
   let unsubscribeBackup: (() => void) | null = null;
 
+  // DESIGN_SYSTEM: System theme change listener
+  let mediaQueryListener: ((e: MediaQueryListEvent) => void) | null = null;
+
+  /**
+   * DESIGN_SYSTEM: Apply theme to document root
+   * Called before first paint to prevent flash of wrong theme
+   */
+  function applyTheme(theme: 'dark' | 'light' | 'system') {
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+  }
+
+  /**
+   * DESIGN_SYSTEM: Initialize theme on app startup
+   * Loads saved preference and applies before first paint
+   */
+  async function initializeTheme() {
+    try {
+      if (window.electronAPI?.settings) {
+        const savedTheme = await window.electronAPI.settings.get('theme');
+        const theme = (savedTheme as 'dark' | 'light' | 'system') || 'dark';
+        applyTheme(theme);
+
+        // If using system theme, listen for OS theme changes
+        if (theme === 'system') {
+          const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+          mediaQueryListener = (e: MediaQueryListEvent) => {
+            document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+          };
+          mediaQuery.addEventListener('change', mediaQueryListener);
+        }
+      } else {
+        // Default to dark if settings not available
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    } catch (error) {
+      console.error('Error initializing theme:', error);
+      // Default to dark on error
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  }
+
   /**
    * Check if login is required based on user setting
    */
@@ -161,6 +207,9 @@
   }
 
   onMount(() => {
+    // DESIGN_SYSTEM: Initialize theme before first paint
+    initializeTheme();
+
     router.init();
     checkFirstRun();
 
@@ -210,6 +259,10 @@
     if (unsubscribeBackup) {
       unsubscribeBackup();
     }
+    // DESIGN_SYSTEM: Cleanup system theme listener
+    if (mediaQueryListener) {
+      window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', mediaQueryListener);
+    }
   });
 
   $effect(() => {
@@ -221,10 +274,11 @@
 </script>
 
 {#if checkingSetup}
-  <div class="min-h-screen flex items-center justify-center bg-gray-50">
+  <!-- DESIGN_SYSTEM: Use design tokens for loading screen -->
+  <div class="min-h-screen flex items-center justify-center bg-[var(--color-bg)]">
     <div class="text-center">
-      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-accent mb-4"></div>
-      <p class="text-gray-600">Loading...</p>
+      <div class="inline-block rounded-full h-12 w-12 border-b-2 border-[var(--color-accent)] mb-4"></div>
+      <p class="text-[var(--color-text-muted)]">Loading...</p>
     </div>
   </div>
 {:else if currentRoute.path === '/setup'}

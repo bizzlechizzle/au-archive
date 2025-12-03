@@ -99,18 +99,22 @@ export const FILE_CONFIG = {
   LOCATION_FOLDER_PATTERN: '[SLOCNAM]-[LOC12]' as const,
 } as const;
 
-// Theme Colors
+// Theme Colors - DESIGN_SYSTEM: Updated for dark/light mode support
+// Note: Use CSS custom properties (var(--color-*)) when possible
+// These constants are for non-CSS contexts (e.g., Leaflet markers, canvas)
 export const THEME = {
-  ACCENT: '#b9975c',
-  BACKGROUND: '#fffbf7',
-  FOREGROUND: '#454545',
-  // P3a: All pin colors changed to accent color per v010steps.md
+  ACCENT: '#fbbf24', // DESIGN_SYSTEM: Amber accent
+  BACKGROUND_DARK: '#0a0a0b',
+  BACKGROUND_LIGHT: '#fafafa',
+  FOREGROUND_DARK: '#f4f4f6',
+  FOREGROUND_LIGHT: '#09090b',
+  // DESIGN_SYSTEM: GPS confidence colors per DESIGN.md
   GPS_CONFIDENCE_COLORS: {
-    verified: '#b9975c',
-    high: '#b9975c',
-    medium: '#b9975c',
-    low: '#b9975c',
-    none: '#b9975c',
+    verified: '#22c55e', // Green
+    high: '#3b82f6',     // Blue
+    medium: '#eab308',   // Amber
+    low: '#ef4444',      // Red
+    none: '#6b7280',     // Gray
   },
 } as const;
 

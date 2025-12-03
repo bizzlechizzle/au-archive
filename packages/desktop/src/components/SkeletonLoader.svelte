@@ -110,8 +110,9 @@
     }
   }
 
+  /* DESIGN_SYSTEM: Card uses design tokens */
   .skeleton-card {
-    background: white;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
   }
 </style>

@@ -457,7 +457,7 @@
       aria-labelledby="attribution-title"
     >
       <div
-        class="bg-[#fff8f2] rounded-lg shadow-xl w-full max-w-md mx-4"
+        class="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-md mx-4"
         onclick={(e) => e.stopPropagation()}
       >
         <div class="p-5 flex justify-between items-center">

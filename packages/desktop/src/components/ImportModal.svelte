@@ -683,11 +683,11 @@
   >
     <!-- Modal - wider for 2-column layout -->
     <div
-      class="bg-[#fff8f2] rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative z-[100000]"
+      class="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative z-[100000]"
       onclick={(e) => e.stopPropagation()}
     >
       <!-- Header -->
-      <div class="p-5 flex justify-between items-center bg-[#fff8f2]">
+      <div class="p-5 flex justify-between items-center bg-[var(--color-surface)]">
         <div>
           <h2 id="modal-title" class="text-xl font-semibold text-foreground">
             New Location
@@ -969,7 +969,7 @@
 
       <!-- Footer - hide when showing intelligence -->
       {#if !showIntelligence || intelligenceDismissed || !$importModal.prefilledData?.gps_lat}
-      <div class="p-5 bg-[#fff8f2] flex justify-end items-center">
+      <div class="p-5 bg-[var(--color-surface)] flex justify-end items-center">
         <div class="flex gap-3">
           <button
             onclick={handleCancel}

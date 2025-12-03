@@ -55,6 +55,10 @@
   let databaseExpanded = $state(false);
   let healthExpanded = $state(false);
 
+  // DESIGN_SYSTEM: Theme state (dark/light/system)
+  let appearanceExpanded = $state(true); // Open by default for visibility
+  let currentTheme = $state<'dark' | 'light' | 'system'>('dark');
+
   // Storage bar state - OPT-047: Enhanced with database-backed tracking
   let storageStats = $state<{
     totalBytes: number;
@@ -254,6 +258,9 @@
       importMap = settings.import_map !== 'false'; // Default true
       mapImport = settings.map_import !== 'false'; // Default true
 
+      // DESIGN_SYSTEM: Load theme preference
+      currentTheme = (settings.theme as 'dark' | 'light' | 'system') || 'dark';
+
       // Load users for multi-user mode
       await loadUsers();
     } catch (error) {
@@ -269,6 +276,42 @@
       users = await window.electronAPI.users.findAll();
     } catch (error) {
       console.error('Error loading users:', error);
+    }
+  }
+
+  /**
+   * DESIGN_SYSTEM: Set theme and persist to settings
+   * Applies data-theme attribute to document root for CSS custom property switching
+   */
+  async function setTheme(theme: 'dark' | 'light' | 'system') {
+    currentTheme = theme;
+
+    // Apply theme to document
+    applyTheme(theme);
+
+    // Persist to settings
+    if (window.electronAPI?.settings) {
+      try {
+        await window.electronAPI.settings.set('theme', theme);
+        saveMessage = `Theme set to ${theme}`;
+        setTimeout(() => saveMessage = '', 2000);
+      } catch (error) {
+        console.error('Error saving theme:', error);
+      }
+    }
+  }
+
+  /**
+   * DESIGN_SYSTEM: Apply theme to document root
+   * Called both from setTheme and on initial load (via App.svelte)
+   */
+  function applyTheme(theme: 'dark' | 'light' | 'system') {
+    if (theme === 'system') {
+      // Use system preference
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
     }
   }
 
@@ -1816,8 +1859,61 @@
     </div>
   {:else}
     <div class="max-w-2xl">
+      <!-- DESIGN_SYSTEM: Appearance Settings -->
+      <div class="bg-surface rounded-lg border border-default mb-6 {appearanceExpanded ? 'p-6' : 'px-6 py-4'}">
+        <!-- Accordion Header -->
+        <button
+          onclick={() => appearanceExpanded = !appearanceExpanded}
+          aria-expanded={appearanceExpanded}
+          class="w-full flex items-center justify-between text-left hover:opacity-80 transition-opacity"
+        >
+          <h2 class="text-lg font-semibold text-primary leading-none">Appearance</h2>
+          <svg
+            class="w-5 h-5 text-accent transition-transform duration-200 {appearanceExpanded ? 'rotate-180' : ''}"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {#if appearanceExpanded}
+        <div class="mt-4">
+          <label class="block text-sm font-medium text-secondary mb-3">Theme</label>
+          <div class="flex gap-2">
+            <button
+              onclick={() => setTheme('dark')}
+              class="flex-1 px-4 py-3 rounded-md text-sm font-medium transition-all {currentTheme === 'dark' ? 'bg-accent text-neutral-950 shadow-sm' : 'bg-surface-elevated border border-default text-secondary hover:border-strong'}"
+            >
+              <span class="block text-center">Dark</span>
+              <span class="block text-xs opacity-70 mt-1">Moody, focused</span>
+            </button>
+            <button
+              onclick={() => setTheme('light')}
+              class="flex-1 px-4 py-3 rounded-md text-sm font-medium transition-all {currentTheme === 'light' ? 'bg-accent text-neutral-950 shadow-sm' : 'bg-surface-elevated border border-default text-secondary hover:border-strong'}"
+            >
+              <span class="block text-center">Light</span>
+              <span class="block text-xs opacity-70 mt-1">Bright, clear</span>
+            </button>
+            <button
+              onclick={() => setTheme('system')}
+              class="flex-1 px-4 py-3 rounded-md text-sm font-medium transition-all {currentTheme === 'system' ? 'bg-accent text-neutral-950 shadow-sm' : 'bg-surface-elevated border border-default text-secondary hover:border-strong'}"
+            >
+              <span class="block text-center">System</span>
+              <span class="block text-xs opacity-70 mt-1">Match OS</span>
+            </button>
+          </div>
+          <p class="text-xs text-muted mt-3">
+            Theme changes apply immediately across all pages.
+          </p>
+        </div>
+        {/if}
+      </div>
+
       <!-- User Management -->
-      <div class="bg-white rounded-lg shadow mb-6 {usersExpanded ? 'p-6' : 'px-6 py-4'}">
+      <div class="bg-surface rounded-lg border border-default mb-6 {usersExpanded ? 'p-6' : 'px-6 py-4'}">
         <!-- Accordion Header -->
         <button
           onclick={() => usersExpanded = !usersExpanded}

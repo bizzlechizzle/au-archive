@@ -1125,22 +1125,7 @@
               class="absolute inset-0 w-full h-full object-cover"
               style="object-position: {pendingFocalX * 100}% {pendingFocalY * 100}%;"
             />
-            <!-- Gradient overlay (identical to LocationHero) -->
-            <div
-              class="absolute bottom-0 left-0 right-0 h-[80%] pointer-events-none"
-              style="background: linear-gradient(to top,
-                #fffbf7 0%,
-                #fffbf7 12.5%,
-                rgba(255,251,247,0.95) 20%,
-                rgba(255,251,247,0.82) 30%,
-                rgba(255,251,247,0.62) 42%,
-                rgba(255,251,247,0.40) 54%,
-                rgba(255,251,247,0.22) 66%,
-                rgba(255,251,247,0.10) 78%,
-                rgba(255,251,247,0.03) 90%,
-                transparent 100%
-              );"
-            ></div>
+            <!-- DESIGN_SYSTEM: No gradient overlay - pure photograph per DESIGN.md -->
             <!-- Draggable focal point pin -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div

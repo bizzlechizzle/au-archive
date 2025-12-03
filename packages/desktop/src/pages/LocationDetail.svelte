@@ -997,13 +997,12 @@
       }}
     />
 
-    <!-- Title overlaps hero gradient: centered, premium text fitting - up to 2 lines -->
-    <!-- OPT-069: Add bottom padding when sub-location tagline wraps to 2 rows for visual balance -->
-    <div class="max-w-6xl mx-auto px-8 relative z-20 -mt-10 {sublocTaglineWraps ? 'pb-10' : 'pb-4'}">
-      <div bind:this={heroContainerEl} class="w-[88%] mx-auto text-center">
+    <!-- DESIGN_SYSTEM: Solid metadata bar below hero (per DESIGN.md - no gradient overlay) -->
+    <div class="hero-metadata-bar">
+      <div bind:this={heroContainerEl} class="hero-metadata-content">
         <h1
           bind:this={heroTitleEl}
-          class="hero-title font-bold uppercase leading-tight text-center mb-0"
+          class="hero-title"
           style="font-size: {heroTitleFontSize}px;"
           title={isViewingSubLocation ? currentSubLocation?.subnam : location.locnam}
         >
@@ -1012,17 +1011,15 @@
           <!-- Host location tagline (sub-location view) -->
           <button
             onclick={() => router.navigate(`/location/${locationId}`)}
-            class="host-tagline block w-[90%] mx-auto mt-0 uppercase hover:underline text-center"
+            class="host-tagline block"
           >
             {location.locnam}
           </button>
         {:else if isHostLocation && sublocations.length > 0}
           <!-- Buildings tagline (host location view) - list building names -->
-          <!-- OPT-066: Wrap to second row if wider than hero title; add top margin when wrapped for balance -->
-          <!-- OPT-069: Increase top margin when wrapped (2 rows) for better visual balance -->
           <div
             bind:this={sublocTaglineEl}
-            class="host-tagline flex flex-wrap justify-center gap-x-4 gap-y-1 w-[88%] mx-auto uppercase text-center mt-0"
+            class="host-tagline host-tagline-list"
           >
             {#each sublocations as subloc}
               <button
@@ -1033,6 +1030,8 @@
           </div>
         {/if}
       </div>
+      <!-- DESIGN_SYSTEM: GPS Confidence Bar (4px) per DESIGN.md -->
+      <div class="gps-confidence-bar gps-confidence-{location.gps_source || 'none'}"></div>
     </div>
 
     <div class="max-w-6xl mx-auto px-8 pt-6 pb-8">
@@ -1162,7 +1161,7 @@
       aria-labelledby="attribution-title"
     >
       <div
-        class="bg-[#fff8f2] rounded-lg shadow-xl w-full max-w-md mx-4"
+        class="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-md mx-4"
         onclick={(e) => e.stopPropagation()}
       >
         <div class="p-5 flex justify-between items-center">
@@ -1334,23 +1333,70 @@
 </div>
 
 <style>
-  /* Hero title: auto-sized to fit max 2 lines, never truncate */
-  .hero-title {
-    color: #454545;
-    letter-spacing: 0.02em; /* Tight, premium spacing */
-    word-spacing: -0.02em; /* Cohesive word blocks */
-    font-weight: 800;
-    text-wrap: balance; /* Balances word distribution across lines */
-    /* Hand-painted sign style - hard offset shadow, accent gold */
-    text-shadow: 3px 3px 0 rgba(185, 151, 92, 0.5);
+  /* DESIGN_SYSTEM: Solid metadata bar below hero (per DESIGN.md) */
+  .hero-metadata-bar {
+    background: var(--color-surface);
+    width: 100%;
   }
 
-  /* Host location tagline (cinematic - tiny link under title) */
-  /* OPT-066: Allow wrapping for many sub-locations */
+  .hero-metadata-content {
+    max-width: 72rem; /* 6xl */
+    margin: 0 auto;
+    padding: var(--space-6) var(--space-8);
+    text-align: center;
+  }
+
+  /* Hero title: auto-sized to fit max 2 lines, never truncate */
+  .hero-title {
+    color: var(--color-text-primary);
+    letter-spacing: 0.02em;
+    word-spacing: -0.02em;
+    font-weight: var(--font-bold);
+    text-wrap: balance;
+    text-transform: uppercase;
+    line-height: 1.1;
+    margin-bottom: var(--space-2);
+  }
+
+  /* Host location tagline */
   .host-tagline {
-    color: var(--color-accent, #b9975c); /* Accent color */
-    font-size: 18px; /* Taller tagline */
+    color: var(--color-accent);
+    font-size: var(--text-lg);
     letter-spacing: 0.08em;
-    font-weight: 700; /* Bold */
+    font-weight: var(--font-semibold);
+    text-transform: uppercase;
+  }
+
+  .host-tagline-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-4);
+  }
+
+  /* DESIGN_SYSTEM: GPS Confidence Bar (4px) per DESIGN.md */
+  .gps-confidence-bar {
+    height: 4px;
+    width: 100%;
+  }
+
+  .gps-confidence-map_confirmed {
+    background: var(--gps-verified);
+  }
+
+  .gps-confidence-photo_exif {
+    background: var(--gps-high);
+  }
+
+  .gps-confidence-reverse_geocode {
+    background: var(--gps-medium);
+  }
+
+  .gps-confidence-manual {
+    background: var(--gps-low);
+  }
+
+  .gps-confidence-none {
+    background: var(--gps-none);
   }
 </style>
