@@ -258,8 +258,8 @@
       importMap = settings.import_map !== 'false'; // Default true
       mapImport = settings.map_import !== 'false'; // Default true
 
-      // DESIGN_SYSTEM: Load theme preference
-      currentTheme = (settings.theme as 'dark' | 'light' | 'system') || 'dark';
+      // DESIGN_SYSTEM: Load theme preference (light is default)
+      currentTheme = (settings.theme as 'dark' | 'light' | 'system') || 'light';
 
       // Load users for multi-user mode
       await loadUsers();

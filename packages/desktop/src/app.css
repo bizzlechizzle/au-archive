@@ -1056,11 +1056,13 @@
   .text-error { color: var(--color-error); }
   .text-info { color: var(--color-info); }
 
-  /* DESIGN_SYSTEM: Override Tailwind gray utilities with design tokens */
-  .text-gray-400 { color: var(--color-text-muted); }
-  .text-gray-500 { color: var(--color-text-muted); }
-  .text-gray-600 { color: var(--color-text-tertiary); }
-  .text-gray-700 { color: var(--color-text-secondary); }
+  /* DESIGN_SYSTEM: Override Tailwind gray text utilities with design tokens */
+  .text-gray-400 { color: var(--color-text-muted) !important; }
+  .text-gray-500 { color: var(--color-text-muted) !important; }
+  .text-gray-600 { color: var(--color-text-tertiary) !important; }
+  .text-gray-700 { color: var(--color-text-secondary) !important; }
+  .text-gray-800 { color: var(--color-text-secondary) !important; }
+  .text-gray-900 { color: var(--color-text-primary) !important; }
 
   /* Semantic background colors */
   .bg-base { background-color: var(--color-bg); }
@@ -1069,26 +1071,30 @@
   .bg-accent { background-color: var(--color-accent); }
 
   /* DESIGN_SYSTEM: Override Tailwind gray backgrounds with design tokens */
-  .bg-gray-50 { background-color: var(--color-surface); }
-  .bg-gray-100 { background-color: var(--color-surface); }
-  .bg-gray-200 { background-color: var(--color-border); }
-  .bg-gray-300 { background-color: var(--color-border-strong); }
-  .bg-white { background-color: var(--color-surface); }
-  .bg-background { background-color: var(--color-bg); }
-  .bg-foreground { background-color: var(--color-text-primary); }
+  .bg-gray-50 { background-color: var(--color-surface) !important; }
+  .bg-gray-100 { background-color: var(--color-surface) !important; }
+  .bg-gray-200 { background-color: var(--color-border) !important; }
+  .bg-gray-300 { background-color: var(--color-border-strong) !important; }
+  .bg-white { background-color: var(--color-surface) !important; }
+  .bg-background { background-color: var(--color-bg) !important; }
+  .bg-foreground { background-color: var(--color-text-primary) !important; }
 
   /* DESIGN_SYSTEM: Override Tailwind gray borders with design tokens */
-  .border-default { border-color: var(--color-border); }
-  .border-strong { border-color: var(--color-border-strong); }
-  .border-gray-100 { border-color: var(--color-border); }
-  .border-gray-200 { border-color: var(--color-border); }
-  .border-gray-300 { border-color: var(--color-border-strong); }
+  .border-default { border-color: var(--color-border) !important; }
+  .border-strong { border-color: var(--color-border-strong) !important; }
+  .border-gray-100 { border-color: var(--color-border) !important; }
+  .border-gray-200 { border-color: var(--color-border) !important; }
+  .border-gray-300 { border-color: var(--color-border-strong) !important; }
 
   /* DESIGN_SYSTEM: Hover variants for backgrounds */
-  .hover\:bg-gray-50:hover { background-color: var(--color-surface); }
-  .hover\:bg-gray-100:hover { background-color: var(--color-surface-elevated); }
-  .hover\:bg-gray-200:hover { background-color: var(--color-border); }
-  .hover\:bg-gray-300:hover { background-color: var(--color-border-strong); }
+  .hover\:bg-gray-50:hover { background-color: var(--color-surface) !important; }
+  .hover\:bg-gray-100:hover { background-color: var(--color-surface-elevated) !important; }
+  .hover\:bg-gray-200:hover { background-color: var(--color-border) !important; }
+  .hover\:bg-gray-300:hover { background-color: var(--color-border-strong) !important; }
+
+  /* DESIGN_SYSTEM: Hover variants for text */
+  .hover\:text-gray-600:hover { color: var(--color-text-tertiary) !important; }
+  .hover\:text-gray-800:hover { color: var(--color-text-secondary) !important; }
 
   /* DESIGN_SYSTEM: Text foreground utilities */
   .text-foreground { color: var(--color-text-primary); }

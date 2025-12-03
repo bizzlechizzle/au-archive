@@ -115,8 +115,8 @@ Solid metadata bar below image—not gradient overlay on image.
 ### Theme: User Choice
 
 Three options in Settings:
-- **Dark** (default) — Suits moody urbex photography
-- **Light** — For accessibility and user preference
+- **Light** (default) — Clean, professional appearance
+- **Dark** — Suits moody urbex photography
 - **System** — Follows OS preference
 
 ### GPS Confidence Colors

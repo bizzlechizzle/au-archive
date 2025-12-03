@@ -78,7 +78,7 @@
     try {
       if (window.electronAPI?.settings) {
         const savedTheme = await window.electronAPI.settings.get('theme');
-        const theme = (savedTheme as 'dark' | 'light' | 'system') || 'dark';
+        const theme = (savedTheme as 'dark' | 'light' | 'system') || 'light';
         applyTheme(theme);
 
         // If using system theme, listen for OS theme changes
@@ -90,13 +90,13 @@
           mediaQuery.addEventListener('change', mediaQueryListener);
         }
       } else {
-        // Default to dark if settings not available
-        document.documentElement.setAttribute('data-theme', 'dark');
+        // Default to light if settings not available
+        document.documentElement.setAttribute('data-theme', 'light');
       }
     } catch (error) {
       console.error('Error initializing theme:', error);
-      // Default to dark on error
-      document.documentElement.setAttribute('data-theme', 'dark');
+      // Default to light on error
+      document.documentElement.setAttribute('data-theme', 'light');
     }
   }
 
