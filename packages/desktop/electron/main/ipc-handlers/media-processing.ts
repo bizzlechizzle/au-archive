@@ -1006,4 +1006,122 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // Delete a media file (removes from DB and deletes file from disk)
+  ipcMain.handle('media:delete', async (_event, input: unknown) => {
+    try {
+      const validInput = z.object({
+        hash: z.string().min(1),
+        type: z.enum(['image', 'video', 'document']),
+      }).parse(input);
+
+      const { hash, type } = validInput;
+      let filePath: string | null = null;
+      let thumbPath: string | null = null;
+      let previewPath: string | null = null;
+
+      // Get file info before deleting from DB
+      if (type === 'image') {
+        const img = await mediaRepo.findImageByHash(hash);
+        filePath = img?.imgloc || null;
+        thumbPath = img?.thumb_path || null;
+        previewPath = img?.preview_path || null;
+        await mediaRepo.deleteImage(hash);
+      } else if (type === 'video') {
+        const vid = await mediaRepo.findVideoByHash(hash);
+        filePath = vid?.vidloc || null;
+        thumbPath = vid?.thumb_path || null;
+        previewPath = vid?.preview_path || null;
+        await mediaRepo.deleteVideo(hash);
+      } else if (type === 'document') {
+        const doc = await mediaRepo.findDocumentByHash(hash);
+        filePath = doc?.docloc || null;
+        await mediaRepo.deleteDocument(hash);
+      }
+
+      // Delete physical files
+      const deletedFiles: string[] = [];
+      const failedFiles: string[] = [];
+
+      if (filePath) {
+        try {
+          await fs.unlink(filePath);
+          deletedFiles.push(filePath);
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+            failedFiles.push(filePath);
+          }
+        }
+      }
+
+      if (thumbPath) {
+        try {
+          await fs.unlink(thumbPath);
+          deletedFiles.push(thumbPath);
+        } catch {
+          // Thumbnail deletion failure is not critical
+        }
+      }
+
+      if (previewPath) {
+        try {
+          await fs.unlink(previewPath);
+          deletedFiles.push(previewPath);
+        } catch {
+          // Preview deletion failure is not critical
+        }
+      }
+
+      // For videos, also try to delete proxy file
+      if (type === 'video' && filePath) {
+        const dirPath = path.dirname(filePath);
+        const proxyPath = path.join(dirPath, `.${hash}.proxy.mp4`);
+        try {
+          await fs.unlink(proxyPath);
+          deletedFiles.push(proxyPath);
+        } catch {
+          // Proxy deletion failure is not critical
+        }
+      }
+
+      console.log(`[media:delete] Deleted ${type} ${hash}, files: ${deletedFiles.length}`);
+      return { success: true, deletedFiles, failedFiles };
+    } catch (error) {
+      console.error('Error deleting media:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  // Move a media file to a different sub-location (DB only, files stay in place)
+  ipcMain.handle('media:moveToSubLocation', async (_event, input: unknown) => {
+    try {
+      const validInput = z.object({
+        hash: z.string().min(1),
+        type: z.enum(['image', 'video', 'document']),
+        subid: z.string().uuid().nullable(),
+      }).parse(input);
+
+      const { hash, type, subid } = validInput;
+
+      if (type === 'image') {
+        await mediaRepo.moveImageToSubLocation(hash, subid);
+      } else if (type === 'video') {
+        await mediaRepo.moveVideoToSubLocation(hash, subid);
+      } else if (type === 'document') {
+        await mediaRepo.moveDocumentToSubLocation(hash, subid);
+      }
+
+      console.log(`[media:moveToSubLocation] Moved ${type} ${hash} to sub-location ${subid || 'host'}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error moving media to sub-location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
 }

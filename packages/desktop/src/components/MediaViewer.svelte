@@ -47,9 +47,18 @@
     onSetHostHeroImage?: (imgsha: string, focalX: number, focalY: number) => void;
     // Hidden status callback
     onHiddenChanged?: (hash: string, hidden: boolean) => void;
+    // Delete and Move callbacks
+    onDeleted?: (hash: string, type: 'image' | 'video' | 'document') => void;
+    onMoved?: (hash: string, type: 'image' | 'video' | 'document', subid: string | null) => void;
+    // Sub-locations for move modal (optional - if not provided, move button is hidden)
+    sublocations?: Array<{ subid: string; subnam: string }>;
+    // Current sub-location ID (for pre-selecting in move modal)
+    currentSubid?: string | null;
+    // Location ID for creating new sub-locations
+    locid?: string;
   }
 
-  let { mediaList, startIndex = 0, onClose, heroImgsha, focalX = 0.5, focalY = 0.5, onSetHeroImage, onSetHostHeroImage, onHiddenChanged }: Props = $props();
+  let { mediaList, startIndex = 0, onClose, heroImgsha, focalX = 0.5, focalY = 0.5, onSetHeroImage, onSetHostHeroImage, onHiddenChanged, onDeleted, onMoved, sublocations = [], currentSubid = null, locid }: Props = $props();
 
   let currentIndex = $state(startIndex);
   let showExif = $state(false);
@@ -85,6 +94,17 @@
   const hiddenReason = $derived(currentMedia?.hidden_reason);
   const isLivePhoto = $derived(currentMedia?.is_live_photo === 1);
   let togglingHidden = $state(false);
+
+  // Delete confirmation state
+  let showDeleteConfirm = $state(false);
+  let deleting = $state(false);
+
+  // Move to sub-location modal state
+  let showMoveModal = $state(false);
+  let selectedSubid = $state<string | null>(currentSubid);
+  let moving = $state(false);
+  let newSubName = $state('');
+  let creatingNewSub = $state(false);
 
   // Cache version for busting browser cache after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
@@ -199,6 +219,90 @@
     }
   }
 
+  // Delete current media item
+  async function handleDelete() {
+    if (!currentMedia || deleting) return;
+
+    deleting = true;
+    try {
+      const result = await window.electronAPI?.media?.delete({
+        hash: currentMedia.hash,
+        type: currentMedia.type,
+      });
+
+      if (result?.success) {
+        // Notify parent and close or move to next
+        onDeleted?.(currentMedia.hash, currentMedia.type);
+
+        // Remove from local list and adjust index
+        const removedIndex = currentIndex;
+        mediaList.splice(removedIndex, 1);
+
+        if (mediaList.length === 0) {
+          // No more media, close lightbox
+          onClose();
+        } else if (currentIndex >= mediaList.length) {
+          // Was at end, go to new last item
+          currentIndex = mediaList.length - 1;
+        }
+        // Otherwise currentIndex now points to next item (same index, new content)
+      }
+    } catch (err) {
+      console.error('Failed to delete media:', err);
+    } finally {
+      deleting = false;
+      showDeleteConfirm = false;
+    }
+  }
+
+  // Move current media to a different sub-location
+  async function handleMove() {
+    if (!currentMedia || moving) return;
+
+    // If creating new sub-location
+    if (creatingNewSub && newSubName.trim() && locid) {
+      try {
+        const newSub = await window.electronAPI?.sublocations?.create({
+          locid,
+          subnam: newSubName.trim(),
+        });
+        if (newSub?.subid) {
+          selectedSubid = newSub.subid;
+        }
+      } catch (err) {
+        console.error('Failed to create sub-location:', err);
+        return;
+      }
+    }
+
+    moving = true;
+    try {
+      const result = await window.electronAPI?.media?.moveToSubLocation({
+        hash: currentMedia.hash,
+        type: currentMedia.type,
+        subid: selectedSubid,
+      });
+
+      if (result?.success) {
+        onMoved?.(currentMedia.hash, currentMedia.type, selectedSubid);
+        showMoveModal = false;
+        newSubName = '';
+        creatingNewSub = false;
+      }
+    } catch (err) {
+      console.error('Failed to move media:', err);
+    } finally {
+      moving = false;
+    }
+  }
+
+  function openMoveModal() {
+    selectedSubid = currentSubid;
+    newSubName = '';
+    creatingNewSub = false;
+    showMoveModal = true;
+  }
+
   // Load full metadata when panel opens (lazy-load)
   async function loadFullMetadata() {
     if (!currentMedia || lastLoadedHash === currentMedia.hash) return;
@@ -242,6 +346,8 @@
   let settingHeroFor = $state<'building' | 'campus' | null>(null);
   // Track if Dashboard is selected as save target (two-click save)
   let dashboardSelected = $state(false);
+  // Track if Host-Location is selected as save target (two-click save, like Dashboard)
+  let hostLocationSelected = $state(false);
 
   function startFocalEdit(heroType: 'building' | 'campus' = 'building') {
     pendingFocalX = isCurrentHero ? focalX : 0.5;
@@ -308,6 +414,7 @@
   function cancelFocalEdit() {
     settingHeroFor = null;
     dashboardSelected = false;
+    hostLocationSelected = false;
     isEditingFocal = false;
   }
 
@@ -323,22 +430,33 @@
         isEditingFocal = false;
         settingHeroFor = null;
         dashboardSelected = false;
+        hostLocationSelected = false;
       } catch (err) {
         console.error('Error setting dashboard hero:', err);
       }
     } else {
       // First click: select Dashboard as target
       dashboardSelected = true;
+      hostLocationSelected = false; // Deselect Host-Location if it was selected
     }
   }
 
-  /** Save current focal point as Host-Location hero (when viewing sub-location) */
-  function saveHostLocationHero() {
+  /** Toggle Host-Location selection or save if already selected (two-click pattern like Dashboard) */
+  function handleHostLocationClick() {
     if (!currentMedia || !onSetHostHeroImage) return;
-    onSetHostHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
-    isEditingFocal = false;
-    settingHeroFor = null;
-    dashboardSelected = false;
+
+    if (hostLocationSelected) {
+      // Second click: save to host location
+      onSetHostHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
+      isEditingFocal = false;
+      settingHeroFor = null;
+      dashboardSelected = false;
+      hostLocationSelected = false;
+    } else {
+      // First click: select Host-Location as target
+      hostLocationSelected = true;
+      dashboardSelected = false; // Deselect Dashboard if it was selected
+    }
   }
 
   // Handle escape key in focal editor
@@ -681,31 +799,13 @@
                       </div>
                     {/if}
                   </div>
-                  <!-- Side-by-side buttons when both building and host-location hero options available -->
-                  {#if onSetHostHeroImage}
-                    <div class="flex gap-2">
-                      <button
-                        onclick={() => startFocalEdit('building')}
-                        class="flex-1 px-3 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition"
-                      >
-                        Hero Image
-                      </button>
-                      <button
-                        onclick={() => startFocalEdit('campus')}
-                        class="flex-1 px-3 py-2.5 text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 rounded-lg transition"
-                      >
-                        Host-Location
-                      </button>
-                    </div>
-                  {:else}
-                    <!-- Single button when only building hero option -->
-                    <button
-                      onclick={() => startFocalEdit('building')}
-                      class="w-full px-4 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition"
-                    >
-                      Hero Image
-                    </button>
-                  {/if}
+                  <!-- Single button to open focal editor - Host-Location is an option inside the modal -->
+                  <button
+                    onclick={() => startFocalEdit('building')}
+                    class="w-full px-4 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition"
+                  >
+                    Hero Image
+                  </button>
                 </div>
               {/if}
             </div>
@@ -1081,10 +1181,10 @@
             </button>
             {#if onSetHostHeroImage}
               <button
-                onclick={saveHostLocationHero}
-                class="px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                onclick={handleHostLocationClick}
+                class="px-3 py-2 text-sm font-medium rounded-lg transition {hostLocationSelected ? 'bg-amber-500 text-white hover:bg-amber-600' : 'text-gray-600 bg-white border border-gray-300 hover:bg-gray-50'}"
               >
-                Host-Location
+                {hostLocationSelected ? 'Save' : 'Host-Location'}
               </button>
             {/if}
           </div>
@@ -1153,5 +1253,162 @@
         </span>
       {/if}
     </button>
+    <!-- Move and Delete buttons only visible when Info panel is open (safety) -->
+    {#if showExif}
+      <!-- Move to sub-location button (only if sublocations provided) -->
+      {#if sublocations.length > 0 || locid}
+        <button
+          onclick={openMoveModal}
+          class="px-4 py-2 bg-white text-foreground rounded shadow hover:bg-gray-50 transition text-sm"
+        >
+          <span class="flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+            </svg>
+            Move
+          </span>
+        </button>
+      {/if}
+      <!-- Delete button -->
+      <button
+        onclick={() => showDeleteConfirm = true}
+        class="px-4 py-2 bg-red-50 text-red-700 rounded shadow hover:bg-red-100 transition text-sm"
+      >
+        <span class="flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          Delete
+        </span>
+      </button>
+    {/if}
   </div>
+
+  <!-- Delete Confirmation Modal -->
+  {#if showDeleteConfirm}
+    <div
+      class="fixed inset-0 bg-black/70 z-[70] flex items-center justify-center p-4"
+      onclick={() => showDeleteConfirm = false}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        class="bg-white rounded-lg shadow-xl max-w-sm w-full"
+        onclick={(e) => e.stopPropagation()}
+      >
+        <div class="p-5">
+          <h3 class="text-lg font-semibold text-gray-900 mb-2">Delete File?</h3>
+          <p class="text-sm text-gray-600 mb-4">
+            This will permanently delete the file from your archive. This cannot be undone.
+          </p>
+          <div class="flex gap-3 justify-end">
+            <button
+              onclick={() => showDeleteConfirm = false}
+              class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onclick={handleDelete}
+              disabled={deleting}
+              class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Move to Sub-location Modal -->
+  {#if showMoveModal}
+    <div
+      class="fixed inset-0 bg-black/70 z-[70] flex items-center justify-center p-4"
+      onclick={() => showMoveModal = false}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        class="bg-white rounded-lg shadow-xl max-w-sm w-full"
+        onclick={(e) => e.stopPropagation()}
+      >
+        <div class="p-5">
+          <h3 class="text-lg font-semibold text-gray-900 mb-4">Move to Building</h3>
+
+          <!-- Sub-location options -->
+          <div class="space-y-2 mb-4">
+            <!-- Host location option -->
+            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {selectedSubid === null && !creatingNewSub ? 'border-accent bg-accent/5' : 'border-gray-200'}">
+              <input
+                type="radio"
+                name="sublocation"
+                checked={selectedSubid === null && !creatingNewSub}
+                onchange={() => { selectedSubid = null; creatingNewSub = false; }}
+                class="w-4 h-4 text-accent"
+              />
+              <span class="text-sm text-gray-700">Host Location (no building)</span>
+            </label>
+
+            <!-- Existing sub-locations -->
+            {#each sublocations as sub}
+              <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {selectedSubid === sub.subid && !creatingNewSub ? 'border-accent bg-accent/5' : 'border-gray-200'}">
+                <input
+                  type="radio"
+                  name="sublocation"
+                  checked={selectedSubid === sub.subid && !creatingNewSub}
+                  onchange={() => { selectedSubid = sub.subid; creatingNewSub = false; }}
+                  class="w-4 h-4 text-accent"
+                />
+                <span class="text-sm text-gray-700">{sub.subnam}</span>
+              </label>
+            {/each}
+
+            <!-- Create new option -->
+            {#if locid}
+              <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {creatingNewSub ? 'border-accent bg-accent/5' : 'border-gray-200'}">
+                <input
+                  type="radio"
+                  name="sublocation"
+                  checked={creatingNewSub}
+                  onchange={() => creatingNewSub = true}
+                  class="w-4 h-4 text-accent"
+                />
+                <span class="text-sm text-gray-700">Create new...</span>
+              </label>
+            {/if}
+          </div>
+
+          <!-- New sub-location name input -->
+          {#if creatingNewSub}
+            <div class="mb-4">
+              <input
+                type="text"
+                bind:value={newSubName}
+                placeholder="Building name..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+              />
+            </div>
+          {/if}
+
+          <!-- Actions -->
+          <div class="flex gap-3 justify-end">
+            <button
+              onclick={() => showMoveModal = false}
+              class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onclick={handleMove}
+              disabled={moving || (creatingNewSub && !newSubName.trim())}
+              class="px-4 py-2 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 transition disabled:opacity-50"
+            >
+              {moving ? 'Moving...' : 'Move'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>

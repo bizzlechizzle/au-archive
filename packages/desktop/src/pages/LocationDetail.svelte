@@ -555,6 +555,24 @@
     }
   }
 
+  /** Handle media deletion from MediaViewer */
+  function handleMediaDeleted(hash: string, type: 'image' | 'video' | 'document') {
+    // Remove from local state immediately for responsive UI
+    if (type === 'image') {
+      images = images.filter(i => i.imgsha !== hash);
+    } else if (type === 'video') {
+      videos = videos.filter(v => v.vidsha !== hash);
+    } else {
+      documents = documents.filter(d => d.docsha !== hash);
+    }
+  }
+
+  /** Handle media moved to sub-location from MediaViewer */
+  async function handleMediaMoved(hash: string, type: 'image' | 'video' | 'document', subid: string | null) {
+    // Reload to get fresh data
+    await loadLocation();
+  }
+
   function navigateToFilter(type: string, value: string, additionalFilters?: Record<string, string>) {
     // DECISION-013: Support multiple filters (e.g., county + state to avoid duplicates)
     const filters: Record<string, string> = { [type]: value, ...additionalFilters };
@@ -1075,6 +1093,11 @@
         : setHeroImageWithFocal}
       onSetHostHeroImage={currentSubLocation ? setHeroImageWithFocal : undefined}
       onHiddenChanged={handleHiddenChanged}
+      onDeleted={handleMediaDeleted}
+      onMoved={handleMediaMoved}
+      sublocations={sublocations.map(s => ({ subid: s.subid, subnam: s.subnam }))}
+      currentSubid={currentSubLocation?.subid || null}
+      locid={locationId}
     />
   {/if}
 

@@ -572,4 +572,71 @@ export class SQLiteMediaRepository {
     return rows;
   }
 
+  // ==================== DELETE OPERATIONS ====================
+
+  /**
+   * Delete an image by hash (removes DB record only, file deletion handled by caller)
+   */
+  async deleteImage(imgsha: string): Promise<void> {
+    await this.db
+      .deleteFrom('imgs')
+      .where('imgsha', '=', imgsha)
+      .execute();
+  }
+
+  /**
+   * Delete a video by hash (removes DB record only, file deletion handled by caller)
+   */
+  async deleteVideo(vidsha: string): Promise<void> {
+    await this.db
+      .deleteFrom('vids')
+      .where('vidsha', '=', vidsha)
+      .execute();
+  }
+
+  /**
+   * Delete a document by hash (removes DB record only, file deletion handled by caller)
+   */
+  async deleteDocument(docsha: string): Promise<void> {
+    await this.db
+      .deleteFrom('docs')
+      .where('docsha', '=', docsha)
+      .execute();
+  }
+
+  // ==================== MOVE OPERATIONS ====================
+
+  /**
+   * Move an image to a different sub-location
+   */
+  async moveImageToSubLocation(imgsha: string, subid: string | null): Promise<void> {
+    await this.db
+      .updateTable('imgs')
+      .set({ subid })
+      .where('imgsha', '=', imgsha)
+      .execute();
+  }
+
+  /**
+   * Move a video to a different sub-location
+   */
+  async moveVideoToSubLocation(vidsha: string, subid: string | null): Promise<void> {
+    await this.db
+      .updateTable('vids')
+      .set({ subid })
+      .where('vidsha', '=', vidsha)
+      .execute();
+  }
+
+  /**
+   * Move a document to a different sub-location
+   */
+  async moveDocumentToSubLocation(docsha: string, subid: string | null): Promise<void> {
+    await this.db
+      .updateTable('docs')
+      .set({ subid })
+      .where('docsha', '=', docsha)
+      .execute();
+  }
+
 }

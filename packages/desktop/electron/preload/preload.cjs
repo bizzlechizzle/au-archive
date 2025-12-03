@@ -315,6 +315,9 @@ const api = {
       ipcRenderer.on("media:proxyProgress", listener);
       return () => ipcRenderer.removeListener("media:proxyProgress", listener);
     },
+    // Delete and Move operations (for Lightbox actions)
+    delete: (input) => invokeAuto("media:delete")(input),
+    moveToSubLocation: (input) => invokeAuto("media:moveToSubLocation")(input),
   },
 
   notes: {

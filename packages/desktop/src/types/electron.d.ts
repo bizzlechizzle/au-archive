@@ -414,6 +414,15 @@ export interface ElectronAPI {
       failed: number;
       total: number;
     }) => void) => () => void;
+    // Delete and Move operations (for Lightbox actions)
+    delete: (input: { hash: string; type: 'image' | 'video' | 'document' }) => Promise<{
+      success: boolean;
+      deletedFiles: string[];
+      failedFiles: string[];
+    }>;
+    moveToSubLocation: (input: { hash: string; type: 'image' | 'video' | 'document'; subid: string | null }) => Promise<{
+      success: boolean;
+    }>;
   };
 
   notes: {
