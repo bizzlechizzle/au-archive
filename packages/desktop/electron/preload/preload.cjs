@@ -580,6 +580,48 @@ const api = {
       };
     },
   },
+
+  // Monitoring & Audit System (Migration 51)
+  monitoring: {
+    // Metrics
+    getMetricsSummary: () => invokeAuto("monitoring:getMetricsSummary")(),
+    getHistogramStats: (name, tags) => invokeAuto("monitoring:getHistogramStats")(name, tags),
+    getMetricsHistory: (options) => invokeAuto("monitoring:getMetricsHistory")(options),
+
+    // Traces
+    getActiveSpans: () => invokeAuto("monitoring:getActiveSpans")(),
+    getTraceSpans: (traceId) => invokeAuto("monitoring:getTraceSpans")(traceId),
+    getTracesHistory: (options) => invokeAuto("monitoring:getTracesHistory")(options),
+
+    // Alerts
+    getAlertHistory: (limit) => invokeAuto("monitoring:getAlertHistory")(limit),
+    getAlertRules: () => invokeAuto("monitoring:getAlertRules")(),
+    setAlertRuleEnabled: (ruleId, enabled) => invokeAuto("monitoring:setAlertRuleEnabled")(ruleId, enabled),
+    acknowledgeAlert: (alertId, userId) => invokeAuto("monitoring:acknowledgeAlert")(alertId, userId),
+    getUnacknowledgedAlerts: (limit) => invokeAuto("monitoring:getUnacknowledgedAlerts")(limit),
+
+    // Job Audit
+    getJobAuditLog: (options) => invokeAuto("monitoring:getJobAuditLog")(options),
+    getJobPerformanceStats: (options) => invokeAuto("monitoring:getJobPerformanceStats")(options),
+
+    // Import Audit
+    getImportAuditLog: (sessionId) => invokeAuto("monitoring:getImportAuditLog")(sessionId),
+
+    // Health Snapshots
+    getHealthSnapshots: (options) => invokeAuto("monitoring:getHealthSnapshots")(options),
+
+    // Control
+    start: () => invokeAuto("monitoring:start")(),
+    stop: () => invokeAuto("monitoring:stop")(),
+    cleanup: (options) => invokeLong("monitoring:cleanup")(options),
+
+    // Listen for real-time alerts
+    onAlert: (callback) => {
+      const listener = (_event, alert) => callback(alert);
+      ipcRenderer.on("monitoring:alert", listener);
+      return () => ipcRenderer.removeListener("monitoring:alert", listener);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

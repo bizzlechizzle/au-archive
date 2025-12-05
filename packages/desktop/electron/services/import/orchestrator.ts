@@ -20,6 +20,13 @@ import { Hasher, type HashResult, type HasherOptions } from './hasher';
 import { Copier, type CopyResult, type CopierOptions, type LocationInfo } from './copier';
 import { Validator, type ValidationResult, type ValidatorOptions } from './validator';
 import { Finalizer, type FinalizationResult, type FinalizerOptions } from './finalizer';
+import { getLogger } from '../logger-service';
+import { getMetricsCollector, MetricNames } from '../monitoring/metrics-collector';
+import { getTracer, OperationNames } from '../monitoring/tracer';
+
+const logger = getLogger();
+const metrics = getMetricsCollector();
+const tracer = getTracer();
 
 /**
  * Import session status
@@ -151,6 +158,21 @@ export class ImportOrchestrator {
     this.currentSessionId = sessionId;
     this.abortController = new AbortController();
 
+    // Start import session trace
+    const importSpan = tracer.startSpan(OperationNames.IMPORT_SESSION, {
+      sessionId,
+      locationId: options.location.locid,
+      pathCount: paths.length,
+    });
+
+    // Record import started
+    logger.info('ImportOrchestrator', 'Import started', {
+      sessionId,
+      locationId: options.location.locid,
+      pathCount: paths.length,
+    });
+    metrics.incrementCounter(MetricNames.IMPORT_STARTED, 1, { locationId: options.location.locid });
+
     // Merge signals
     const signal = options.signal
       ? this.mergeAbortSignals(options.signal, this.abortController.signal)
@@ -183,12 +205,22 @@ export class ImportOrchestrator {
       options.onProgress?.({ ...progress });
     };
 
+    // Timers for each step
+    let scanTimer: ReturnType<typeof metrics.timer> | undefined;
+    let hashTimer: ReturnType<typeof metrics.timer> | undefined;
+    let copyTimer: ReturnType<typeof metrics.timer> | undefined;
+    let validateTimer: ReturnType<typeof metrics.timer> | undefined;
+    let finalizeTimer: ReturnType<typeof metrics.timer> | undefined;
+
     try {
       // Step 1: Scan
       this.currentStatus = 'scanning';
       progress.status = 'scanning';
       progress.step = 1;
       emitProgress();
+
+      scanTimer = metrics.timer(MetricNames.IMPORT_SCAN_DURATION, { sessionId });
+      const scanSpan = importSpan.child(OperationNames.IMPORT_SCAN);
 
       scanResult = await this.scanner.scan(paths, {
         signal,
@@ -203,8 +235,18 @@ export class ImportOrchestrator {
         },
       });
 
+      scanTimer.end();
+      scanSpan.end('success', { filesFound: scanResult.totalFiles, bytesTotal: scanResult.totalBytes });
+
       progress.filesTotal = scanResult.totalFiles;
       progress.bytesTotal = scanResult.totalBytes;
+      metrics.incrementCounter(MetricNames.IMPORT_FILES_SCANNED, scanResult.totalFiles, { sessionId });
+
+      logger.info('ImportOrchestrator', 'Scan completed', {
+        sessionId,
+        filesFound: scanResult.totalFiles,
+        bytesTotal: scanResult.totalBytes,
+      });
 
       // Save scan results to DB session (enables resume from step 2)
       await this.saveSessionStateWithResults(sessionId, 'scanning', 1, options.location.locid, scanResult);
@@ -214,6 +256,9 @@ export class ImportOrchestrator {
       progress.status = 'hashing';
       progress.step = 2;
       emitProgress();
+
+      hashTimer = metrics.timer(MetricNames.IMPORT_HASH_DURATION, { sessionId });
+      const hashSpan = importSpan.child(OperationNames.IMPORT_HASH);
 
       hashResult = await this.hasher.hash(scanResult.files, {
         signal,
@@ -225,8 +270,22 @@ export class ImportOrchestrator {
         },
       });
 
+      hashTimer.end();
+      hashSpan.end('success', {
+        filesHashed: hashResult.files.length,
+        duplicates: hashResult.totalDuplicates,
+        errors: hashResult.totalErrors,
+      });
+
       progress.duplicatesFound = hashResult.totalDuplicates;
       progress.errorsFound = hashResult.totalErrors;
+      metrics.incrementCounter(MetricNames.IMPORT_FILES_DUPLICATES, hashResult.totalDuplicates, { sessionId });
+
+      logger.info('ImportOrchestrator', 'Hashing completed', {
+        sessionId,
+        filesHashed: hashResult.files.length,
+        duplicates: hashResult.totalDuplicates,
+      });
 
       // Save hash results to DB session (enables resume from step 3)
       await this.saveSessionStateWithResults(sessionId, 'hashing', 2, options.location.locid, scanResult, hashResult);
@@ -236,6 +295,9 @@ export class ImportOrchestrator {
       progress.status = 'copying';
       progress.step = 3;
       emitProgress();
+
+      copyTimer = metrics.timer(MetricNames.IMPORT_COPY_DURATION, { sessionId });
+      const copySpan = importSpan.child(OperationNames.IMPORT_COPY);
 
       copyResult = await this.copier.copy(hashResult.files, options.location, {
         signal,
@@ -247,8 +309,23 @@ export class ImportOrchestrator {
         },
       });
 
+      copyTimer.end();
+      copySpan.end('success', {
+        filesCopied: copyResult.files.length,
+        bytesCopied: copyResult.totalBytes,
+        strategy: copyResult.strategy,
+      });
+
       progress.bytesProcessed = copyResult.totalBytes;
       progress.errorsFound += copyResult.totalErrors;
+      metrics.incrementCounter(MetricNames.IMPORT_BYTES_PROCESSED, copyResult.totalBytes, { sessionId });
+
+      logger.info('ImportOrchestrator', 'Copy completed', {
+        sessionId,
+        filesCopied: copyResult.files.length,
+        bytesCopied: copyResult.totalBytes,
+        strategy: copyResult.strategy,
+      });
 
       // Save copy results to DB session (enables resume from step 4)
       await this.saveSessionStateWithResults(sessionId, 'copying', 3, options.location.locid, scanResult, hashResult, copyResult);
@@ -258,6 +335,9 @@ export class ImportOrchestrator {
       progress.status = 'validating';
       progress.step = 4;
       emitProgress();
+
+      validateTimer = metrics.timer(MetricNames.IMPORT_VALIDATE_DURATION, { sessionId });
+      const validateSpan = importSpan.child(OperationNames.IMPORT_VALIDATE);
 
       validationResult = await this.validator.validate(copyResult.files, {
         signal,
@@ -269,7 +349,19 @@ export class ImportOrchestrator {
         },
       });
 
+      validateTimer.end();
+      validateSpan.end('success', {
+        filesValid: validationResult.totalValid,
+        filesInvalid: validationResult.totalInvalid,
+      });
+
       progress.errorsFound += validationResult.totalInvalid;
+
+      logger.info('ImportOrchestrator', 'Validation completed', {
+        sessionId,
+        valid: validationResult.totalValid,
+        invalid: validationResult.totalInvalid,
+      });
 
       // Save validation results to DB session (enables resume from step 5)
       await this.saveSessionStateWithResults(sessionId, 'validating', 4, options.location.locid, scanResult, hashResult, copyResult, validationResult);
@@ -279,6 +371,9 @@ export class ImportOrchestrator {
       progress.status = 'finalizing';
       progress.step = 5;
       emitProgress();
+
+      finalizeTimer = metrics.timer(MetricNames.IMPORT_FINALIZE_DURATION, { sessionId });
+      const finalizeSpan = importSpan.child(OperationNames.IMPORT_FINALIZE);
 
       finalizationResult = await this.finalizer.finalize(validationResult.files, options.location, {
         signal,
@@ -291,8 +386,21 @@ export class ImportOrchestrator {
         },
       });
 
+      finalizeTimer.end();
+      finalizeSpan.end('success', {
+        filesFinalized: finalizationResult.totalFinalized,
+        jobsQueued: finalizationResult.jobsQueued,
+      });
+
       progress.filesProcessed = finalizationResult.totalFinalized;
       progress.errorsFound += finalizationResult.totalErrors;
+      metrics.incrementCounter(MetricNames.IMPORT_FILES_PROCESSED, finalizationResult.totalFinalized, { sessionId });
+
+      logger.info('ImportOrchestrator', 'Finalization completed', {
+        sessionId,
+        filesFinalized: finalizationResult.totalFinalized,
+        jobsQueued: finalizationResult.jobsQueued,
+      });
 
       // Complete
       this.currentStatus = 'completed';
@@ -302,22 +410,54 @@ export class ImportOrchestrator {
 
       await this.saveSessionState(sessionId, 'completed', 5, options.location.locid, paths);
 
+      // Record successful completion
+      metrics.incrementCounter(MetricNames.IMPORT_COMPLETED, 1, { locationId: options.location.locid });
+      importSpan.end('success', {
+        totalFiles: finalizationResult.totalFinalized,
+        totalBytes: copyResult.totalBytes,
+        duplicates: hashResult.totalDuplicates,
+      });
+
+      logger.info('ImportOrchestrator', 'Import completed successfully', {
+        sessionId,
+        totalFiles: finalizationResult.totalFinalized,
+        totalBytes: copyResult.totalBytes,
+        duplicates: hashResult.totalDuplicates,
+      });
+
     } catch (err) {
       if (signal.aborted) {
         this.currentStatus = 'cancelled';
         progress.status = 'cancelled';
         error = 'Import cancelled';
+        logger.warn('ImportOrchestrator', 'Import cancelled', { sessionId });
       } else {
         this.currentStatus = 'failed';
         progress.status = 'failed';
         error = err instanceof Error ? err.message : String(err);
+        logger.error('ImportOrchestrator', 'Import failed', err as Error, { sessionId, step: progress.step });
+        metrics.incrementCounter(MetricNames.IMPORT_FAILED, 1, { locationId: options.location.locid });
+        metrics.incrementCounter(MetricNames.ERRORS_COUNT, 1, { component: 'ImportOrchestrator', type: 'import_failure' });
       }
+
+      importSpan.log('Import error', { error, step: progress.step });
+      importSpan.end('error', { error, step: progress.step });
 
       emitProgress();
       await this.saveSessionState(sessionId, this.currentStatus, progress.step, options.location.locid, paths, error);
     }
 
     const completedAt = new Date();
+    const totalDurationMs = completedAt.getTime() - startedAt.getTime();
+
+    // Record total duration
+    metrics.histogram(MetricNames.IMPORT_DURATION, totalDurationMs, { sessionId });
+
+    // Calculate throughput if we have bytes
+    if (copyResult && totalDurationMs > 0) {
+      const throughputMbps = (copyResult.totalBytes / 1024 / 1024) / (totalDurationMs / 1000);
+      metrics.gauge(MetricNames.IMPORT_THROUGHPUT_MBPS, throughputMbps, { sessionId });
+    }
 
     return {
       sessionId,
@@ -330,7 +470,7 @@ export class ImportOrchestrator {
       error,
       startedAt,
       completedAt,
-      totalDurationMs: completedAt.getTime() - startedAt.getTime(),
+      totalDurationMs,
     };
   }
 

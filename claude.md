@@ -161,6 +161,7 @@ Read these when the task touches the relevant area:
 - @docs/contracts/addressing.md
 - @docs/contracts/dual-edition.md
 - @docs/contracts/data-ownership.md
+- @docs/contracts/monitoring.md — Metrics, tracing, alerts for Import v2 pipeline
 
 **Workflows:**
 - @docs/workflows/gps.md — GPS-first workflows, confidence states, UI copy

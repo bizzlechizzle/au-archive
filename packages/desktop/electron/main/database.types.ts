@@ -26,6 +26,13 @@ export interface Database {
   jobs: JobsTable;
   import_sessions: ImportSessionsTable;
   job_dead_letter: JobDeadLetterTable;
+  // Migration 51: Monitoring & Audit System
+  metrics: MetricsTable;
+  traces: TracesTable;
+  job_audit_log: JobAuditLogTable;
+  import_audit_log: ImportAuditLogTable;
+  alert_history: AlertHistoryTable;
+  health_snapshots: HealthSnapshotsTable;
 }
 
 // Locations table
@@ -622,4 +629,80 @@ export interface JobDeadLetterTable {
   attempts: number;
   failed_at: string;
   acknowledged: number;        // 0/1 - Whether admin has acknowledged this failure
+}
+
+// Migration 51: Monitoring & Audit System Tables
+
+// Metrics table - Time-series performance data
+export interface MetricsTable {
+  id: Generated<number>;
+  name: string;
+  value: number;
+  timestamp: number;
+  type: 'counter' | 'gauge' | 'histogram';
+  tags: string | null;         // JSON tags
+}
+
+// Traces table - Distributed tracing spans
+export interface TracesTable {
+  span_id: string;             // Primary key
+  trace_id: string;
+  parent_span_id: string | null;
+  operation: string;
+  start_time: number;
+  end_time: number | null;
+  duration: number | null;
+  status: 'running' | 'success' | 'error';
+  tags: string | null;         // JSON tags
+  logs: string | null;         // JSON array of log entries
+}
+
+// Job Audit Log - Execution history for each job
+export interface JobAuditLogTable {
+  id: Generated<number>;
+  job_id: string;
+  queue: string;
+  asset_hash: string | null;
+  location_id: string | null;
+  started_at: number;
+  completed_at: number | null;
+  duration: number | null;
+  status: 'started' | 'success' | 'error' | 'timeout';
+  attempt: number;
+  error_message: string | null;
+  result: string | null;       // JSON result
+}
+
+// Import Audit Log - Enhanced import session tracking
+export interface ImportAuditLogTable {
+  id: Generated<number>;
+  session_id: string;
+  timestamp: number;
+  step: string;
+  status: 'started' | 'progress' | 'completed' | 'error';
+  message: string | null;
+  context: string | null;      // JSON context
+}
+
+// Alert History - Fired alerts
+export interface AlertHistoryTable {
+  id: Generated<number>;
+  alert_id: string;
+  name: string;
+  severity: 'info' | 'warning' | 'critical';
+  message: string;
+  timestamp: number;
+  context: string | null;      // JSON context
+  acknowledged: number;        // 0/1
+  acknowledged_at: number | null;
+  acknowledged_by: string | null;
+}
+
+// Health Snapshots - Periodic health state
+export interface HealthSnapshotsTable {
+  id: Generated<number>;
+  timestamp: number;
+  status: 'healthy' | 'warning' | 'critical';
+  checks: string;              // JSON health checks
+  recommendations: string | null; // JSON recommendations
 }

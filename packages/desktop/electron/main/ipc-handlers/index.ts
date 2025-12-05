@@ -45,6 +45,7 @@ import { registerImportIntelligenceHandlers } from './import-intelligence';
 import { registerStorageHandlers } from './storage';
 import { registerBagItHandlers } from './bagit';
 import { registerImportV2Handlers, initializeJobWorker, shutdownJobWorker } from './import-v2';
+import { registerMonitoringHandlers, setMainWindow as setMonitoringMainWindow } from './monitoring';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -110,8 +111,14 @@ export function registerIpcHandlers() {
   registerImportV2Handlers(db);
   initializeJobWorker(db);
 
+  // Monitoring & Audit System (Migration 51)
+  registerMonitoringHandlers(db);
+
   console.log('IPC handlers registered (modular)');
 }
 
 // Export job worker shutdown for app cleanup
 export { shutdownJobWorker };
+
+// Export monitoring window setter for alert notifications
+export { setMonitoringMainWindow };

@@ -16,6 +16,13 @@ import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
 import { JobQueue, IMPORT_QUEUES, type Job } from './job-queue';
 import PQueue from 'p-queue';
+import { getLogger } from './logger-service';
+import { getMetricsCollector, MetricNames } from './monitoring/metrics-collector';
+import { getTracer, OperationNames } from './monitoring/tracer';
+
+const logger = getLogger();
+const metrics = getMetricsCollector();
+const tracer = getTracer();
 
 /**
  * Job handler function signature
@@ -105,8 +112,11 @@ export class JobWorkerService extends EventEmitter {
       return;
     }
 
-    console.log('[JobWorker] Starting background job processor...');
+    logger.info('JobWorker', 'Starting background job processor');
     this.isRunning = true;
+
+    // Record worker active metric
+    metrics.gauge(MetricNames.WORKERS_ACTIVE, 1, { workerId: 'main' });
 
     // Start polling
     this.poll();
@@ -116,7 +126,7 @@ export class JobWorkerService extends EventEmitter {
    * Stop the job worker
    */
   async stop(): Promise<void> {
-    console.log('[JobWorker] Stopping background job processor...');
+    logger.info('JobWorker', 'Stopping background job processor');
     this.isRunning = false;
 
     if (this.pollInterval) {
@@ -128,7 +138,11 @@ export class JobWorkerService extends EventEmitter {
     const waitPromises = Array.from(this.pQueues.values()).map(q => q.onIdle());
     await Promise.all(waitPromises);
 
-    console.log('[JobWorker] Stopped');
+    // Record worker stopped metric
+    metrics.gauge(MetricNames.WORKERS_ACTIVE, 0, { workerId: 'main' });
+    metrics.gauge(MetricNames.WORKERS_IDLE, 1, { workerId: 'main' });
+
+    logger.info('JobWorker', 'Background job processor stopped');
   }
 
   /**
@@ -144,6 +158,9 @@ export class JobWorkerService extends EventEmitter {
       for (const [queueName, config] of this.queues) {
         const pQueue = this.pQueues.get(queueName)!;
 
+        // Record queue depth metric
+        metrics.gauge(MetricNames.JOBS_QUEUE_DEPTH, pQueue.pending, { queue: queueName });
+
         // Only fetch if queue has capacity
         if (pQueue.pending < config.concurrency) {
           const job = await this.jobQueue.getNext(queueName);
@@ -155,7 +172,9 @@ export class JobWorkerService extends EventEmitter {
         }
       }
     } catch (error) {
-      console.error('[JobWorker] Poll error:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logger.error('JobWorker', 'Poll error', undefined, { error: errorMsg });
+      metrics.incrementCounter(MetricNames.ERRORS_COUNT, 1, { source: 'job_worker_poll' });
     }
 
     // Schedule next poll
@@ -171,6 +190,22 @@ export class JobWorkerService extends EventEmitter {
     handler: JobHandler
   ): Promise<void> {
     const startTime = Date.now();
+    const timer = metrics.timer(MetricNames.JOBS_DURATION, { queue: queueName });
+
+    // Start a trace span for this job
+    const jobSpan = tracer.startSpan(OperationNames.JOB_PROCESS, {
+      jobId: job.jobId,
+      queue: queueName,
+      priority: job.priority,
+      attempt: job.attempts,
+    });
+
+    logger.info('JobWorker', 'Job processing started', {
+      jobId: job.jobId,
+      queue: queueName,
+      priority: job.priority,
+      attempt: job.attempts,
+    });
 
     this.emit('job:start', { queue: queueName, jobId: job.jobId });
 
@@ -191,16 +226,33 @@ export class JobWorkerService extends EventEmitter {
       const result = await handler(job.payload, emitProgress);
 
       // Mark complete
-      await this.jobQueue.complete(job.jobId, result);
+      await this.jobQueue.complete(job.jobId, result, queueName);
 
-      const duration = Date.now() - startTime;
-      console.log(`[JobWorker] ${queueName}:${job.jobId} completed in ${duration}ms`);
+      const duration = timer.end();
+      logger.info('JobWorker', 'Job completed successfully', {
+        jobId: job.jobId,
+        queue: queueName,
+        durationMs: duration,
+      });
+
+      // End trace span with success
+      jobSpan.end('success', { durationMs: duration });
 
       this.emit('job:complete', { queue: queueName, jobId: job.jobId, result });
 
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error(`[JobWorker] ${queueName}:${job.jobId} failed:`, errorMsg);
+      const duration = timer.end();
+
+      logger.error('JobWorker', 'Job processing failed', undefined, {
+        jobId: job.jobId,
+        queue: queueName,
+        error: errorMsg,
+        durationMs: duration,
+      });
+
+      // End trace span with error
+      jobSpan.end('error', { error: errorMsg, durationMs: duration });
 
       // Mark failed (will retry or move to dead letter)
       await this.jobQueue.fail(job.jobId, errorMsg);

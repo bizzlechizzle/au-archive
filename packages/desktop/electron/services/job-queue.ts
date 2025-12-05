@@ -15,6 +15,11 @@
 import { randomUUID } from 'crypto';
 import type { Kysely } from 'kysely';
 import type { Database, JobsTable } from '../main/database.types';
+import { getLogger } from './logger-service';
+import { getMetricsCollector, MetricNames } from './monitoring/metrics-collector';
+
+const logger = getLogger();
+const metrics = getMetricsCollector();
 
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'dead';
 
@@ -98,6 +103,9 @@ export class JobQueue {
         last_error: null,     // Migration 50: error history
       })
       .execute();
+
+    // Record metric
+    metrics.incrementCounter(MetricNames.JOBS_ENQUEUED, 1, { queue: input.queue });
 
     return jobId;
   }
@@ -224,7 +232,7 @@ export class JobQueue {
   /**
    * Mark a job as completed with optional result
    */
-  async complete(jobId: string, result?: unknown): Promise<void> {
+  async complete(jobId: string, result?: unknown, queue?: string): Promise<void> {
     const now = new Date().toISOString();
 
     await this.db
@@ -238,6 +246,9 @@ export class JobQueue {
       })
       .where('job_id', '=', jobId)
       .execute();
+
+    // Record metric
+    metrics.incrementCounter(MetricNames.JOBS_COMPLETED, 1, { queue: queue ?? 'unknown' });
   }
 
   /**
@@ -259,6 +270,9 @@ export class JobQueue {
     }
 
     const isMaxAttempts = job.attempts >= job.max_attempts;
+
+    // Record failure metric
+    metrics.incrementCounter(MetricNames.JOBS_FAILED, 1, { queue: job.queue });
 
     if (isMaxAttempts) {
       // Move to dead letter queue
@@ -290,6 +304,10 @@ export class JobQueue {
           .where('job_id', '=', jobId)
           .execute();
       });
+
+      // Record dead letter metric
+      metrics.incrementCounter(MetricNames.JOBS_DEAD, 1, { queue: job.queue });
+      logger.warn('JobQueue', 'Job moved to dead letter queue', { jobId, queue: job.queue, attempts: job.attempts, error });
     } else {
       // Schedule for retry with exponential backoff
       // Delay formula: baseDelay * 2^attempts = 1s, 2s, 4s, 8s, 16s, 32s, max 60s
@@ -298,7 +316,14 @@ export class JobQueue {
       const delayMs = Math.min(baseDelayMs * Math.pow(2, job.attempts), maxDelayMs);
       const retryAfter = new Date(Date.now() + delayMs).toISOString();
 
-      console.log(`[JobQueue] Job ${jobId} failed (attempt ${job.attempts}), retrying after ${delayMs}ms`);
+      logger.info('JobQueue', 'Job scheduled for retry', {
+        jobId,
+        queue: job.queue,
+        attempt: job.attempts,
+        maxAttempts: job.max_attempts,
+        delayMs,
+        error
+      });
 
       await this.db
         .updateTable('jobs')
@@ -312,6 +337,9 @@ export class JobQueue {
         })
         .where('job_id', '=', jobId)
         .execute();
+
+      // Record retry metric
+      metrics.incrementCounter(MetricNames.JOBS_RETRIED, 1, { queue: job.queue });
     }
   }
 

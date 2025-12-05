@@ -1856,6 +1856,115 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 50 completed: retry_after and session result columns added');
     }
+
+    // Migration 51: Monitoring & Audit System
+    // Creates tables for metrics, traces, and job audit logs
+    const metricsTableExists = sqlite.prepare(
+      "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='metrics'"
+    ).get() as { cnt: number };
+
+    if (metricsTableExists.cnt === 0) {
+      console.log('Running migration 51: Creating monitoring and audit tables');
+
+      sqlite.exec(`
+        -- Metrics table (time-series performance data)
+        -- Ring buffer: old data auto-cleaned by maintenance scheduler
+        CREATE TABLE metrics (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          value REAL NOT NULL,
+          timestamp INTEGER NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('counter', 'gauge', 'histogram')),
+          tags TEXT
+        );
+
+        CREATE INDEX idx_metrics_name_timestamp ON metrics(name, timestamp);
+        CREATE INDEX idx_metrics_timestamp ON metrics(timestamp);
+
+        -- Traces table (distributed tracing spans)
+        CREATE TABLE traces (
+          span_id TEXT PRIMARY KEY,
+          trace_id TEXT NOT NULL,
+          parent_span_id TEXT,
+          operation TEXT NOT NULL,
+          start_time INTEGER NOT NULL,
+          end_time INTEGER,
+          duration INTEGER,
+          status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
+          tags TEXT,
+          logs TEXT
+        );
+
+        CREATE INDEX idx_traces_trace_id ON traces(trace_id);
+        CREATE INDEX idx_traces_operation ON traces(operation);
+        CREATE INDEX idx_traces_start_time ON traces(start_time);
+
+        -- Job audit log (execution history for each job)
+        CREATE TABLE job_audit_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_id TEXT NOT NULL,
+          queue TEXT NOT NULL,
+          asset_hash TEXT,
+          location_id TEXT,
+          started_at INTEGER NOT NULL,
+          completed_at INTEGER,
+          duration INTEGER,
+          status TEXT NOT NULL CHECK(status IN ('started', 'success', 'error', 'timeout')),
+          attempt INTEGER NOT NULL DEFAULT 1,
+          error_message TEXT,
+          result TEXT
+        );
+
+        CREATE INDEX idx_job_audit_job_id ON job_audit_log(job_id);
+        CREATE INDEX idx_job_audit_asset ON job_audit_log(asset_hash);
+        CREATE INDEX idx_job_audit_started_at ON job_audit_log(started_at);
+        CREATE INDEX idx_job_audit_queue ON job_audit_log(queue, started_at);
+
+        -- Import session audit (enhanced tracking)
+        CREATE TABLE import_audit_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          step TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('started', 'progress', 'completed', 'error')),
+          message TEXT,
+          context TEXT
+        );
+
+        CREATE INDEX idx_import_audit_session ON import_audit_log(session_id);
+        CREATE INDEX idx_import_audit_timestamp ON import_audit_log(timestamp);
+
+        -- Alert history
+        CREATE TABLE alert_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          alert_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          severity TEXT NOT NULL CHECK(severity IN ('info', 'warning', 'critical')),
+          message TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          context TEXT,
+          acknowledged INTEGER DEFAULT 0,
+          acknowledged_at INTEGER,
+          acknowledged_by TEXT
+        );
+
+        CREATE INDEX idx_alert_history_timestamp ON alert_history(timestamp);
+        CREATE INDEX idx_alert_history_severity ON alert_history(severity, acknowledged);
+
+        -- Health check snapshots (periodic health state)
+        CREATE TABLE health_snapshots (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          timestamp INTEGER NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('healthy', 'warning', 'critical')),
+          checks TEXT NOT NULL,
+          recommendations TEXT
+        );
+
+        CREATE INDEX idx_health_timestamp ON health_snapshots(timestamp);
+      `);
+
+      console.log('Migration 51 completed: monitoring and audit tables created');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
