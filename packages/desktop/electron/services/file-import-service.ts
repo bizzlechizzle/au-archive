@@ -76,7 +76,7 @@ export interface ImportResult {
   // Proxy generation moved outside transaction because it writes to video_proxies table
   // using main db connection, which would deadlock waiting for transaction to release write lock
   _videoProxyData?: {
-    vidsha: string;
+    vidhash: string;
     archivePath: string;
     width: number;
     height: number;
@@ -96,6 +96,25 @@ export interface ImportSessionResult {
 
 /**
  * Service for importing media files into the archive
+ *
+ * @deprecated Use Import v2 system (services/import/) instead.
+ * This legacy service will be removed in v1.0.
+ *
+ * Migration guide:
+ * - Import orchestration: Use ImportOrchestrator from services/import/orchestrator.ts
+ * - File scanning: Use Scanner from services/import/scanner.ts
+ * - Hashing: Use Hasher from services/import/hasher.ts (uses BLAKE3)
+ * - File copying: Use Copier from services/import/copier.ts
+ * - Validation: Use Validator from services/import/validator.ts
+ * - DB commits: Use Finalizer from services/import/finalizer.ts
+ * - Job queue: Use JobQueue from services/job-queue.ts
+ *
+ * Key differences in v2:
+ * - 5-step pipeline (Scan → Hash → Copy → Validate → Finalize)
+ * - BLAKE3 hashing (16-char) instead of SHA-256 (64-char)
+ * - Session-based resume support
+ * - Background job queue for post-import processing
+ * - Proper exponential backoff for retries
  */
 export class FileImportService {
   // Extensions to skip entirely during import (not copied, not logged)
@@ -250,6 +269,21 @@ export class FileImportService {
    * FIX 2.2: Per-file transactions - each file is committed independently
    * This allows partial success: if file 5 fails, files 1-4 are already saved
    * FIX 4.3: Supports abort signal for cancellation
+   *
+   * @deprecated Use ImportOrchestrator.import() instead.
+   * Example migration:
+   * ```typescript
+   * // Old:
+   * const result = await fileImportService.importFiles(files, deleteOriginals, onProgress, abortSignal);
+   *
+   * // New:
+   * const orchestrator = new ImportOrchestrator(db, archivePath);
+   * const result = await orchestrator.import(filePaths, location, {
+   *   onProgress: (percent, phase) => onProgress(Math.floor(percent * total / 100), total, phase),
+   *   signal: abortSignal,
+   *   user: { userId, username },
+   * });
+   * ```
    */
   async importFiles(
     files: ImportFileInput[],
@@ -358,7 +392,7 @@ export class FileImportService {
           generateVideoProxy(
             this.db,
             this.archivePath,
-            proxyData.vidsha,
+            proxyData.vidhash,
             proxyData.archivePath,
             { width: proxyData.width, height: proxyData.height }
           ).then(proxyResult => {
@@ -430,13 +464,13 @@ export class FileImportService {
     if (imported > 0) {
       try {
         const locationForHero = await this.locationRepo.findById(locid);
-        if (locationForHero && !locationForHero.hero_imgsha) {
+        if (locationForHero && !locationForHero.hero_imghash) {
           // Find the first successfully imported image (not duplicate, not skipped)
           const firstImage = results.find(r => r.type === 'image' && r.success && !r.duplicate && !r.skipped);
           if (firstImage && firstImage.hash) {
             await this.db
               .updateTable('locs')
-              .set({ hero_imgsha: firstImage.hash })
+              .set({ hero_imghash: firstImage.hash })
               .where('locid', '=', locid)
               .execute();
             console.log('[FileImport] Step 11: Auto-set hero image:', firstImage.hash.slice(0, 12) + '...');
@@ -456,17 +490,17 @@ export class FileImportService {
       try {
         const subLocation = await this.db
           .selectFrom('slocs')
-          .select(['subid', 'hero_imgsha'])
+          .select(['subid', 'hero_imghash'])
           .where('subid', '=', subid)
           .executeTakeFirst();
 
-        if (subLocation && !subLocation.hero_imgsha) {
+        if (subLocation && !subLocation.hero_imghash) {
           // Find the first successfully imported image (not duplicate, not skipped)
           const firstImage = results.find(r => r.type === 'image' && r.success && !r.duplicate && !r.skipped);
           if (firstImage && firstImage.hash) {
             await this.db
               .updateTable('slocs')
-              .set({ hero_imgsha: firstImage.hash })
+              .set({ hero_imghash: firstImage.hash })
               .where('subid', '=', subid)
               .execute();
             console.log('[FileImport] Step 11b: Auto-set sub-location hero image:', firstImage.hash.slice(0, 12) + '...');
@@ -505,10 +539,10 @@ export class FileImportService {
       console.log(`[FileImport] Scanning ${images.length} images and ${videos.length} videos for Live Photos/SDR`);
 
       // Build set of image base names (without extension) for fast lookup
-      const imageBaseNames = new Map<string, string>(); // baseName -> imgsha
+      const imageBaseNames = new Map<string, string>(); // baseName -> imghash
       for (const img of images) {
         const baseName = this.getBaseFilename(img.imgnamo);
-        imageBaseNames.set(baseName.toLowerCase(), img.imgsha);
+        imageBaseNames.set(baseName.toLowerCase(), img.imghash);
       }
 
       // Detect Live Photo videos (MOV/MP4 with matching image)
@@ -521,12 +555,12 @@ export class FileImportService {
           // Check if there's a matching image
           if (imageBaseNames.has(baseName)) {
             // This is a Live Photo video - hide it and mark both as live photo
-            await this.mediaRepo.setVideoHidden(vid.vidsha, true, 'live_photo');
-            await this.mediaRepo.setVideoLivePhoto(vid.vidsha, true);
+            await this.mediaRepo.setVideoHidden(vid.vidhash, true, 'live_photo');
+            await this.mediaRepo.setVideoLivePhoto(vid.vidhash, true);
             // Also mark the image as a live photo (but don't hide it)
-            const imgsha = imageBaseNames.get(baseName);
-            if (imgsha) {
-              await this.mediaRepo.setImageLivePhoto(imgsha, true);
+            const imghash = imageBaseNames.get(baseName);
+            if (imghash) {
+              await this.mediaRepo.setImageLivePhoto(imghash, true);
             }
             livePhotosHidden++;
             console.log(`[FileImport] Live Photo detected: ${vid.vidnamo} -> hidden`);
@@ -548,7 +582,7 @@ export class FileImportService {
           const hdrExplicitBaseName = this.getBaseFilename(hdrExplicitFilename).toLowerCase();
 
           if (imageBaseNames.has(hdrBaseName) || imageBaseNames.has(hdrExplicitBaseName)) {
-            await this.mediaRepo.setImageHidden(img.imgsha, true, 'sdr_duplicate');
+            await this.mediaRepo.setImageHidden(img.imghash, true, 'sdr_duplicate');
             sdrHidden++;
             console.log(`[FileImport] SDR duplicate detected: ${filename} -> hidden`);
           }
@@ -560,11 +594,11 @@ export class FileImportService {
       for (const img of images) {
         try {
           // Query the raw EXIF data from database
-          const imgData = await this.mediaRepo.findImageByHash(img.imgsha);
+          const imgData = await this.mediaRepo.findImageByHash(img.imghash);
           if (imgData?.meta_exiftool) {
             const exif = JSON.parse(imgData.meta_exiftool);
             if (exif.MotionPhoto === 1 || exif.MicroVideo || exif.MicroVideoOffset) {
-              await this.mediaRepo.setImageLivePhoto(img.imgsha, true);
+              await this.mediaRepo.setImageLivePhoto(img.imghash, true);
               console.log(`[FileImport] Android Motion Photo detected: ${img.imgnamo}`);
             }
           }
@@ -593,7 +627,7 @@ export class FileImportService {
       // Get all documents for this location (metadata files are imported as documents)
       const docs = await this.db
         .selectFrom('docs')
-        .select(['docsha', 'docnam', 'docnamo', 'docloc', 'hidden'])
+        .select(['dochash', 'docnam', 'docnamo', 'docloc', 'hidden'])
         .where('locid', '=', locid)
         .execute();
 
@@ -618,7 +652,7 @@ export class FileImportService {
           await this.db
             .updateTable('docs')
             .set({ hidden: 1, hidden_reason: 'metadata_sidecar' })
-            .where('docsha', '=', doc.docsha)
+            .where('dochash', '=', doc.dochash)
             .execute();
           hiddenCount++;
           console.log(`[FileImport] OPT-060: Hidden metadata file (safety net): ${doc.docnamo}`);
@@ -641,7 +675,7 @@ export class FileImportService {
       // Get all videos for this location (for matching by filename)
       const videos = await this.db
         .selectFrom('vids')
-        .select(['vidsha', 'vidnamo'])
+        .select(['vidhash', 'vidnamo'])
         .where('locid', '=', locid)
         .execute();
 
@@ -682,7 +716,7 @@ export class FileImportService {
           await this.db
             .updateTable('vids')
             .set({ srt_telemetry: JSON.stringify(telemetry) })
-            .where('vidsha', '=', matchingVidsha)
+            .where('vidhash', '=', matchingVidsha)
             .execute();
 
           telemetryLinked++;
@@ -1006,7 +1040,7 @@ export class FileImportService {
     let videoProxyData: ImportResult['_videoProxyData'] = null;
     if (type === 'video' && metadata?.width && metadata?.height) {
       videoProxyData = {
-        vidsha: hash,
+        vidhash: hash,
         archivePath: archivePath,
         width: metadata.width,
         height: metadata.height,
@@ -1255,29 +1289,29 @@ export class FileImportService {
     if (type === 'image') {
       const result = await trx
         .selectFrom('imgs')
-        .select('imgsha')
-        .where('imgsha', '=', hash)
+        .select('imghash')
+        .where('imghash', '=', hash)
         .executeTakeFirst();
       return !!result;
     } else if (type === 'video') {
       const result = await trx
         .selectFrom('vids')
-        .select('vidsha')
-        .where('vidsha', '=', hash)
+        .select('vidhash')
+        .where('vidhash', '=', hash)
         .executeTakeFirst();
       return !!result;
     } else if (type === 'map') {
       const result = await trx
         .selectFrom('maps')
-        .select('mapsha')
-        .where('mapsha', '=', hash)
+        .select('maphash')
+        .where('maphash', '=', hash)
         .executeTakeFirst();
       return !!result;
     } else if (type === 'document') {
       const result = await trx
         .selectFrom('docs')
-        .select('docsha')
-        .where('docsha', '=', hash)
+        .select('dochash')
+        .where('dochash', '=', hash)
         .executeTakeFirst();
       return !!result;
     }
@@ -1405,7 +1439,7 @@ export class FileImportService {
       await trx
         .insertInto('imgs')
         .values({
-          imgsha: hash,
+          imghash: hash,
           imgnam: path.basename(archivePath),
           imgnamo: originalName,
           imgloc: archivePath,
@@ -1446,7 +1480,7 @@ export class FileImportService {
       await trx
         .insertInto('vids')
         .values({
-          vidsha: hash,
+          vidhash: hash,
           vidnam: path.basename(archivePath),
           vidnamo: originalName,
           vidloc: archivePath,
@@ -1491,7 +1525,7 @@ export class FileImportService {
       await trx
         .insertInto('maps')
         .values({
-          mapsha: hash,
+          maphash: hash,
           mapnam: path.basename(archivePath),
           mapnamo: originalName,
           maploc: archivePath,
@@ -1533,7 +1567,7 @@ export class FileImportService {
       await trx
         .insertInto('docs')
         .values({
-          docsha: hash,
+          dochash: hash,
           docnam: path.basename(archivePath),
           docnamo: originalName,
           docloc: archivePath,

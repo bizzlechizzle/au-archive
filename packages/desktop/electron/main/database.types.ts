@@ -1,4 +1,5 @@
 // Database table type definitions for Kysely
+import type { Generated } from 'kysely';
 
 export interface Database {
   locs: LocsTable;
@@ -21,6 +22,10 @@ export interface Database {
   ref_map_points: RefMapPointsTable;
   location_exclusions: LocationExclusionsTable;
   sidecar_imports: SidecarImportsTable;
+  // Migration 49: Import System v2.0
+  jobs: JobsTable;
+  import_sessions: ImportSessionsTable;
+  job_dead_letter: JobDeadLetterTable;
 }
 
 // Locations table
@@ -123,7 +128,7 @@ export interface LocsTable {
   akanam_verified: number;         // 0/1 - User verified AKA name is correct
 
   // Hero Image (Kanye6: User-selected featured image)
-  hero_imgsha: string | null;
+  hero_imghash: string | null;
 
   // Hero Display Name (Migration 21: Smart title shortening)
   locnam_short: string | null;    // Optional custom short name for hero display
@@ -176,7 +181,7 @@ export interface SlocsTable {
   // Migration 28: Enhanced sub-location fields
   type: string | null;
   status: string | null;
-  hero_imgsha: string | null;
+  hero_imghash: string | null;
   is_primary: number;  // 0 or 1
 
   // Activity tracking
@@ -200,7 +205,7 @@ export interface SlocsTable {
 
 // Images table
 export interface ImgsTable {
-  imgsha: string;
+  imghash: string;
   imgnam: string;
   imgnamo: string;
   imgloc: string;
@@ -262,7 +267,7 @@ export interface ImgsTable {
 
 // Videos table
 export interface VidsTable {
-  vidsha: string;
+  vidhash: string;
   vidnam: string;
   vidnamo: string;
   vidloc: string;
@@ -326,7 +331,7 @@ export interface VidsTable {
 
 // Documents table
 export interface DocsTable {
-  docsha: string;
+  dochash: string;
   docnam: string;
   docnamo: string;
   docloc: string;
@@ -364,7 +369,7 @@ export interface DocsTable {
 
 // Maps table
 export interface MapsTable {
-  mapsha: string;
+  maphash: string;
   mapnam: string;
   mapnamo: string;
   maploc: string;
@@ -488,7 +493,7 @@ export interface LocationViewsTable {
 // Video Proxies table (Migration 36, updated Migration 45 OPT-053)
 // Per OPT-053 Immich Model: Proxies generated at import, stored alongside originals, never purged
 export interface VideoProxiesTable {
-  vidsha: string;           // Primary key, matches vids table
+  vidhash: string;           // Primary key, matches vids table
   proxy_path: string;       // Path to proxy file (alongside original: .{hash}.proxy.mp4)
   generated_at: string;     // ISO timestamp when proxy was created
   last_accessed: string;    // DEPRECATED (OPT-053): No longer used, proxies are permanent
@@ -557,4 +562,64 @@ export interface SidecarImportsTable {
   imported_by_id: string | null; // User ID reference
   locid: string | null;         // Location reference
   subid: string | null;         // Sub-location reference
+}
+
+// Migration 49: Jobs table - SQLite-backed priority queue
+// Per Import Spec v2.0: Priority queue with dependency support
+export interface JobsTable {
+  job_id: string;
+  queue: string;               // Queue name: 'exiftool', 'thumbnail', 'proxy', etc.
+  priority: number;            // Higher = more important (default: 10)
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'dead';
+  payload: string;             // JSON serialized job data
+  depends_on: string | null;   // job_id this job depends on
+  attempts: number;            // Number of attempts so far
+  max_attempts: number;        // Maximum retry attempts (default: 3)
+  error: string | null;        // Error message if failed
+  result: string | null;       // JSON serialized result if completed
+  created_at: string;          // ISO timestamp
+  started_at: string | null;   // ISO timestamp when processing started
+  completed_at: string | null; // ISO timestamp when completed/failed
+  locked_by: string | null;    // Worker ID that locked this job
+  locked_at: string | null;    // ISO timestamp when locked
+  // Migration 50: Exponential backoff support
+  retry_after: string | null;  // ISO timestamp - don't retry before this time
+  last_error: string | null;   // Last error message (preserved across retries)
+}
+
+// Migration 49: Import Sessions table - Track import state for resumption
+export interface ImportSessionsTable {
+  session_id: string;
+  locid: string;
+  status: 'pending' | 'scanning' | 'hashing' | 'copying' | 'validating' | 'finalizing' | 'completed' | 'cancelled' | 'failed';
+  source_paths: string;        // JSON array of source paths
+  copy_strategy: string | null; // 'hardlink' | 'reflink' | 'copy'
+  total_files: number;
+  processed_files: number;
+  duplicate_files: number;
+  error_files: number;
+  total_bytes: number;
+  processed_bytes: number;
+  started_at: string;
+  completed_at: string | null;
+  error: string | null;
+  can_resume: number;          // 0/1 - Whether this session can be resumed
+  last_step: number;           // Last completed step (1-5)
+  // Migration 50: Result storage for proper resume
+  scan_result: string | null;        // JSON: ScanResult from step 1
+  hash_results: string | null;       // JSON: HashResult[] from step 2
+  copy_results: string | null;       // JSON: CopyResult[] from step 3
+  validation_results: string | null; // JSON: ValidationResult[] from step 4
+}
+
+// Migration 49: Dead Letter Queue - Failed jobs for analysis
+export interface JobDeadLetterTable {
+  id: Generated<number>;       // Auto-increment primary key
+  job_id: string;
+  queue: string;
+  payload: string;
+  error: string | null;
+  attempts: number;
+  failed_at: string;
+  acknowledged: number;        // 0/1 - Whether admin has acknowledged this failure
 }

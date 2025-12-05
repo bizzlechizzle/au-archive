@@ -97,7 +97,7 @@ CREATE INDEX IF NOT EXISTS idx_slocs_locid ON slocs(locid);
 
 -- Images table
 CREATE TABLE IF NOT EXISTS imgs (
-  imgsha TEXT PRIMARY KEY,
+  imghash TEXT PRIMARY KEY,
   imgnam TEXT NOT NULL,
   imgnamo TEXT NOT NULL,
   imgloc TEXT NOT NULL,
@@ -123,11 +123,11 @@ CREATE TABLE IF NOT EXISTS imgs (
 
 CREATE INDEX IF NOT EXISTS idx_imgs_locid ON imgs(locid);
 CREATE INDEX IF NOT EXISTS idx_imgs_subid ON imgs(subid);
-CREATE INDEX IF NOT EXISTS idx_imgs_sha ON imgs(imgsha);
+CREATE INDEX IF NOT EXISTS idx_imgs_hash ON imgs(imghash);
 
 -- Videos table
 CREATE TABLE IF NOT EXISTS vids (
-  vidsha TEXT PRIMARY KEY,
+  vidhash TEXT PRIMARY KEY,
   vidnam TEXT NOT NULL,
   vidnamo TEXT NOT NULL,
   vidloc TEXT NOT NULL,
@@ -159,7 +159,7 @@ CREATE INDEX IF NOT EXISTS idx_vids_subid ON vids(subid);
 
 -- Documents table
 CREATE TABLE IF NOT EXISTS docs (
-  docsha TEXT PRIMARY KEY,
+  dochash TEXT PRIMARY KEY,
   docnam TEXT NOT NULL,
   docnamo TEXT NOT NULL,
   docloc TEXT NOT NULL,
@@ -183,7 +183,7 @@ CREATE INDEX IF NOT EXISTS idx_docs_locid ON docs(locid);
 
 -- Maps table (Historical Maps)
 CREATE TABLE IF NOT EXISTS maps (
-  mapsha TEXT PRIMARY KEY,
+  maphash TEXT PRIMARY KEY,
   mapnam TEXT NOT NULL,
   mapnamo TEXT NOT NULL,
   maploc TEXT NOT NULL,
@@ -489,24 +489,24 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 9 completed: multi-tier thumbnail columns added');
     }
 
-    // Migration 10: Add hero_imgsha to locs table for hero image selection
+    // Migration 10: Add hero_imghash to locs table for hero image selection
     // Per Kanye6: Allow users to select a featured image for each location
     const locsColumnsCheck = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
-    const hasHeroImgsha = locsColumnsCheck.some(col => col.name === 'hero_imgsha');
+    const hasHeroImgsha = locsColumnsCheck.some(col => col.name === 'hero_imghash');
 
     if (!hasHeroImgsha) {
-      console.log('Running migration 10: Adding hero_imgsha column to locs');
+      console.log('Running migration 10: Adding hero_imghash column to locs');
 
       sqlite.exec(`
-        ALTER TABLE locs ADD COLUMN hero_imgsha TEXT;
+        ALTER TABLE locs ADD COLUMN hero_imghash TEXT;
       `);
 
       // Create index for finding locations with hero images
       sqlite.exec(`
-        CREATE INDEX IF NOT EXISTS idx_locs_hero_imgsha ON locs(hero_imgsha) WHERE hero_imgsha IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_hero_imghash ON locs(hero_imghash) WHERE hero_imghash IS NOT NULL;
       `);
 
-      console.log('Migration 10 completed: hero_imgsha column added');
+      console.log('Migration 10 completed: hero_imghash column added');
     }
 
     // Migration 11: Add darktable_path column to imgs table (DEPRECATED)
@@ -988,7 +988,7 @@ function runMigrations(sqlite: Database.Database): void {
       sqlite.exec(`
         ALTER TABLE slocs ADD COLUMN type TEXT;
         ALTER TABLE slocs ADD COLUMN status TEXT;
-        ALTER TABLE slocs ADD COLUMN hero_imgsha TEXT REFERENCES imgs(imgsha);
+        ALTER TABLE slocs ADD COLUMN hero_imghash TEXT REFERENCES imgs(imghash);
         ALTER TABLE slocs ADD COLUMN is_primary INTEGER DEFAULT 0;
         ALTER TABLE slocs ADD COLUMN created_date TEXT;
         ALTER TABLE slocs ADD COLUMN created_by TEXT;
@@ -1061,7 +1061,7 @@ function runMigrations(sqlite: Database.Database): void {
         CREATE INDEX IF NOT EXISTS idx_locs_cultural_region ON locs(cultural_region) WHERE cultural_region IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_locs_country_cultural_region ON locs(country_cultural_region) WHERE country_cultural_region IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_locs_project ON locs(project) WHERE project = 1;
-        CREATE INDEX IF NOT EXISTS idx_locs_hero_imgsha ON locs(hero_imgsha) WHERE hero_imgsha IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_hero_imghash ON locs(hero_imghash) WHERE hero_imghash IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_locs_created_by_id ON locs(created_by_id) WHERE created_by_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_locs_modified_by_id ON locs(modified_by_id) WHERE modified_by_id IS NOT NULL
       `);
@@ -1209,7 +1209,7 @@ function runMigrations(sqlite: Database.Database): void {
 
       sqlite.exec(`
         CREATE TABLE video_proxies (
-          vidsha TEXT PRIMARY KEY,
+          vidhash TEXT PRIMARY KEY,
           proxy_path TEXT NOT NULL,
           generated_at TEXT NOT NULL,
           last_accessed TEXT NOT NULL,
@@ -1227,7 +1227,7 @@ function runMigrations(sqlite: Database.Database): void {
         CREATE TRIGGER video_proxies_fk_delete
         AFTER DELETE ON vids
         BEGIN
-          DELETE FROM video_proxies WHERE vidsha = OLD.vidsha;
+          DELETE FROM video_proxies WHERE vidhash = OLD.vidhash;
         END;
       `);
 
@@ -1439,7 +1439,7 @@ function runMigrations(sqlite: Database.Database): void {
 
         sqlite.exec(`
           CREATE TABLE imgs_new (
-            imgsha TEXT PRIMARY KEY,
+            imghash TEXT PRIMARY KEY,
             imgnam TEXT NOT NULL,
             imgnamo TEXT NOT NULL,
             imgloc TEXT NOT NULL,
@@ -1486,7 +1486,7 @@ function runMigrations(sqlite: Database.Database): void {
         sqlite.exec(`
           CREATE INDEX IF NOT EXISTS idx_imgs_locid ON imgs(locid);
           CREATE INDEX IF NOT EXISTS idx_imgs_subid ON imgs(subid);
-          CREATE INDEX IF NOT EXISTS idx_imgs_sha ON imgs(imgsha);
+          CREATE INDEX IF NOT EXISTS idx_imgs_sha ON imgs(imghash);
           CREATE INDEX IF NOT EXISTS idx_imgs_thumb_path ON imgs(thumb_path);
           CREATE INDEX IF NOT EXISTS idx_imgs_thumb_sm ON imgs(thumb_path_sm);
           CREATE INDEX IF NOT EXISTS idx_imgs_darktable ON imgs(darktable_processed) WHERE darktable_processed = 0;
@@ -1504,7 +1504,7 @@ function runMigrations(sqlite: Database.Database): void {
 
         sqlite.exec(`
           CREATE TABLE vids_new (
-            vidsha TEXT PRIMARY KEY,
+            vidhash TEXT PRIMARY KEY,
             vidnam TEXT NOT NULL,
             vidnamo TEXT NOT NULL,
             vidloc TEXT NOT NULL,
@@ -1564,7 +1564,7 @@ function runMigrations(sqlite: Database.Database): void {
 
         sqlite.exec(`
           CREATE TABLE docs_new (
-            docsha TEXT PRIMARY KEY,
+            dochash TEXT PRIMARY KEY,
             docnam TEXT NOT NULL,
             docnamo TEXT NOT NULL,
             docloc TEXT NOT NULL,
@@ -1605,7 +1605,7 @@ function runMigrations(sqlite: Database.Database): void {
 
         sqlite.exec(`
           CREATE TABLE maps_new (
-            mapsha TEXT PRIMARY KEY,
+            maphash TEXT PRIMARY KEY,
             mapnam TEXT NOT NULL,
             mapnamo TEXT NOT NULL,
             maploc TEXT NOT NULL,
@@ -1745,6 +1745,116 @@ function runMigrations(sqlite: Database.Database): void {
       `);
 
       console.log('Migration 48 completed: is_host_only column added');
+    }
+
+    // Migration 49: Import System v2.0 - Jobs table and import sessions
+    // Per Import Spec v2.0: SQLite-backed priority queue with dependency support
+    const hasJobsTable = tableNames.includes('jobs');
+
+    if (!hasJobsTable) {
+      console.log('Running migration 49: Creating jobs and import_sessions tables');
+
+      // Jobs table for SQLite-backed priority queue
+      sqlite.exec(`
+        CREATE TABLE jobs (
+          job_id TEXT PRIMARY KEY,
+          queue TEXT NOT NULL,
+          priority INTEGER DEFAULT 10,
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed', 'dead')),
+          payload TEXT NOT NULL,
+          depends_on TEXT,
+          attempts INTEGER DEFAULT 0,
+          max_attempts INTEGER DEFAULT 3,
+          error TEXT,
+          result TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          started_at TEXT,
+          completed_at TEXT,
+          locked_by TEXT,
+          locked_at TEXT
+        );
+
+        -- Index for efficient job polling: get next job by queue and priority
+        CREATE INDEX idx_jobs_queue_status_priority ON jobs(queue, status, priority DESC);
+        -- Index for dependency resolution
+        CREATE INDEX idx_jobs_depends_on ON jobs(depends_on) WHERE depends_on IS NOT NULL;
+        -- Index for finding stale locks
+        CREATE INDEX idx_jobs_locked_at ON jobs(locked_at) WHERE locked_at IS NOT NULL;
+      `);
+
+      // Import sessions table for tracking and resumption
+      sqlite.exec(`
+        CREATE TABLE import_sessions (
+          session_id TEXT PRIMARY KEY,
+          locid TEXT NOT NULL REFERENCES locs(locid),
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'scanning', 'hashing', 'copying', 'validating', 'finalizing', 'completed', 'cancelled', 'failed')),
+          source_paths TEXT NOT NULL,
+          copy_strategy TEXT,
+          total_files INTEGER DEFAULT 0,
+          processed_files INTEGER DEFAULT 0,
+          duplicate_files INTEGER DEFAULT 0,
+          error_files INTEGER DEFAULT 0,
+          total_bytes INTEGER DEFAULT 0,
+          processed_bytes INTEGER DEFAULT 0,
+          started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          completed_at TEXT,
+          error TEXT,
+          can_resume INTEGER DEFAULT 1,
+          last_step INTEGER DEFAULT 0
+        );
+
+        CREATE INDEX idx_import_sessions_status ON import_sessions(status) WHERE status NOT IN ('completed', 'cancelled');
+        CREATE INDEX idx_import_sessions_locid ON import_sessions(locid);
+      `);
+
+      // Dead letter queue for failed jobs that exceeded max retries
+      sqlite.exec(`
+        CREATE TABLE job_dead_letter (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_id TEXT NOT NULL,
+          queue TEXT NOT NULL,
+          payload TEXT NOT NULL,
+          error TEXT,
+          attempts INTEGER,
+          failed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          acknowledged INTEGER DEFAULT 0
+        );
+
+        CREATE INDEX idx_job_dead_letter_queue ON job_dead_letter(queue, acknowledged);
+      `);
+
+      console.log('Migration 49 completed: jobs, import_sessions, job_dead_letter tables created');
+    }
+
+    // Migration 50: Add retry_after column to jobs table for exponential backoff
+    // Also add scan_result, hash_results, copy_results, validation_results to import_sessions for resume
+    const retryAfterExists = sqlite.prepare(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('jobs') WHERE name='retry_after'"
+    ).get() as { cnt: number };
+
+    if (retryAfterExists.cnt === 0) {
+      console.log('Running migration 50: Adding retry_after to jobs, results columns to import_sessions');
+
+      // Add retry_after for exponential backoff
+      sqlite.exec(`
+        ALTER TABLE jobs ADD COLUMN retry_after TEXT;
+        ALTER TABLE jobs ADD COLUMN last_error TEXT;
+      `);
+
+      // Create index for efficient polling with retry_after check
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_jobs_retry_after ON jobs(retry_after) WHERE retry_after IS NOT NULL;
+      `);
+
+      // Add result storage columns to import_sessions for proper resume
+      sqlite.exec(`
+        ALTER TABLE import_sessions ADD COLUMN scan_result TEXT;
+        ALTER TABLE import_sessions ADD COLUMN hash_results TEXT;
+        ALTER TABLE import_sessions ADD COLUMN copy_results TEXT;
+        ALTER TABLE import_sessions ADD COLUMN validation_results TEXT;
+      `);
+
+      console.log('Migration 50 completed: retry_after and session result columns added');
     }
   } catch (error) {
     console.error('Error running migrations:', error);
