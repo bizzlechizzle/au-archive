@@ -4,7 +4,7 @@
  */
 
 export interface MediaImage {
-  imgsha: string;
+  imghash: string;
   imgnam: string;
   imgloc: string;
   locid: string | null;
@@ -32,7 +32,7 @@ export interface MediaImage {
 }
 
 export interface MediaVideo {
-  vidsha: string;
+  vidhash: string;
   vidnam: string;
   vidloc: string;
   locid: string | null;
@@ -59,7 +59,7 @@ export interface MediaVideo {
 }
 
 export interface MediaDocument {
-  docsha: string;
+  dochash: string;
   docnam: string;
   docloc: string;
   locid: string | null;

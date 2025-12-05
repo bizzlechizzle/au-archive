@@ -111,7 +111,7 @@ export function createTestImage(locid: string, overrides: Partial<any> = {}) {
   const hash = crypto.randomUUID().replace(/-/g, '');
   return {
     // Identity
-    imgsha: hash,
+    imghash: hash,
     imgnam: `${hash}.jpg`,
     imgnamo: 'test-image.jpg',
     imgloc: `/archive/images/${hash}.jpg`,

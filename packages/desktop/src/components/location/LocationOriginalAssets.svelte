@@ -55,7 +55,7 @@
   const imageIndexMap = $derived(() => {
     const map = new Map<string, number>();
     for (let i = 0; i < images.length; i++) {
-      map.set(images[i].imgsha, i);
+      map.set(images[i].imghash, i);
     }
     return map;
   });
@@ -63,7 +63,7 @@
   const videoIndexMap = $derived(() => {
     const map = new Map<string, number>();
     for (let i = 0; i < videos.length; i++) {
-      map.set(videos[i].vidsha, i);
+      map.set(videos[i].vidhash, i);
     }
     return map;
   });
@@ -72,13 +72,13 @@
   function getOriginalImageIndex(visibleIndex: number): number {
     if (showHidden) return visibleIndex;
     const visibleItem = visibleImages[visibleIndex];
-    return imageIndexMap().get(visibleItem.imgsha) ?? visibleIndex;
+    return imageIndexMap().get(visibleItem.imghash) ?? visibleIndex;
   }
 
   function getOriginalVideoIndex(visibleIndex: number): number {
     if (showHidden) return visibleIndex;
     const visibleItem = visibleVideos[visibleIndex];
-    return videoIndexMap().get(visibleItem.vidsha) ?? visibleIndex;
+    return videoIndexMap().get(visibleItem.vidhash) ?? visibleIndex;
   }
 </script>
 

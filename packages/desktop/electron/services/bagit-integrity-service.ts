@@ -377,7 +377,7 @@ export class BagItIntegrityService {
     // Get images
     const images = await this.db
       .selectFrom('imgs')
-      .select(['imgsha', 'imgloc'])
+      .select(['imghash', 'imgloc'])
       .where('locid', '=', locid)
       .where('hidden', '=', 0)
       .execute();
@@ -386,7 +386,7 @@ export class BagItIntegrityService {
       try {
         const stats = await import('fs/promises').then((fs) => fs.stat(img.imgloc));
         files.push({
-          hash: img.imgsha,
+          hash: img.imghash,
           path: img.imgloc,
           type: 'image',
           size: stats.size,
@@ -399,7 +399,7 @@ export class BagItIntegrityService {
     // Get videos
     const videos = await this.db
       .selectFrom('vids')
-      .select(['vidsha', 'vidloc'])
+      .select(['vidhash', 'vidloc'])
       .where('locid', '=', locid)
       .where('hidden', '=', 0)
       .execute();
@@ -408,7 +408,7 @@ export class BagItIntegrityService {
       try {
         const stats = await import('fs/promises').then((fs) => fs.stat(vid.vidloc));
         files.push({
-          hash: vid.vidsha,
+          hash: vid.vidhash,
           path: vid.vidloc,
           type: 'video',
           size: stats.size,
@@ -421,7 +421,7 @@ export class BagItIntegrityService {
     // Get documents
     const docs = await this.db
       .selectFrom('docs')
-      .select(['docsha', 'docloc'])
+      .select(['dochash', 'docloc'])
       .where('locid', '=', locid)
       .where('hidden', '=', 0)
       .execute();
@@ -430,7 +430,7 @@ export class BagItIntegrityService {
       try {
         const stats = await import('fs/promises').then((fs) => fs.stat(doc.docloc));
         files.push({
-          hash: doc.docsha,
+          hash: doc.dochash,
           path: doc.docloc,
           type: 'document',
           size: stats.size,
@@ -443,7 +443,7 @@ export class BagItIntegrityService {
     // Get maps
     const maps = await this.db
       .selectFrom('maps')
-      .select(['mapsha', 'maploc'])
+      .select(['maphash', 'maploc'])
       .where('locid', '=', locid)
       .execute();
 
@@ -451,7 +451,7 @@ export class BagItIntegrityService {
       try {
         const stats = await import('fs/promises').then((fs) => fs.stat(map.maploc));
         files.push({
-          hash: map.mapsha,
+          hash: map.maphash,
           path: map.maploc,
           type: 'map',
           size: stats.size,

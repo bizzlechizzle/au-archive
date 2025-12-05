@@ -67,7 +67,7 @@ export const STATE_CAPITALS: Record<string, { lat: number; lng: number }> = {
 const US_CENTER = { lat: 39.8283, lng: -98.5795 };
 
 export interface MediaImage {
-  imgsha: string;
+  imghash: string;
   imgnam: string;
   imgloc: string;
   thumb_path?: string | null;

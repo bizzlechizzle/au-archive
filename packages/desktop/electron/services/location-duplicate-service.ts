@@ -289,21 +289,21 @@ export class LocationDuplicateService {
     // Count images
     const imageCount = await this.db
       .selectFrom('imgs')
-      .select((eb) => eb.fn.count('imgsha').as('count'))
+      .select((eb) => eb.fn.count('imghash').as('count'))
       .where('locid', '=', locationId)
       .executeTakeFirst();
 
     // Count videos
     const videoCount = await this.db
       .selectFrom('vids')
-      .select((eb) => eb.fn.count('vidsha').as('count'))
+      .select((eb) => eb.fn.count('vidhash').as('count'))
       .where('locid', '=', locationId)
       .executeTakeFirst();
 
     // Count documents
     const docCount = await this.db
       .selectFrom('docs')
-      .select((eb) => eb.fn.count('docsha').as('count'))
+      .select((eb) => eb.fn.count('dochash').as('count'))
       .where('locid', '=', locationId)
       .executeTakeFirst();
 

@@ -74,7 +74,7 @@ export function registerMediaProcessingHandlers(
 
   ipcMain.handle('media:findImageByHash', async (_event, hash: unknown) => {
     try {
-      const validatedHash = z.string().length(64).parse(hash);
+      const validatedHash = z.string().length(16).regex(/^[a-f0-9]+$/).parse(hash);
       const img = await mediaRepo.findImageByHash(validatedHash);
       return img ? { thumb_path: img.thumb_path, thumb_path_sm: img.thumb_path_sm, thumb_path_lg: img.thumb_path_lg, preview_path: img.preview_path } : null;
     } catch (error) {
@@ -150,19 +150,19 @@ export function registerMediaProcessingHandlers(
         result = await db
           .selectFrom('imgs')
           .select(['meta_exiftool'])
-          .where('imgsha', '=', validHash)
+          .where('imghash', '=', validHash)
           .executeTakeFirst();
       } else if (validType === 'video') {
         result = await db
           .selectFrom('vids')
           .select(['meta_exiftool', 'meta_ffmpeg'])
-          .where('vidsha', '=', validHash)
+          .where('vidhash', '=', validHash)
           .executeTakeFirst();
       } else if (validType === 'document') {
         result = await db
           .selectFrom('docs')
           .select(['meta_exiftool'])
-          .where('docsha', '=', validHash)
+          .where('dochash', '=', validHash)
           .executeTakeFirst();
       }
 
@@ -332,10 +332,10 @@ export function registerMediaProcessingHandlers(
 
           if (needsPreviewExtraction) {
             // Always re-extract preview when force=true (picks highest resolution)
-            const preview = await previewService.extractPreview(img.imgloc, img.imgsha, force);
+            const preview = await previewService.extractPreview(img.imgloc, img.imghash, force);
             if (preview) {
               sourcePath = preview;
-              await mediaRepo.updateImagePreviewPath(img.imgsha, preview);
+              await mediaRepo.updateImagePreviewPath(img.imghash, preview);
             }
           } else if (!force && img.preview_path) {
             // Only use existing preview when NOT forcing regeneration
@@ -344,7 +344,7 @@ export function registerMediaProcessingHandlers(
           }
 
           // Generate multi-tier thumbnails (400px, 800px, 1920px)
-          const result = await thumbnailService.generateAllSizes(sourcePath, img.imgsha, force);
+          const result = await thumbnailService.generateAllSizes(sourcePath, img.imghash, force);
 
           if (result.thumb_sm) {
             // Update database with all thumbnail paths
@@ -357,7 +357,7 @@ export function registerMediaProcessingHandlers(
                 // For RAW/HEIC files, keep extracted preview; for others, use thumbnail preview
                 preview_path: needsPreviewExtraction ? (sourcePath !== img.imgloc ? sourcePath : img.preview_path) : (result.preview || img.preview_path),
               })
-              .where('imgsha', '=', img.imgsha)
+              .where('imghash', '=', img.imghash)
               .execute();
 
             generated++;
@@ -365,7 +365,7 @@ export function registerMediaProcessingHandlers(
             failed++;
           }
         } catch (err) {
-          console.error(`[Kanye6] Failed to regenerate thumbnails for ${img.imgsha}:`, err);
+          console.error(`[Kanye6] Failed to regenerate thumbnails for ${img.imghash}:`, err);
           failed++;
         }
       }
@@ -382,17 +382,17 @@ export function registerMediaProcessingHandlers(
 
       for (const img of rawWithoutPreviews) {
         try {
-          const preview = await previewService.extractPreview(img.imgloc, img.imgsha);
+          const preview = await previewService.extractPreview(img.imgloc, img.imghash);
           if (preview) {
-            await mediaRepo.updateImagePreviewPath(img.imgsha, preview);
+            await mediaRepo.updateImagePreviewPath(img.imghash, preview);
             previewsExtracted++;
-            console.log(`[Kanye9] Extracted preview for ${img.imgsha}`);
+            console.log(`[Kanye9] Extracted preview for ${img.imghash}`);
           } else {
             previewsFailed++;
             console.warn(`[Kanye9] No preview available for ${img.imgloc}`);
           }
         } catch (err) {
-          console.error(`[Kanye9] Failed to extract preview for ${img.imgsha}:`, err);
+          console.error(`[Kanye9] Failed to extract preview for ${img.imghash}:`, err);
           previewsFailed++;
         }
       }
@@ -438,16 +438,16 @@ export function registerMediaProcessingHandlers(
       for (const vid of videos) {
         try {
           // Step 1: Generate poster frame from video
-          const posterPath = await posterService.generatePoster(vid.vidloc, vid.vidsha);
+          const posterPath = await posterService.generatePoster(vid.vidloc, vid.vidhash);
 
           if (!posterPath) {
-            console.warn(`[DECISION-020] No poster generated for ${vid.vidsha}`);
+            console.warn(`[DECISION-020] No poster generated for ${vid.vidhash}`);
             failed++;
             continue;
           }
 
           // Step 2: Generate multi-tier thumbnails from poster
-          const result = await thumbnailService.generateAllSizes(posterPath, vid.vidsha, force);
+          const result = await thumbnailService.generateAllSizes(posterPath, vid.vidhash, force);
 
           if (result.thumb_sm) {
             // Update database with thumbnail paths
@@ -458,16 +458,16 @@ export function registerMediaProcessingHandlers(
                 thumb_path_lg: result.thumb_lg,
                 preview_path: result.preview,
               })
-              .where('vidsha', '=', vid.vidsha)
+              .where('vidhash', '=', vid.vidhash)
               .execute();
 
             generated++;
-            console.log(`[DECISION-020] Generated thumbnails for video ${vid.vidsha}`);
+            console.log(`[DECISION-020] Generated thumbnails for video ${vid.vidhash}`);
           } else {
             failed++;
           }
         } catch (err) {
-          console.error(`[DECISION-020] Failed to generate thumbnails for ${vid.vidsha}:`, err);
+          console.error(`[DECISION-020] Failed to generate thumbnails for ${vid.vidhash}:`, err);
           failed++;
         }
       }
@@ -524,7 +524,7 @@ export function registerMediaProcessingHandlers(
             thumb_path_sm: result.thumb_sm,
             thumb_path_lg: result.thumb_lg,
           })
-          .where('imgsha', '=', validHash)
+          .where('imghash', '=', validHash)
           .execute();
 
         console.log(`[Kanye11] Regeneration complete for ${validHash}`);
@@ -590,7 +590,7 @@ export function registerMediaProcessingHandlers(
       for (const img of images) {
         const ext = path.extname(img.imgnamo);
         const baseName = path.basename(img.imgnamo, ext).toLowerCase();
-        imageBaseNames.set(baseName, img.imgsha);
+        imageBaseNames.set(baseName, img.imghash);
       }
 
       let livePhotosHidden = 0;
@@ -602,11 +602,11 @@ export function registerMediaProcessingHandlers(
         if (ext === '.mov' || ext === '.mp4') {
           const baseName = path.basename(vid.vidnamo, ext).toLowerCase();
           if (imageBaseNames.has(baseName)) {
-            await mediaRepo.setVideoHidden(vid.vidsha, true, 'live_photo');
-            await mediaRepo.setVideoLivePhoto(vid.vidsha, true);
-            const imgsha = imageBaseNames.get(baseName);
-            if (imgsha) {
-              await mediaRepo.setImageLivePhoto(imgsha, true);
+            await mediaRepo.setVideoHidden(vid.vidhash, true, 'live_photo');
+            await mediaRepo.setVideoLivePhoto(vid.vidhash, true);
+            const imghash = imageBaseNames.get(baseName);
+            if (imghash) {
+              await mediaRepo.setImageLivePhoto(imghash, true);
             }
             livePhotosHidden++;
           }
@@ -618,7 +618,7 @@ export function registerMediaProcessingHandlers(
         if (/_sdr\./i.test(img.imgnamo)) {
           const hdrBaseName = path.basename(img.imgnamo.replace(/_sdr\./i, '.'), path.extname(img.imgnamo)).toLowerCase();
           if (imageBaseNames.has(hdrBaseName)) {
-            await mediaRepo.setImageHidden(img.imgsha, true, 'sdr_duplicate');
+            await mediaRepo.setImageHidden(img.imghash, true, 'sdr_duplicate');
             sdrHidden++;
           }
         }
@@ -627,11 +627,11 @@ export function registerMediaProcessingHandlers(
       // Check for Android Motion Photos (EXIF flag)
       for (const img of images) {
         try {
-          const imgData = await mediaRepo.findImageByHash(img.imgsha);
+          const imgData = await mediaRepo.findImageByHash(img.imghash);
           if (imgData?.meta_exiftool) {
             const exif = JSON.parse(imgData.meta_exiftool);
             if (exif.MotionPhoto === 1 || exif.MicroVideo || exif.MicroVideoOffset) {
-              await mediaRepo.setImageLivePhoto(img.imgsha, true);
+              await mediaRepo.setImageLivePhoto(img.imghash, true);
             }
           }
         } catch {
@@ -667,22 +667,22 @@ export function registerMediaProcessingHandlers(
           // Use extractPreviewWithQuality which automatically uses LibRaw when embedded preview is low-quality
           const result = await previewService.extractPreviewWithQuality(
             img.imgloc,
-            img.imgsha,
+            img.imghash,
             img.meta_width,
             img.meta_height,
             true  // force re-extraction
           );
 
           if (result.previewPath) {
-            await mediaRepo.updateImagePreviewWithQuality(img.imgsha, result.previewPath, result.qualityLevel);
+            await mediaRepo.updateImagePreviewWithQuality(img.imghash, result.previewPath, result.qualityLevel);
             rendered++;
-            console.log(`[Migration30] Rendered ${img.imgsha}: quality=${result.qualityLevel}`);
+            console.log(`[Migration30] Rendered ${img.imghash}: quality=${result.qualityLevel}`);
           } else {
             failed++;
-            console.warn(`[Migration30] No preview generated for ${img.imgsha}`);
+            console.warn(`[Migration30] No preview generated for ${img.imghash}`);
           }
         } catch (err) {
-          console.error(`[Migration30] Failed to render ${img.imgsha}:`, err);
+          console.error(`[Migration30] Failed to render ${img.imghash}:`, err);
           failed++;
         }
       }
@@ -701,9 +701,9 @@ export function registerMediaProcessingHandlers(
   // ============================================
 
   // Generate proxy for a single video
-  ipcMain.handle('media:generateProxy', async (_event, vidsha: unknown, sourcePath: unknown, metadata: unknown) => {
+  ipcMain.handle('media:generateProxy', async (_event, vidhash: unknown, sourcePath: unknown, metadata: unknown) => {
     try {
-      const validVidsha = z.string().min(1).parse(vidsha);
+      const validVidhash = z.string().min(1).parse(vidhash);
       const validPath = z.string().min(1).parse(sourcePath);
       const validMeta = z.object({
         width: z.number().positive(),
@@ -711,7 +711,7 @@ export function registerMediaProcessingHandlers(
       }).parse(metadata);
 
       const archivePath = await getArchivePath();
-      return await generateProxy(db, archivePath, validVidsha, validPath, validMeta);
+      return await generateProxy(db, archivePath, validVidhash, validPath, validMeta);
     } catch (error) {
       console.error('Error generating proxy:', error);
       if (error instanceof z.ZodError) {
@@ -722,10 +722,10 @@ export function registerMediaProcessingHandlers(
   });
 
   // Get proxy path for a video (returns null if not exists)
-  ipcMain.handle('media:getProxyPath', async (_event, vidsha: unknown) => {
+  ipcMain.handle('media:getProxyPath', async (_event, vidhash: unknown) => {
     try {
-      const validVidsha = z.string().min(1).parse(vidsha);
-      return await getProxyPath(db, validVidsha);
+      const validVidhash = z.string().min(1).parse(vidhash);
+      return await getProxyPath(db, validVidhash);
     } catch (error) {
       console.error('Error getting proxy path:', error);
       return null;
@@ -764,11 +764,11 @@ export function registerMediaProcessingHandlers(
   });
 
   // OPT-053: New handler - check if proxy exists by filesystem (fast, no DB)
-  ipcMain.handle('media:proxyExists', async (_event, videoPath: unknown, vidsha: unknown) => {
+  ipcMain.handle('media:proxyExists', async (_event, videoPath: unknown, vidhash: unknown) => {
     try {
       const validPath = z.string().min(1).parse(videoPath);
-      const validVidsha = z.string().min(1).parse(vidsha);
-      return await proxyExistsForVideo(validPath, validVidsha);
+      const validVidhash = z.string().min(1).parse(vidhash);
+      return await proxyExistsForVideo(validPath, validVidhash);
     } catch (error) {
       console.error('Error checking proxy exists:', error);
       return false;
@@ -797,14 +797,14 @@ export function registerMediaProcessingHandlers(
           const needsPreviewExtraction = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr|heic|heif)$/i.test(img.imgloc);
 
           if (needsPreviewExtraction) {
-            const preview = await previewService.extractPreview(img.imgloc, img.imgsha, true);
+            const preview = await previewService.extractPreview(img.imgloc, img.imghash, true);
             if (preview) {
               sourcePath = preview;
-              await mediaRepo.updateImagePreviewPath(img.imgsha, preview);
+              await mediaRepo.updateImagePreviewPath(img.imghash, preview);
             }
           }
 
-          const result = await thumbnailService.generateAllSizes(sourcePath, img.imgsha, true);
+          const result = await thumbnailService.generateAllSizes(sourcePath, img.imghash, true);
 
           if (result.thumb_sm) {
             await db
@@ -814,14 +814,14 @@ export function registerMediaProcessingHandlers(
                 thumb_path_lg: result.thumb_lg,
                 preview_path: needsPreviewExtraction ? (sourcePath !== img.imgloc ? sourcePath : img.preview_path) : (result.preview || img.preview_path),
               })
-              .where('imgsha', '=', img.imgsha)
+              .where('imghash', '=', img.imghash)
               .execute();
             fixed++;
           } else {
             errors++;
           }
         } catch (err) {
-          console.error(`[media:fixLocationImages] Failed for ${img.imgsha}:`, err);
+          console.error(`[media:fixLocationImages] Failed for ${img.imghash}:`, err);
           errors++;
         }
       }
@@ -889,32 +889,32 @@ export function registerMediaProcessingHandlers(
             await fs.access(sourcePath);
           } catch {
             // File not at stored path - search by hash
-            console.log(`[media:fixLocationVideos] File not found at stored path, searching by hash: ${vid.vidsha.slice(0, 12)}...`);
-            const foundPath = await findVideoByHash(archivePath, vid.vidsha, path.extname(vid.vidloc));
+            console.log(`[media:fixLocationVideos] File not found at stored path, searching by hash: ${vid.vidhash.slice(0, 12)}...`);
+            const foundPath = await findVideoByHash(archivePath, vid.vidhash, path.extname(vid.vidloc));
             if (foundPath) {
               sourcePath = foundPath;
               // Update database with correct path
-              await db.updateTable('vids').set({ vidloc: foundPath }).where('vidsha', '=', vid.vidsha).execute();
+              await db.updateTable('vids').set({ vidloc: foundPath }).where('vidhash', '=', vid.vidhash).execute();
               console.log(`[media:fixLocationVideos] Path repaired: ${foundPath}`);
               pathsRepaired++;
             } else {
-              console.error(`[media:fixLocationVideos] Video file not found on disk: ${vid.vidsha}`);
+              console.error(`[media:fixLocationVideos] Video file not found on disk: ${vid.vidhash}`);
               errors++;
               continue;
             }
           }
 
           // Generate poster frame
-          const posterPath = await posterService.generatePoster(sourcePath, vid.vidsha);
+          const posterPath = await posterService.generatePoster(sourcePath, vid.vidhash);
 
           if (!posterPath) {
-            console.warn(`[media:fixLocationVideos] No poster generated for ${vid.vidsha}`);
+            console.warn(`[media:fixLocationVideos] No poster generated for ${vid.vidhash}`);
             errors++;
             continue;
           }
 
           // Generate thumbnails from poster
-          const result = await thumbnailService.generateAllSizes(posterPath, vid.vidsha, true);
+          const result = await thumbnailService.generateAllSizes(posterPath, vid.vidhash, true);
 
           if (result.thumb_sm) {
             await db
@@ -924,14 +924,14 @@ export function registerMediaProcessingHandlers(
                 thumb_path_lg: result.thumb_lg,
                 preview_path: result.preview,
               })
-              .where('vidsha', '=', vid.vidsha)
+              .where('vidhash', '=', vid.vidhash)
               .execute();
             fixed++;
           } else {
             errors++;
           }
         } catch (err) {
-          console.error(`[media:fixLocationVideos] Failed for ${vid.vidsha}:`, err);
+          console.error(`[media:fixLocationVideos] Failed for ${vid.vidhash}:`, err);
           errors++;
         }
       }
@@ -964,29 +964,29 @@ export function registerMediaProcessingHandlers(
 
       // Log each video that needs a proxy
       for (const v of videos) {
-        console.log(`[VideoProxy]   Queued: ${v.vidsha.slice(0, 12)} - ${v.vidloc.split('/').pop()} (${v.meta_width || 1920}x${v.meta_height || 1080})`);
+        console.log(`[VideoProxy]   Queued: ${v.vidhash.slice(0, 12)} - ${v.vidloc.split('/').pop()} (${v.meta_width || 1920}x${v.meta_height || 1080})`);
       }
 
       let generated = 0;
       let failed = 0;
 
       for (const video of videos) {
-        console.log(`[VideoProxy] Processing ${generated + failed + 1}/${videos.length}: ${video.vidsha.slice(0, 12)}`);
+        console.log(`[VideoProxy] Processing ${generated + failed + 1}/${videos.length}: ${video.vidhash.slice(0, 12)}`);
 
         const result = await generateProxy(
           db,
           archivePath,
-          video.vidsha,
+          video.vidhash,
           video.vidloc,
           { width: video.meta_width || 1920, height: video.meta_height || 1080 }
         );
 
         if (result.success) {
           generated++;
-          console.log(`[VideoProxy] ✓ Proxy generated: ${video.vidsha.slice(0, 12)}`);
+          console.log(`[VideoProxy] ✓ Proxy generated: ${video.vidhash.slice(0, 12)}`);
         } else {
           failed++;
-          console.error(`[VideoProxy] ✗ Proxy failed: ${video.vidsha.slice(0, 12)} - ${result.error}`);
+          console.error(`[VideoProxy] ✗ Proxy failed: ${video.vidhash.slice(0, 12)} - ${result.error}`);
         }
 
         // Emit progress to renderer

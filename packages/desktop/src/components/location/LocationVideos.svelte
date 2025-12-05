@@ -74,7 +74,7 @@
   const videoIndexMap = $derived(() => {
     const map = new Map<string, number>();
     for (let i = 0; i < videos.length; i++) {
-      map.set(videos[i].vidsha, i);
+      map.set(videos[i].vidhash, i);
     }
     return map;
   });
@@ -177,7 +177,7 @@
           <!-- Standard grid for preview or smaller collections -->
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
             {#each displayedVideos as video, displayIndex}
-              {@const actualIndex = videoIndexMap().get(video.vidsha) ?? displayIndex}
+              {@const actualIndex = videoIndexMap().get(video.vidhash) ?? displayIndex}
               <button
                 onclick={() => onOpenLightbox(actualIndex)}
                 class="video-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"

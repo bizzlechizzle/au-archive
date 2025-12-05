@@ -13,7 +13,7 @@ export interface SubLocation {
   ssubname: string | null;
   type: string | null;
   status: string | null;
-  hero_imgsha: string | null;
+  hero_imghash: string | null;
   is_primary: boolean;
   created_date: string;
   created_by: string | null;
@@ -62,7 +62,7 @@ export interface UpdateSubLocationInput {
   ssubname?: string | null;
   type?: string | null;
   status?: string | null;
-  hero_imgsha?: string | null;
+  hero_imghash?: string | null;
   is_primary?: boolean;
   modified_by?: string | null;
   // Migration 32: AKA and historical name
@@ -111,7 +111,7 @@ export class SQLiteSubLocationRepository {
           ssubname,
           type: input.type || null,
           status: input.status || null,
-          hero_imgsha: null,
+          hero_imghash: null,
           is_primary: input.is_primary ? 1 : 0,
           created_date,
           created_by: input.created_by || null,
@@ -165,7 +165,7 @@ export class SQLiteSubLocationRepository {
       ssubname,
       type: input.type || null,
       status: input.status || null,
-      hero_imgsha: null,
+      hero_imghash: null,
       is_primary: input.is_primary || false,
       created_date,
       created_by: input.created_by || null,
@@ -230,7 +230,7 @@ export class SQLiteSubLocationRepository {
     if (input.ssubname !== undefined) updateValues.ssubname = input.ssubname;
     if (input.type !== undefined) updateValues.type = input.type;
     if (input.status !== undefined) updateValues.status = input.status;
-    if (input.hero_imgsha !== undefined) updateValues.hero_imgsha = input.hero_imgsha;
+    if (input.hero_imghash !== undefined) updateValues.hero_imghash = input.hero_imghash;
     if (input.is_primary !== undefined) updateValues.is_primary = input.is_primary ? 1 : 0;
     if (input.akanam !== undefined) updateValues.akanam = input.akanam;
     if (input.historicalName !== undefined) updateValues.historicalName = input.historicalName;
@@ -359,11 +359,11 @@ export class SQLiteSubLocationRepository {
         const assetCount = (row.img_count || 0) + (row.vid_count || 0) + (row.doc_count || 0);
 
         let heroPath: string | undefined;
-        if (subloc.hero_imgsha) {
+        if (subloc.hero_imghash) {
           const img = await this.db
             .selectFrom('imgs')
             .select(['preview_path', 'thumb_path_lg', 'thumb_path_sm', 'thumb_path'])
-            .where('imgsha', '=', subloc.hero_imgsha)
+            .where('imghash', '=', subloc.hero_imghash)
             .executeTakeFirst();
           heroPath = img?.preview_path || img?.thumb_path_lg || img?.thumb_path_sm || img?.thumb_path || undefined;
         }
@@ -490,7 +490,7 @@ export class SQLiteSubLocationRepository {
       ssubname: row.ssubname,
       type: row.type || null,
       status: row.status || null,
-      hero_imgsha: row.hero_imgsha || null,
+      hero_imghash: row.hero_imghash || null,
       is_primary: row.is_primary === 1,
       created_date: row.created_date || new Date().toISOString(),
       created_by: row.created_by || null,

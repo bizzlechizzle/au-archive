@@ -84,30 +84,30 @@ export class SQLiteImportRepository {
         (eb) => eb.fn.max('imports.notes').as('notes'),
         'locs.locnam',
         'locs.address_state',
-        'locs.hero_imgsha',
+        'locs.hero_imghash',
       ])
-      .groupBy(['imports.locid', 'locs.locnam', 'locs.address_state', 'locs.hero_imgsha'])
+      .groupBy(['imports.locid', 'locs.locnam', 'locs.address_state', 'locs.hero_imghash'])
       .orderBy('import_date', 'desc')
       .limit(limit)
       .execute();
 
-    // Get hero thumbnail paths for each unique hero_imgsha
-    const heroShas = rows
-      .map(r => (r as any).hero_imgsha)
-      .filter((sha): sha is string => !!sha);
+    // Get hero thumbnail paths for each unique hero_imghash
+    const heroHashes = rows
+      .map(r => (r as any).hero_imghash)
+      .filter((hash): hash is string => !!hash);
 
     const thumbMap = new Map<string, string>();
-    if (heroShas.length > 0) {
+    if (heroHashes.length > 0) {
       const thumbRows = await this.db
         .selectFrom('imgs')
-        .select(['imgsha', 'thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
-        .where('imgsha', 'in', heroShas)
+        .select(['imghash', 'thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
+        .where('imghash', 'in', heroHashes)
         .execute();
 
       for (const thumb of thumbRows) {
         const path = thumb.thumb_path_sm || thumb.thumb_path_lg || thumb.thumb_path;
         if (path) {
-          thumbMap.set(thumb.imgsha, path);
+          thumbMap.set(thumb.imghash, path);
         }
       }
     }
@@ -125,7 +125,7 @@ export class SQLiteImportRepository {
       notes: row.notes as string | null,
       locnam: row.locnam ?? undefined,
       address_state: row.address_state ?? undefined,
-      heroThumbPath: (row as any).hero_imgsha ? thumbMap.get((row as any).hero_imgsha) : undefined,
+      heroThumbPath: (row as any).hero_imghash ? thumbMap.get((row as any).hero_imghash) : undefined,
     }));
   }
 

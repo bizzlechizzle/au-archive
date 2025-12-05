@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+/**
+ * BLAKE3 hash validation: exactly 16 lowercase hex characters
+ */
+const HashSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16 lowercase hex characters');
+
 // Base Media Schema
 const BaseMediaSchema = z.object({
   locid: z.string().uuid().optional(),
@@ -9,7 +14,7 @@ const BaseMediaSchema = z.object({
 
 // Image Schema
 export const ImageSchema = BaseMediaSchema.extend({
-  imgsha: z.string(),
+  imghash: HashSchema,
   imgnam: z.string(),
   imgnamo: z.string(),
   imgloc: z.string(),
@@ -29,7 +34,7 @@ export type Image = z.infer<typeof ImageSchema>;
 
 // Video Schema
 export const VideoSchema = BaseMediaSchema.extend({
-  vidsha: z.string(),
+  vidhash: HashSchema,
   vidnam: z.string(),
   vidnamo: z.string(),
   vidloc: z.string(),
@@ -49,7 +54,7 @@ export type Video = z.infer<typeof VideoSchema>;
 
 // Document Schema
 export const DocumentSchema = BaseMediaSchema.extend({
-  docsha: z.string(),
+  dochash: HashSchema,
   docnam: z.string(),
   docnamo: z.string(),
   docloc: z.string(),
@@ -65,7 +70,7 @@ export type Document = z.infer<typeof DocumentSchema>;
 
 // Map Schema
 export const MapSchema = BaseMediaSchema.extend({
-  mapsha: z.string(),
+  maphash: HashSchema,
   mapnam: z.string(),
   mapnamo: z.string(),
   maploc: z.string(),

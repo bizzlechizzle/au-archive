@@ -291,13 +291,13 @@ const api = {
 
     // Video Proxy System (Migration 36, updated OPT-053 Immich Model)
     // Proxies generated at import time, stored alongside originals, permanent (no purge)
-    generateProxy: (vidsha, sourcePath, metadata) =>
-      invokeAuto("media:generateProxy")(vidsha, sourcePath, metadata),
-    getProxyPath: (vidsha) =>
-      invokeAuto("media:getProxyPath")(vidsha),
+    generateProxy: (vidhash, sourcePath, metadata) =>
+      invokeAuto("media:generateProxy")(vidhash, sourcePath, metadata),
+    getProxyPath: (vidhash) =>
+      invokeAuto("media:getProxyPath")(vidhash),
     // OPT-053: Fast filesystem check for proxy existence (no DB lookup)
-    proxyExists: (videoPath, vidsha) =>
-      invokeAuto("media:proxyExists")(videoPath, vidsha),
+    proxyExists: (videoPath, vidhash) =>
+      invokeAuto("media:proxyExists")(videoPath, vidhash),
     getProxyCacheStats: () =>
       invokeAuto("media:getProxyCacheStats")(),
     // OPT-053: DEPRECATED - Proxies are permanent, these always return empty results
@@ -519,6 +519,66 @@ const api = {
     hasNearby: (lat, lng) => invokeAuto("import-intelligence:hasNearby")(lat, lng),
     // Add AKA name to existing location
     addAkaName: (locid, newName) => invokeAuto("import-intelligence:addAkaName")(locid, newName),
+  },
+
+  // Import System v2.0 - 5-step pipeline with background jobs
+  importV2: {
+    // Start a new import with paths and location info
+    start: (input) => invokeLong("import:v2:start")(input),
+    // Cancel running import
+    cancel: (sessionId) => invokeAuto("import:v2:cancel")(sessionId),
+    // Get current import status
+    status: () => invokeAuto("import:v2:status")(),
+    // Get resumable import sessions
+    resumable: () => invokeAuto("import:v2:resumable")(),
+    // Resume an incomplete import
+    resume: (sessionId) => invokeLong("import:v2:resume")(sessionId),
+    // Listen for import progress events
+    onProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("import:v2:progress", listener);
+      return () => ipcRenderer.removeListener("import:v2:progress", listener);
+    },
+    // Listen for import completion events
+    onComplete: (callback) => {
+      const listener = (_event, result) => callback(result);
+      ipcRenderer.on("import:v2:complete", listener);
+      return () => ipcRenderer.removeListener("import:v2:complete", listener);
+    },
+  },
+
+  // Background Job Queue - manages post-import processing
+  jobs: {
+    // Get job queue statistics
+    status: () => invokeAuto("jobs:status")(),
+    // Get dead letter queue entries
+    deadLetter: (queue) => invokeAuto("jobs:deadLetter")(queue),
+    // Retry a job from dead letter queue
+    retry: (input) => invokeAuto("jobs:retry")(input),
+    // Acknowledge (dismiss) dead letter entries
+    acknowledge: (ids) => invokeAuto("jobs:acknowledge")(ids),
+    // Clear old completed jobs
+    clearCompleted: (olderThanMs) => invokeAuto("jobs:clearCompleted")(olderThanMs),
+    // Listen for job progress events
+    onProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("jobs:progress", listener);
+      return () => ipcRenderer.removeListener("jobs:progress", listener);
+    },
+    // Listen for asset events (thumbnail ready, metadata complete, proxy ready)
+    onAssetReady: (callback) => {
+      const thumbnailListener = (_event, data) => callback({ type: 'thumbnail', ...data });
+      const metadataListener = (_event, data) => callback({ type: 'metadata', ...data });
+      const proxyListener = (_event, data) => callback({ type: 'proxy', ...data });
+      ipcRenderer.on("asset:thumbnail-ready", thumbnailListener);
+      ipcRenderer.on("asset:metadata-complete", metadataListener);
+      ipcRenderer.on("asset:proxy-ready", proxyListener);
+      return () => {
+        ipcRenderer.removeListener("asset:thumbnail-ready", thumbnailListener);
+        ipcRenderer.removeListener("asset:metadata-complete", metadataListener);
+        ipcRenderer.removeListener("asset:proxy-ready", proxyListener);
+      };
+    },
   },
 };
 

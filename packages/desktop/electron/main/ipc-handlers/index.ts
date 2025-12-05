@@ -44,6 +44,7 @@ import { registerRefMapsHandlers } from './ref-maps';
 import { registerImportIntelligenceHandlers } from './import-intelligence';
 import { registerStorageHandlers } from './storage';
 import { registerBagItHandlers } from './bagit';
+import { registerImportV2Handlers, initializeJobWorker, shutdownJobWorker } from './import-v2';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -105,5 +106,12 @@ export function registerIpcHandlers() {
   // BagIt self-documenting archive (RFC 8493)
   registerBagItHandlers(db);
 
+  // Import System v2.0 (5-step pipeline + background jobs)
+  registerImportV2Handlers(db);
+  initializeJobWorker(db);
+
   console.log('IPC handlers registered (modular)');
 }
+
+// Export job worker shutdown for app cleanup
+export { shutdownJobWorker };

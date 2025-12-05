@@ -11,20 +11,20 @@
 
   interface Props {
     images: MediaImage[];
-    heroImgsha: string | null;
+    heroImghash: string | null;
     focalX?: number; // 0-1, default 0.5 (center)
     focalY?: number; // 0-1, default 0.5 (center)
-    onRegeneratePreview?: (imgsha: string) => Promise<void>;
+    onRegeneratePreview?: (imghash: string) => Promise<void>;
   }
 
-  let { images, heroImgsha, focalX = 0.5, focalY = 0.5, onRegeneratePreview }: Props = $props();
+  let { images, heroImghash, focalX = 0.5, focalY = 0.5, onRegeneratePreview }: Props = $props();
 
   // Cache version for busting browser cache after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
 
   const heroImage = $derived(
-    heroImgsha
-      ? images.find(img => img.imgsha === heroImgsha) || images[0]
+    heroImghash
+      ? images.find(img => img.imghash === heroImghash) || images[0]
       : images[0]
   );
 
@@ -57,7 +57,7 @@
     regenerating = true;
     regenerateError = null;
     try {
-      await onRegeneratePreview(heroImage.imgsha);
+      await onRegeneratePreview(heroImage.imghash);
     } catch (err) {
       regenerateError = err instanceof Error ? err.message : 'Failed to regenerate';
     } finally {

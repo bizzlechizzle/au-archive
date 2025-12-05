@@ -31,7 +31,7 @@ describe('SQLiteMediaRepository Integration', () => {
   describe('insertImage', () => {
     it('should insert an image', async () => {
       const imageData = {
-        imgsha: 'a'.repeat(64),
+        imghash: 'a'.repeat(64),
         imgnam: 'test.jpg',
         imgnamo: 'original.jpg',
         imgloc: '/archive/images/test.jpg',
@@ -49,7 +49,7 @@ describe('SQLiteMediaRepository Integration', () => {
     it('should handle duplicate hash (same file)', async () => {
       const hash = 'b'.repeat(64);
       const imageData = {
-        imgsha: hash,
+        imghash: hash,
         imgnam: 'test.jpg',
         imgnamo: 'original.jpg',
         imgloc: '/archive/images/test.jpg',
@@ -97,7 +97,7 @@ describe('SQLiteMediaRepository Integration', () => {
   describe('checkDuplicate', () => {
     it('should detect duplicate image', async () => {
       const hash = 'c'.repeat(64);
-      const image = createTestImage(testLocationId, { imgsha: hash });
+      const image = createTestImage(testLocationId, { imghash: hash });
       await mediaRepo.insertImage(image);
 
       const isDuplicate = await mediaRepo.checkDuplicate(hash, 'image');

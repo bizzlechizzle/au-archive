@@ -455,12 +455,12 @@ export class ImportIntelligenceService {
     const [imgCount, vidCount] = await Promise.all([
       this.db
         .selectFrom('imgs')
-        .select((eb) => eb.fn.count('imgsha').as('count'))
+        .select((eb) => eb.fn.count('imghash').as('count'))
         .where('locid', '=', locid)
         .executeTakeFirst(),
       this.db
         .selectFrom('vids')
-        .select((eb) => eb.fn.count('vidsha').as('count'))
+        .select((eb) => eb.fn.count('vidhash').as('count'))
         .where('locid', '=', locid)
         .executeTakeFirst(),
     ]);
@@ -475,12 +475,12 @@ export class ImportIntelligenceService {
     const [imgCount, vidCount] = await Promise.all([
       this.db
         .selectFrom('imgs')
-        .select((eb) => eb.fn.count('imgsha').as('count'))
+        .select((eb) => eb.fn.count('imghash').as('count'))
         .where('subid', '=', subid)
         .executeTakeFirst(),
       this.db
         .selectFrom('vids')
-        .select((eb) => eb.fn.count('vidsha').as('count'))
+        .select((eb) => eb.fn.count('vidhash').as('count'))
         .where('subid', '=', subid)
         .executeTakeFirst(),
     ]);

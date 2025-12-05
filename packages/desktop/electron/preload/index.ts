@@ -474,22 +474,22 @@ const api = {
 
     // Video Proxy System (Migration 36, updated OPT-053 Immich Model)
     // Proxies generated at import time, stored alongside originals, permanent (no purge)
-    generateProxy: (vidsha: string, sourcePath: string, metadata: { width: number; height: number }): Promise<{
+    generateProxy: (vidhash: string, sourcePath: string, metadata: { width: number; height: number }): Promise<{
       success: boolean;
       proxyPath?: string;
       error?: string;
       proxyWidth?: number;
       proxyHeight?: number;
     }> =>
-      ipcRenderer.invoke('media:generateProxy', vidsha, sourcePath, metadata),
+      ipcRenderer.invoke('media:generateProxy', vidhash, sourcePath, metadata),
 
     // Get proxy path for a video (returns null if not exists)
-    getProxyPath: (vidsha: string): Promise<string | null> =>
-      ipcRenderer.invoke('media:getProxyPath', vidsha),
+    getProxyPath: (vidhash: string): Promise<string | null> =>
+      ipcRenderer.invoke('media:getProxyPath', vidhash),
 
     // OPT-053: Fast filesystem check for proxy existence (no DB lookup)
-    proxyExists: (videoPath: string, vidsha: string): Promise<boolean> =>
-      ipcRenderer.invoke('media:proxyExists', videoPath, vidsha),
+    proxyExists: (videoPath: string, vidhash: string): Promise<boolean> =>
+      ipcRenderer.invoke('media:proxyExists', videoPath, vidhash),
 
     // Get cache statistics
     getProxyCacheStats: (): Promise<{
@@ -589,7 +589,7 @@ const api = {
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
@@ -605,7 +605,7 @@ const api = {
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
@@ -623,7 +623,7 @@ const api = {
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
@@ -641,7 +641,7 @@ const api = {
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
@@ -657,7 +657,7 @@ const api = {
       ssubname?: string | null;
       type?: string | null;
       status?: string | null;
-      hero_imgsha?: string | null;
+      hero_imghash?: string | null;
       is_primary?: boolean;
       modified_by?: string | null;
       akanam?: string | null;
@@ -670,7 +670,7 @@ const api = {
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;

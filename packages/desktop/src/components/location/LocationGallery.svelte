@@ -12,11 +12,11 @@
 
   interface Props {
     images: MediaImage[];
-    heroImgsha: string | null;
+    heroImghash: string | null;
     onOpenLightbox: (index: number) => void;
   }
 
-  let { images, heroImgsha, onOpenLightbox }: Props = $props();
+  let { images, heroImghash, onOpenLightbox }: Props = $props();
 
   const IMAGE_LIMIT = 8; // 4x2 grid for preview
   const COLUMNS = 4; // Grid columns for virtual mode
@@ -75,7 +75,7 @@
   const imageIndexMap = $derived(() => {
     const map = new Map<string, number>();
     for (let i = 0; i < images.length; i++) {
-      map.set(images[i].imgsha, i);
+      map.set(images[i].imghash, i);
     }
     return map;
   });
@@ -134,7 +134,7 @@
                   style="height: {virtualRow.size}px; transform: translateY({virtualRow.start}px);"
                 >
                   {#each getRowImages(virtualRow.index) as { image, globalIndex }}
-                    {@const isHero = heroImgsha === image.imgsha}
+                    {@const isHero = heroImghash === image.imghash}
                     <button
                       onclick={() => onOpenLightbox(globalIndex)}
                       class="image-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"
@@ -174,8 +174,8 @@
           <!-- Standard grid (non-virtual) for preview or smaller collections -->
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
             {#each displayedImages as image, displayIndex}
-              {@const actualIndex = imageIndexMap().get(image.imgsha) ?? displayIndex}
-              {@const isHero = heroImgsha === image.imgsha}
+              {@const actualIndex = imageIndexMap().get(image.imghash) ?? displayIndex}
+              {@const isHero = heroImghash === image.imghash}
               <button
                 onclick={() => onOpenLightbox(actualIndex)}
                 class="image-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"

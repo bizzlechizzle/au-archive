@@ -425,7 +425,7 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.access !== undefined) updates.access = input.access;
     if (input.historic !== undefined) updates.historic = input.historic ? 1 : 0;
     if (input.favorite !== undefined) updates.favorite = input.favorite ? 1 : 0;
-    if (input.hero_imgsha !== undefined) updates.hero_imgsha = input.hero_imgsha;
+    if (input.hero_imghash !== undefined) updates.hero_imghash = input.hero_imghash;
     if (input.auth_imp !== undefined) updates.auth_imp = input.auth_imp;
     // DECISION-013: Information box fields
     if (input.builtYear !== undefined) updates.built_year = input.builtYear;
@@ -591,40 +591,40 @@ export class SQLiteLocationRepository implements LocationRepository {
       throw new Error(`Location not found: ${id}`);
     }
 
-    // 2. Collect all media SHAs with separate queries (simpler, reliable)
-    const imgShas = await this.db
+    // 2. Collect all media hashes with separate queries (simpler, reliable)
+    const imgHashes = await this.db
       .selectFrom('imgs')
-      .select('imgsha as sha')
+      .select('imghash as hash')
       .where('locid', '=', id)
       .execute();
 
-    const vidShas = await this.db
+    const vidHashes = await this.db
       .selectFrom('vids')
-      .select('vidsha as sha')
+      .select('vidhash as hash')
       .where('locid', '=', id)
       .execute();
 
-    const docShas = await this.db
+    const docHashes = await this.db
       .selectFrom('docs')
-      .select('docsha as sha')
+      .select('dochash as hash')
       .where('locid', '=', id)
       .execute();
 
     // Combine with type annotations
-    const mediaShas: Array<{ sha: string; type: 'img' | 'vid' | 'doc' }> = [
-      ...imgShas.map(r => ({ sha: r.sha, type: 'img' as const })),
-      ...vidShas.map(r => ({ sha: r.sha, type: 'vid' as const })),
-      ...docShas.map(r => ({ sha: r.sha, type: 'doc' as const })),
+    const mediaHashes: Array<{ hash: string; type: 'img' | 'vid' | 'doc' }> = [
+      ...imgHashes.map(r => ({ hash: r.hash, type: 'img' as const })),
+      ...vidHashes.map(r => ({ hash: r.hash, type: 'vid' as const })),
+      ...docHashes.map(r => ({ hash: r.hash, type: 'doc' as const })),
     ];
 
     // 3. Get video proxy paths (separate table with trigger cleanup)
-    const videoShas = mediaShas.filter(m => m.type === 'vid').map(m => m.sha);
+    const videoHashes = mediaHashes.filter(m => m.type === 'vid').map(m => m.hash);
     const proxyPaths: string[] = [];
-    if (videoShas.length > 0) {
+    if (videoHashes.length > 0) {
       const proxies = await this.db
         .selectFrom('video_proxies')
         .select('proxy_path')
-        .where('vidsha', 'in', videoShas)
+        .where('vidhash', 'in', videoHashes)
         .execute();
       proxyPaths.push(...proxies.map(p => p.proxy_path).filter((p): p is string => !!p));
     }
@@ -636,7 +636,7 @@ export class SQLiteLocationRepository implements LocationRepository {
       loc12: location.loc12,
       state: location.address?.state,
       type: location.type,
-      media_count: mediaShas.length,
+      media_count: mediaHashes.length,
       video_proxies: proxyPaths.length,
       deleted_at: new Date().toISOString(),
     });
@@ -673,26 +673,26 @@ export class SQLiteLocationRepository implements LocationRepository {
           }
         }
 
-        // 6b. Delete thumbnails/previews/posters by SHA
-        if (archivePath && mediaShas.length > 0) {
+        // 6b. Delete thumbnails/previews/posters by hash
+        if (archivePath && mediaHashes.length > 0) {
           const mediaPathService = new MediaPathService(archivePath);
 
-          for (const { sha, type } of mediaShas) {
+          for (const { hash, type } of mediaHashes) {
             // Thumbnails (all sizes including legacy)
             for (const size of [400, 800, 1920, undefined] as const) {
-              const thumbPath = mediaPathService.getThumbnailPath(sha, size as 400 | 800 | 1920 | undefined);
+              const thumbPath = mediaPathService.getThumbnailPath(hash, size as 400 | 800 | 1920 | undefined);
               await fs.unlink(thumbPath).catch(() => {});
             }
 
             // Previews (images/RAW only)
             if (type === 'img') {
-              const previewPath = mediaPathService.getPreviewPath(sha);
+              const previewPath = mediaPathService.getPreviewPath(hash);
               await fs.unlink(previewPath).catch(() => {});
             }
 
             // Posters (videos only)
             if (type === 'vid') {
-              const posterPath = mediaPathService.getPosterPath(sha);
+              const posterPath = mediaPathService.getPosterPath(hash);
               await fs.unlink(posterPath).catch(() => {});
             }
           }
@@ -831,7 +831,7 @@ export class SQLiteLocationRepository implements LocationRepository {
       docWebHistory: row.doc_web_history === 1,
       docMapFind: row.doc_map_find === 1,
       statusChangedAt: row.status_changed_at ?? undefined,
-      hero_imgsha: row.hero_imgsha ?? undefined,
+      hero_imghash: row.hero_imghash ?? undefined,
       sublocs: row.sublocs ? JSON.parse(row.sublocs) : [],
       sub12: row.sub12 ?? undefined,
       locadd: row.locadd ?? new Date().toISOString(),
@@ -1175,11 +1175,11 @@ export class SQLiteLocationRepository implements LocationRepository {
     const results: Array<Location & { heroThumbPath?: string }> = [];
     for (const row of rows) {
       let heroThumbPath: string | undefined;
-      if (row.hero_imgsha) {
+      if (row.hero_imghash) {
         const img = await this.db
           .selectFrom('imgs')
           .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
-          .where('imgsha', '=', row.hero_imgsha)
+          .where('imghash', '=', row.hero_imghash)
           .executeTakeFirst();
         heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
       }
@@ -1209,11 +1209,11 @@ export class SQLiteLocationRepository implements LocationRepository {
     const results: Array<Location & { heroThumbPath?: string }> = [];
     for (const row of rows) {
       let heroThumbPath: string | undefined;
-      if (row.hero_imgsha) {
+      if (row.hero_imghash) {
         const img = await this.db
           .selectFrom('imgs')
           .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
-          .where('imgsha', '=', row.hero_imgsha)
+          .where('imghash', '=', row.hero_imghash)
           .executeTakeFirst();
         heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
       }

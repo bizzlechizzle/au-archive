@@ -80,7 +80,7 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
         ssubname: z.string().nullable().optional(),
         type: z.string().nullable().optional(),
         status: z.string().nullable().optional(),
-        hero_imgsha: z.string().nullable().optional(),
+        hero_imghash: z.string().nullable().optional(),
         is_primary: z.boolean().optional(),
         modified_by: z.string().nullable().optional(),
         // Migration 32: AKA and historical name

@@ -38,7 +38,7 @@
     ssubname: string | null;
     type: string | null;
     status: string | null;
-    hero_imgsha: string | null;
+    hero_imghash: string | null;
     is_primary: boolean;
     hero_thumb_path?: string;
     // Migration 31: Sub-location GPS (separate from host location)
@@ -110,7 +110,7 @@
 
   // Derived: Combined media list for MediaViewer (images first, then videos)
   const imageMediaList = $derived(images.map(img => ({
-    hash: img.imgsha, path: img.imgloc,
+    hash: img.imghash, path: img.imgloc,
     thumbPath: img.thumb_path_sm || img.thumb_path || null,
     previewPath: img.preview_path || null, type: 'image' as const,
     name: img.imgnam, width: img.meta_width, height: img.meta_height,
@@ -129,7 +129,7 @@
   })));
 
   const videoMediaList = $derived(videos.map(vid => ({
-    hash: vid.vidsha, path: vid.vidloc,
+    hash: vid.vidhash, path: vid.vidloc,
     thumbPath: vid.thumb_path_sm || vid.thumb_path || null,
     previewPath: vid.preview_path || null, type: 'video' as const,
     name: vid.vidnam, width: vid.meta_width, height: vid.meta_height,
@@ -553,11 +553,11 @@
   }
 
   /** Kanye6 + Migration 22: Set hero image with focal point */
-  async function setHeroImageWithFocal(imgsha: string, fx: number, fy: number) {
+  async function setHeroImageWithFocal(imghash: string, fx: number, fy: number) {
     if (!location) return;
     try {
       await window.electronAPI.locations.update(locationId, {
-        hero_imgsha: imgsha,
+        hero_imghash: imghash,
         hero_focal_x: fx,
         hero_focal_y: fy,
       });
@@ -568,13 +568,13 @@
   /** Migration 23: Handle hidden status changes from MediaViewer */
   function handleHiddenChanged(hash: string, hidden: boolean) {
     // Update local state immediately for responsive UI
-    const imgIndex = images.findIndex(i => i.imgsha === hash);
+    const imgIndex = images.findIndex(i => i.imghash === hash);
     if (imgIndex >= 0) {
       images[imgIndex] = { ...images[imgIndex], hidden: hidden ? 1 : 0, hidden_reason: hidden ? 'user' : null };
       images = [...images]; // Trigger reactivity
       return;
     }
-    const vidIndex = videos.findIndex(v => v.vidsha === hash);
+    const vidIndex = videos.findIndex(v => v.vidhash === hash);
     if (vidIndex >= 0) {
       videos[vidIndex] = { ...videos[vidIndex], hidden: hidden ? 1 : 0, hidden_reason: hidden ? 'user' : null };
       videos = [...videos]; // Trigger reactivity
@@ -585,11 +585,11 @@
   function handleMediaDeleted(hash: string, type: 'image' | 'video' | 'document') {
     // Remove from local state immediately for responsive UI
     if (type === 'image') {
-      images = images.filter(i => i.imgsha !== hash);
+      images = images.filter(i => i.imghash !== hash);
     } else if (type === 'video') {
-      videos = videos.filter(v => v.vidsha !== hash);
+      videos = videos.filter(v => v.vidhash !== hash);
     } else {
-      documents = documents.filter(d => d.docsha !== hash);
+      documents = documents.filter(d => d.dochash !== hash);
     }
   }
 
@@ -965,15 +965,15 @@
     <!-- OPT-065: Pass allImagesForAuthors so hero can be found even when filtered images is empty -->
     <LocationHero
       images={allImagesForAuthors.length > 0 ? allImagesForAuthors : images}
-      heroImgsha={currentSubLocation?.hero_imgsha || location.hero_imgsha || null}
+      heroImghash={currentSubLocation?.hero_imghash || location.hero_imghash || null}
       focalX={currentSubLocation ? 0.5 : (location.hero_focal_x ?? 0.5)}
       focalY={currentSubLocation ? 0.5 : (location.hero_focal_y ?? 0.5)}
-      onRegeneratePreview={async (imgsha) => {
+      onRegeneratePreview={async (imghash) => {
         // Issue 1: Regenerate preview for low-quality hero image
         // OPT-065: Search all images, not just filtered
-        const img = allImagesForAuthors.find(i => i.imgsha === imgsha) || images.find(i => i.imgsha === imgsha);
+        const img = allImagesForAuthors.find(i => i.imghash === imghash) || images.find(i => i.imghash === imghash);
         if (img && window.electronAPI?.media?.regenerateSingleFile) {
-          await window.electronAPI.media.regenerateSingleFile(imgsha, img.imgloc);
+          await window.electronAPI.media.regenerateSingleFile(imghash, img.imgloc);
           await loadLocation(); // Refresh to get new thumbnail paths
         }
       }}
@@ -1098,7 +1098,7 @@
             {images}
             {videos}
             {documents}
-            heroImgsha={currentSubLocation?.hero_imgsha || location.hero_imgsha || null}
+            heroImghash={currentSubLocation?.hero_imghash || location.hero_imghash || null}
             onOpenImageLightbox={(i) => selectedMediaIndex = i}
             onOpenVideoLightbox={(i) => selectedMediaIndex = images.length + i}
             onOpenDocument={openMediaFile}
@@ -1114,12 +1114,12 @@
       mediaList={mediaViewerList}
       startIndex={selectedMediaIndex}
       onClose={() => selectedMediaIndex = null}
-      heroImgsha={currentSubLocation?.hero_imgsha || location?.hero_imgsha || null}
+      heroImghash={currentSubLocation?.hero_imghash || location?.hero_imghash || null}
       focalX={currentSubLocation ? 0.5 : (location?.hero_focal_x ?? 0.5)}
       focalY={currentSubLocation ? 0.5 : (location?.hero_focal_y ?? 0.5)}
       onSetHeroImage={currentSubLocation
-        ? async (imgsha, fx, fy) => {
-            await window.electronAPI.sublocations.update(currentSubLocation.subid, { hero_imgsha: imgsha });
+        ? async (imghash, fx, fy) => {
+            await window.electronAPI.sublocations.update(currentSubLocation.subid, { hero_imghash: imghash });
             await loadLocation();
           }
         : setHeroImageWithFocal}

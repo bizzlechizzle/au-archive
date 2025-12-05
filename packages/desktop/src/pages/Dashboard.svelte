@@ -70,7 +70,7 @@
   let topStates = $state<StateStat[]>([]);
 
   // Dashboard hero
-  let dashboardHero = $state<{imgsha: string; focalX: number; focalY: number} | null>(null);
+  let dashboardHero = $state<{imghash: string; focalX: number; focalY: number} | null>(null);
   let dashboardHeroImage = $state<{thumb_path?: string; preview_path?: string; thumb_path_lg?: string; thumb_path_sm?: string} | null>(null);
 
   let loading = $state(true);
@@ -87,7 +87,7 @@
   const heroImages = $derived<MediaImage[]>(() => {
     if (!dashboardHero || !dashboardHeroImage) return [];
     return [{
-      imgsha: dashboardHero.imgsha,
+      imghash: dashboardHero.imghash,
       imgnam: 'Dashboard Hero',
       imgloc: '',
       locid: null,
@@ -170,13 +170,13 @@
 
     // Load dashboard hero
     try {
-      const imgsha = await window.electronAPI.settings.get('dashboard_hero_imgsha');
-      if (imgsha) {
+      const imghash = await window.electronAPI.settings.get('dashboard_hero_imghash');
+      if (imghash) {
         const focalX = parseFloat(await window.electronAPI.settings.get('dashboard_hero_focal_x') || '0.5');
         const focalY = parseFloat(await window.electronAPI.settings.get('dashboard_hero_focal_y') || '0.5');
-        dashboardHero = { imgsha, focalX, focalY };
+        dashboardHero = { imghash, focalX, focalY };
         // Load the image thumbnail paths
-        dashboardHeroImage = await window.electronAPI.media.findImageByHash(imgsha);
+        dashboardHeroImage = await window.electronAPI.media.findImageByHash(imghash);
       }
     } catch (e) {
       console.error('Failed to load dashboard hero:', e);
@@ -267,7 +267,7 @@
   <!-- Dashboard Hero (uses same component as Location pages) -->
   <LocationHero
     images={heroImages()}
-    heroImgsha={dashboardHero?.imgsha || null}
+    heroImghash={dashboardHero?.imghash || null}
     focalX={dashboardHero?.focalX ?? 0.5}
     focalY={dashboardHero?.focalY ?? 0.5}
   />

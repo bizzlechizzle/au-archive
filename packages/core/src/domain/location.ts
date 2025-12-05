@@ -100,7 +100,7 @@ export const LocationInputSchema = z.object({
   docWebHistory: z.boolean().default(false),
   docMapFind: z.boolean().default(false),    // Map Find documentation checkbox
   statusChangedAt: z.string().datetime().optional(),  // Track when status last changed
-  hero_imgsha: z.string().optional(),
+  hero_imghash: z.string().length(16).regex(/^[a-f0-9]+$/).optional(),
   // Hero Focal Point (Migration 22: Crop center for hero images)
   hero_focal_x: z.number().min(0).max(1).default(0.5),
   hero_focal_y: z.number().min(0).max(1).default(0.5),

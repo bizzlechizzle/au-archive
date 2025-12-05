@@ -371,16 +371,16 @@ export interface ElectronAPI {
 
     // Video Proxy System (Migration 36, updated OPT-053 Immich Model)
     // Proxies generated at import time, stored alongside originals, permanent (no purge)
-    generateProxy: (vidsha: string, sourcePath: string, metadata: { width: number; height: number }) => Promise<{
+    generateProxy: (vidhash: string, sourcePath: string, metadata: { width: number; height: number }) => Promise<{
       success: boolean;
       proxyPath?: string;
       error?: string;
       proxyWidth?: number;
       proxyHeight?: number;
     }>;
-    getProxyPath: (vidsha: string) => Promise<string | null>;
+    getProxyPath: (vidhash: string) => Promise<string | null>;
     // OPT-053: Fast filesystem check for proxy existence (no DB lookup)
-    proxyExists: (videoPath: string, vidsha: string) => Promise<boolean>;
+    proxyExists: (videoPath: string, vidhash: string) => Promise<boolean>;
     getProxyCacheStats: () => Promise<{
       totalCount: number;
       totalSizeBytes: number;
@@ -468,7 +468,7 @@ export interface ElectronAPI {
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
@@ -483,7 +483,7 @@ export interface ElectronAPI {
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
@@ -498,7 +498,7 @@ export interface ElectronAPI {
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
@@ -513,7 +513,7 @@ export interface ElectronAPI {
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
@@ -526,7 +526,7 @@ export interface ElectronAPI {
       ssubname?: string | null;
       type?: string | null;
       status?: string | null;
-      hero_imgsha?: string | null;
+      hero_imghash?: string | null;
       is_primary?: boolean;
       modified_by?: string | null;
     }) => Promise<{
@@ -537,7 +537,7 @@ export interface ElectronAPI {
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
@@ -792,6 +792,28 @@ export interface ElectronAPI {
     onProgress: (callback: (progress: BagIntegrityProgress) => void) => () => void;
   };
 
+  // Import System v2.0 - 5-step pipeline with background jobs
+  importV2: {
+    start: (input: ImportV2Input) => Promise<ImportV2Result>;
+    cancel: (sessionId: string) => Promise<{ cancelled: boolean; reason?: string }>;
+    status: () => Promise<{ sessionId: string | null; status: ImportV2Status }>;
+    resumable: () => Promise<ResumableSession[]>;
+    resume: (sessionId: string) => Promise<ImportV2Result | null>;
+    onProgress: (callback: (progress: ImportV2Progress) => void) => () => void;
+    onComplete: (callback: (result: ImportV2CompleteEvent) => void) => () => void;
+  };
+
+  // Background Job Queue - manages post-import processing
+  jobs: {
+    status: () => Promise<Record<string, JobQueueStats>>;
+    deadLetter: (queue?: string) => Promise<DeadLetterEntry[]>;
+    retry: (input: { deadLetterId: number }) => Promise<{ success: boolean; newJobId: string | null }>;
+    acknowledge: (ids: number[]) => Promise<{ acknowledged: number }>;
+    clearCompleted: (olderThanMs?: number) => Promise<{ cleared: number }>;
+    onProgress: (callback: (progress: JobProgress) => void) => () => void;
+    onAssetReady: (callback: (event: AssetReadyEvent) => void) => () => void;
+  };
+
 }
 
 // Reference Map types
@@ -976,6 +998,126 @@ export interface BagIntegrityProgress {
   total: number;
   currentLocation: string;
   status: 'running' | 'complete' | 'error';
+}
+
+// Import System v2.0 types
+export type ImportV2Status =
+  | 'pending'
+  | 'scanning'
+  | 'hashing'
+  | 'copying'
+  | 'validating'
+  | 'finalizing'
+  | 'completed'
+  | 'cancelled'
+  | 'failed';
+
+export interface ImportV2Input {
+  paths: string[];
+  locid: string;
+  loc12: string;
+  address_state: string | null;
+  type: string | null;
+  slocnam: string | null;
+}
+
+export interface ImportV2Progress {
+  sessionId: string;
+  status: ImportV2Status;
+  step: number;
+  totalSteps: number;
+  percent: number;
+  currentFile: string;
+  filesProcessed: number;
+  filesTotal: number;
+  bytesProcessed: number;
+  bytesTotal: number;
+  duplicatesFound: number;
+  errorsFound: number;
+  estimatedRemainingMs: number;
+}
+
+export interface ImportV2Result {
+  sessionId: string;
+  status: ImportV2Status;
+  scanResult?: {
+    totalFiles: number;
+    totalBytes: number;
+  };
+  hashResult?: {
+    totalDuplicates: number;
+    totalErrors: number;
+  };
+  copyResult?: {
+    totalBytes: number;
+    totalErrors: number;
+  };
+  validationResult?: {
+    totalInvalid: number;
+  };
+  finalizationResult?: {
+    totalFinalized: number;
+    totalErrors: number;
+    jobsQueued: number;
+  };
+  error?: string;
+  startedAt: string;
+  completedAt?: string;
+  totalDurationMs: number;
+}
+
+export interface ImportV2CompleteEvent {
+  sessionId: string;
+  status: ImportV2Status;
+  totalImported: number;
+  totalDuplicates: number;
+  totalErrors: number;
+  totalDurationMs: number;
+  jobsQueued: number;
+}
+
+export interface ResumableSession {
+  sessionId: string;
+  locid: string;
+  status: ImportV2Status;
+  lastStep: number;
+  startedAt: Date;
+  totalFiles: number;
+  processedFiles: number;
+}
+
+// Background Job Queue types
+export interface JobQueueStats {
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+}
+
+export interface DeadLetterEntry {
+  id: number;
+  originalJobId: string;
+  queue: string;
+  payload: unknown;
+  error: string;
+  failedAt: string;
+  acknowledged: boolean;
+}
+
+export interface JobProgress {
+  queue: string;
+  jobId: string;
+  progress: number;
+  message?: string;
+}
+
+export interface AssetReadyEvent {
+  type: 'thumbnail' | 'metadata' | 'proxy';
+  hash: string;
+  paths?: { sm: string; lg: string; preview?: string };
+  mediaType?: string;
+  metadata?: unknown;
+  proxyPath?: string;
 }
 
 declare global {

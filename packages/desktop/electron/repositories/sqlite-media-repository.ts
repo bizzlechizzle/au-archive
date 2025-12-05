@@ -2,7 +2,7 @@ import { Kysely } from 'kysely';
 import type { Database, ImgsTable, VidsTable, DocsTable } from '../main/database.types';
 
 export interface MediaImage {
-  imgsha: string;
+  imghash: string;
   imgnam: string;
   imgnamo: string;
   imgloc: string;
@@ -41,7 +41,7 @@ export interface MediaImage {
 }
 
 export interface MediaVideo {
-  vidsha: string;
+  vidhash: string;
   vidnam: string;
   vidnamo: string;
   vidloc: string;
@@ -82,7 +82,7 @@ export interface MediaVideo {
 }
 
 export interface MediaDocument {
-  docsha: string;
+  dochash: string;
   docnam: string;
   docnamo: string;
   docloc: string;
@@ -120,14 +120,14 @@ export class SQLiteMediaRepository {
       .insertInto('imgs')
       .values({ ...image, imgadd })
       .execute();
-    return this.findImageByHash(image.imgsha);
+    return this.findImageByHash(image.imghash);
   }
 
-  async findImageByHash(imgsha: string): Promise<MediaImage> {
+  async findImageByHash(imghash: string): Promise<MediaImage> {
     const row = await this.db
       .selectFrom('imgs')
       .selectAll()
-      .where('imgsha', '=', imgsha)
+      .where('imghash', '=', imghash)
       .executeTakeFirstOrThrow();
     return row;
   }
@@ -175,11 +175,11 @@ export class SQLiteMediaRepository {
     };
   }
 
-  async imageExists(imgsha: string): Promise<boolean> {
+  async imageExists(imghash: string): Promise<boolean> {
     const result = await this.db
       .selectFrom('imgs')
-      .select('imgsha')
-      .where('imgsha', '=', imgsha)
+      .select('imghash')
+      .where('imghash', '=', imghash)
       .executeTakeFirst();
     return !!result;
   }
@@ -192,14 +192,14 @@ export class SQLiteMediaRepository {
       .insertInto('vids')
       .values({ ...video, vidadd })
       .execute();
-    return this.findVideoByHash(video.vidsha);
+    return this.findVideoByHash(video.vidhash);
   }
 
-  async findVideoByHash(vidsha: string): Promise<MediaVideo> {
+  async findVideoByHash(vidhash: string): Promise<MediaVideo> {
     const row = await this.db
       .selectFrom('vids')
       .selectAll()
-      .where('vidsha', '=', vidsha)
+      .where('vidhash', '=', vidhash)
       .executeTakeFirstOrThrow();
     return row;
   }
@@ -214,11 +214,11 @@ export class SQLiteMediaRepository {
     return rows;
   }
 
-  async videoExists(vidsha: string): Promise<boolean> {
+  async videoExists(vidhash: string): Promise<boolean> {
     const result = await this.db
       .selectFrom('vids')
-      .select('vidsha')
-      .where('vidsha', '=', vidsha)
+      .select('vidhash')
+      .where('vidhash', '=', vidhash)
       .executeTakeFirst();
     return !!result;
   }
@@ -231,14 +231,14 @@ export class SQLiteMediaRepository {
       .insertInto('docs')
       .values({ ...doc, docadd })
       .execute();
-    return this.findDocumentByHash(doc.docsha);
+    return this.findDocumentByHash(doc.dochash);
   }
 
-  async findDocumentByHash(docsha: string): Promise<MediaDocument> {
+  async findDocumentByHash(dochash: string): Promise<MediaDocument> {
     const row = await this.db
       .selectFrom('docs')
       .selectAll()
-      .where('docsha', '=', docsha)
+      .where('dochash', '=', dochash)
       .executeTakeFirstOrThrow();
     return row;
   }
@@ -253,11 +253,11 @@ export class SQLiteMediaRepository {
     return rows;
   }
 
-  async documentExists(docsha: string): Promise<boolean> {
+  async documentExists(dochash: string): Promise<boolean> {
     const result = await this.db
       .selectFrom('docs')
-      .select('docsha')
-      .where('docsha', '=', docsha)
+      .select('dochash')
+      .where('dochash', '=', dochash)
       .executeTakeFirst();
     return !!result;
   }
@@ -285,10 +285,10 @@ export class SQLiteMediaRepository {
    * Kanye8 FIX: Check thumb_path_sm (400px) not thumb_path (legacy 256px)
    * This catches images imported before multi-tier system
    */
-  async getImagesWithoutThumbnails(): Promise<Array<{ imgsha: string; imgloc: string; preview_path: string | null }>> {
+  async getImagesWithoutThumbnails(): Promise<Array<{ imghash: string; imgloc: string; preview_path: string | null }>> {
     const rows = await this.db
       .selectFrom('imgs')
-      .select(['imgsha', 'imgloc', 'preview_path'])
+      .select(['imghash', 'imgloc', 'preview_path'])
       .where('thumb_path_sm', 'is', null)
       .execute();
     return rows;
@@ -297,10 +297,10 @@ export class SQLiteMediaRepository {
   /**
    * Get ALL images for force regeneration
    */
-  async getAllImages(): Promise<Array<{ imgsha: string; imgloc: string; preview_path: string | null }>> {
+  async getAllImages(): Promise<Array<{ imghash: string; imgloc: string; preview_path: string | null }>> {
     const rows = await this.db
       .selectFrom('imgs')
-      .select(['imgsha', 'imgloc', 'preview_path'])
+      .select(['imghash', 'imgloc', 'preview_path'])
       .execute();
     return rows;
   }
@@ -308,10 +308,10 @@ export class SQLiteMediaRepository {
   /**
    * Get images for a specific location (for location-specific fixes)
    */
-  async getImagesByLocation(locid: string): Promise<Array<{ imgsha: string; imgloc: string; preview_path: string | null }>> {
+  async getImagesByLocation(locid: string): Promise<Array<{ imghash: string; imgloc: string; preview_path: string | null }>> {
     const rows = await this.db
       .selectFrom('imgs')
-      .select(['imgsha', 'imgloc', 'preview_path'])
+      .select(['imghash', 'imgloc', 'preview_path'])
       .where('locid', '=', locid)
       .execute();
     return rows;
@@ -321,12 +321,12 @@ export class SQLiteMediaRepository {
    * Kanye9: Get RAW images that are missing preview extraction
    * These are files that have thumbnails but no preview (browser can't display RAW)
    */
-  async getImagesWithoutPreviews(): Promise<Array<{ imgsha: string; imgloc: string }>> {
+  async getImagesWithoutPreviews(): Promise<Array<{ imghash: string; imgloc: string }>> {
     // RAW file extensions that need preview extraction
     const rawPattern = '%.nef';  // Start with NEF, most common
     const rows = await this.db
       .selectFrom('imgs')
-      .select(['imgsha', 'imgloc'])
+      .select(['imghash', 'imgloc'])
       .where('preview_path', 'is', null)
       .where((eb) =>
         eb.or([
@@ -355,33 +355,33 @@ export class SQLiteMediaRepository {
   /**
    * Update thumbnail path for an image
    */
-  async updateImageThumbnailPath(imgsha: string, thumbPath: string): Promise<void> {
+  async updateImageThumbnailPath(imghash: string, thumbPath: string): Promise<void> {
     await this.db
       .updateTable('imgs')
       .set({ thumb_path: thumbPath })
-      .where('imgsha', '=', imgsha)
+      .where('imghash', '=', imghash)
       .execute();
   }
 
   /**
    * Update preview path for a RAW image
    */
-  async updateImagePreviewPath(imgsha: string, previewPath: string): Promise<void> {
+  async updateImagePreviewPath(imghash: string, previewPath: string): Promise<void> {
     await this.db
       .updateTable('imgs')
       .set({ preview_path: previewPath, preview_extracted: 1 })
-      .where('imgsha', '=', imgsha)
+      .where('imghash', '=', imghash)
       .execute();
   }
 
   /**
    * Update preview path with quality level (Migration 30)
    */
-  async updateImagePreviewWithQuality(imgsha: string, previewPath: string, quality: 'full' | 'embedded' | 'low'): Promise<void> {
+  async updateImagePreviewWithQuality(imghash: string, previewPath: string, quality: 'full' | 'embedded' | 'low'): Promise<void> {
     await this.db
       .updateTable('imgs')
       .set({ preview_path: previewPath, preview_extracted: 1, preview_quality: quality })
-      .where('imgsha', '=', imgsha)
+      .where('imghash', '=', imghash)
       .execute();
   }
 
@@ -389,10 +389,10 @@ export class SQLiteMediaRepository {
    * Get DNG images that need LibRaw re-rendering (have low-quality embedded previews)
    * Returns DNGs where preview_quality is 'low' or 'embedded' (not yet rendered via LibRaw)
    */
-  async getDngImagesNeedingLibraw(): Promise<Array<{ imgsha: string; imgloc: string; meta_width: number | null; meta_height: number | null }>> {
+  async getDngImagesNeedingLibraw(): Promise<Array<{ imghash: string; imgloc: string; meta_width: number | null; meta_height: number | null }>> {
     const rows = await this.db
       .selectFrom('imgs')
-      .select(['imgsha', 'imgloc', 'meta_width', 'meta_height'])
+      .select(['imghash', 'imgloc', 'meta_width', 'meta_height'])
       .where((eb) =>
         eb.or([
           eb('imgloc', 'like', '%.dng'),
@@ -413,10 +413,10 @@ export class SQLiteMediaRepository {
   /**
    * Get videos without poster frames (legacy - checks thumb_path)
    */
-  async getVideosWithoutPosters(): Promise<Array<{ vidsha: string; vidloc: string }>> {
+  async getVideosWithoutPosters(): Promise<Array<{ vidhash: string; vidloc: string }>> {
     const rows = await this.db
       .selectFrom('vids')
-      .select(['vidsha', 'vidloc'])
+      .select(['vidhash', 'vidloc'])
       .where('thumb_path', 'is', null)
       .execute();
     return rows;
@@ -425,10 +425,10 @@ export class SQLiteMediaRepository {
   /**
    * DECISION-020: Get videos without multi-tier thumbnails
    */
-  async getVideosWithoutThumbnails(): Promise<Array<{ vidsha: string; vidloc: string }>> {
+  async getVideosWithoutThumbnails(): Promise<Array<{ vidhash: string; vidloc: string }>> {
     const rows = await this.db
       .selectFrom('vids')
-      .select(['vidsha', 'vidloc'])
+      .select(['vidhash', 'vidloc'])
       .where('thumb_path_sm', 'is', null)
       .execute();
     return rows;
@@ -437,10 +437,10 @@ export class SQLiteMediaRepository {
   /**
    * DECISION-020: Get ALL videos for force regeneration
    */
-  async getAllVideos(): Promise<Array<{ vidsha: string; vidloc: string }>> {
+  async getAllVideos(): Promise<Array<{ vidhash: string; vidloc: string }>> {
     const rows = await this.db
       .selectFrom('vids')
-      .select(['vidsha', 'vidloc'])
+      .select(['vidhash', 'vidloc'])
       .execute();
     return rows;
   }
@@ -448,10 +448,10 @@ export class SQLiteMediaRepository {
   /**
    * Get videos for a specific location (for location-specific fixes)
    */
-  async getVideosByLocation(locid: string): Promise<Array<{ vidsha: string; vidloc: string }>> {
+  async getVideosByLocation(locid: string): Promise<Array<{ vidhash: string; vidloc: string }>> {
     const rows = await this.db
       .selectFrom('vids')
-      .select(['vidsha', 'vidloc'])
+      .select(['vidhash', 'vidloc'])
       .where('locid', '=', locid)
       .execute();
     return rows;
@@ -460,25 +460,25 @@ export class SQLiteMediaRepository {
   /**
    * Update poster frame path for a video
    */
-  async updateVideoPosterPath(vidsha: string, posterPath: string): Promise<void> {
+  async updateVideoPosterPath(vidhash: string, posterPath: string): Promise<void> {
     await this.db
       .updateTable('vids')
       .set({ thumb_path: posterPath, poster_extracted: 1 })
-      .where('vidsha', '=', vidsha)
+      .where('vidhash', '=', vidhash)
       .execute();
   }
 
   /**
    * Update XMP sync status for an image
    */
-  async updateImageXmpStatus(imgsha: string, synced: boolean): Promise<void> {
+  async updateImageXmpStatus(imghash: string, synced: boolean): Promise<void> {
     await this.db
       .updateTable('imgs')
       .set({
         xmp_synced: synced ? 1 : 0,
         xmp_modified_at: new Date().toISOString()
       })
-      .where('imgsha', '=', imgsha)
+      .where('imghash', '=', imghash)
       .execute();
   }
 
@@ -487,74 +487,74 @@ export class SQLiteMediaRepository {
   /**
    * Set hidden status for an image
    */
-  async setImageHidden(imgsha: string, hidden: boolean, reason: string | null = 'user'): Promise<void> {
+  async setImageHidden(imghash: string, hidden: boolean, reason: string | null = 'user'): Promise<void> {
     await this.db
       .updateTable('imgs')
       .set({
         hidden: hidden ? 1 : 0,
         hidden_reason: hidden ? reason : null
       })
-      .where('imgsha', '=', imgsha)
+      .where('imghash', '=', imghash)
       .execute();
   }
 
   /**
    * Set hidden status for a video
    */
-  async setVideoHidden(vidsha: string, hidden: boolean, reason: string | null = 'user'): Promise<void> {
+  async setVideoHidden(vidhash: string, hidden: boolean, reason: string | null = 'user'): Promise<void> {
     await this.db
       .updateTable('vids')
       .set({
         hidden: hidden ? 1 : 0,
         hidden_reason: hidden ? reason : null
       })
-      .where('vidsha', '=', vidsha)
+      .where('vidhash', '=', vidhash)
       .execute();
   }
 
   /**
    * Set hidden status for a document
    */
-  async setDocumentHidden(docsha: string, hidden: boolean, reason: string | null = 'user'): Promise<void> {
+  async setDocumentHidden(dochash: string, hidden: boolean, reason: string | null = 'user'): Promise<void> {
     await this.db
       .updateTable('docs')
       .set({
         hidden: hidden ? 1 : 0,
         hidden_reason: hidden ? reason : null
       })
-      .where('docsha', '=', docsha)
+      .where('dochash', '=', dochash)
       .execute();
   }
 
   /**
    * Mark image as Live Photo
    */
-  async setImageLivePhoto(imgsha: string, isLivePhoto: boolean): Promise<void> {
+  async setImageLivePhoto(imghash: string, isLivePhoto: boolean): Promise<void> {
     await this.db
       .updateTable('imgs')
       .set({ is_live_photo: isLivePhoto ? 1 : 0 })
-      .where('imgsha', '=', imgsha)
+      .where('imghash', '=', imghash)
       .execute();
   }
 
   /**
    * Mark video as Live Photo (the video component)
    */
-  async setVideoLivePhoto(vidsha: string, isLivePhoto: boolean): Promise<void> {
+  async setVideoLivePhoto(vidhash: string, isLivePhoto: boolean): Promise<void> {
     await this.db
       .updateTable('vids')
       .set({ is_live_photo: isLivePhoto ? 1 : 0 })
-      .where('vidsha', '=', vidsha)
+      .where('vidhash', '=', vidhash)
       .execute();
   }
 
   /**
    * Get all images by location with their original filenames (for Live Photo matching)
    */
-  async getImageFilenamesByLocation(locid: string): Promise<Array<{ imgsha: string; imgnamo: string }>> {
+  async getImageFilenamesByLocation(locid: string): Promise<Array<{ imghash: string; imgnamo: string }>> {
     const rows = await this.db
       .selectFrom('imgs')
-      .select(['imgsha', 'imgnamo'])
+      .select(['imghash', 'imgnamo'])
       .where('locid', '=', locid)
       .execute();
     return rows;
@@ -563,10 +563,10 @@ export class SQLiteMediaRepository {
   /**
    * Get all videos by location with their original filenames (for Live Photo matching)
    */
-  async getVideoFilenamesByLocation(locid: string): Promise<Array<{ vidsha: string; vidnamo: string }>> {
+  async getVideoFilenamesByLocation(locid: string): Promise<Array<{ vidhash: string; vidnamo: string }>> {
     const rows = await this.db
       .selectFrom('vids')
-      .select(['vidsha', 'vidnamo'])
+      .select(['vidhash', 'vidnamo'])
       .where('locid', '=', locid)
       .execute();
     return rows;
@@ -577,30 +577,30 @@ export class SQLiteMediaRepository {
   /**
    * Delete an image by hash (removes DB record only, file deletion handled by caller)
    */
-  async deleteImage(imgsha: string): Promise<void> {
+  async deleteImage(imghash: string): Promise<void> {
     await this.db
       .deleteFrom('imgs')
-      .where('imgsha', '=', imgsha)
+      .where('imghash', '=', imghash)
       .execute();
   }
 
   /**
    * Delete a video by hash (removes DB record only, file deletion handled by caller)
    */
-  async deleteVideo(vidsha: string): Promise<void> {
+  async deleteVideo(vidhash: string): Promise<void> {
     await this.db
       .deleteFrom('vids')
-      .where('vidsha', '=', vidsha)
+      .where('vidhash', '=', vidhash)
       .execute();
   }
 
   /**
    * Delete a document by hash (removes DB record only, file deletion handled by caller)
    */
-  async deleteDocument(docsha: string): Promise<void> {
+  async deleteDocument(dochash: string): Promise<void> {
     await this.db
       .deleteFrom('docs')
-      .where('docsha', '=', docsha)
+      .where('dochash', '=', dochash)
       .execute();
   }
 
@@ -609,33 +609,33 @@ export class SQLiteMediaRepository {
   /**
    * Move an image to a different sub-location
    */
-  async moveImageToSubLocation(imgsha: string, subid: string | null): Promise<void> {
+  async moveImageToSubLocation(imghash: string, subid: string | null): Promise<void> {
     await this.db
       .updateTable('imgs')
       .set({ subid })
-      .where('imgsha', '=', imgsha)
+      .where('imghash', '=', imghash)
       .execute();
   }
 
   /**
    * Move a video to a different sub-location
    */
-  async moveVideoToSubLocation(vidsha: string, subid: string | null): Promise<void> {
+  async moveVideoToSubLocation(vidhash: string, subid: string | null): Promise<void> {
     await this.db
       .updateTable('vids')
       .set({ subid })
-      .where('vidsha', '=', vidsha)
+      .where('vidhash', '=', vidhash)
       .execute();
   }
 
   /**
    * Move a document to a different sub-location
    */
-  async moveDocumentToSubLocation(docsha: string, subid: string | null): Promise<void> {
+  async moveDocumentToSubLocation(dochash: string, subid: string | null): Promise<void> {
     await this.db
       .updateTable('docs')
       .set({ subid })
-      .where('docsha', '=', docsha)
+      .where('dochash', '=', dochash)
       .execute();
   }
 

@@ -237,7 +237,7 @@ async function getMediaFilesForLocation(
   // Get images
   const images = await db
     .selectFrom('imgs')
-    .select(['imgsha', 'imgloc'])
+    .select(['imghash', 'imgloc'])
     .where('locid', '=', locid)
     .where('hidden', '=', 0)
     .execute();
@@ -246,7 +246,7 @@ async function getMediaFilesForLocation(
     try {
       const stats = await fs.stat(img.imgloc);
       files.push({
-        hash: img.imgsha,
+        hash: img.imghash,
         path: img.imgloc,
         type: 'image',
         size: stats.size,
@@ -259,7 +259,7 @@ async function getMediaFilesForLocation(
   // Get videos
   const videos = await db
     .selectFrom('vids')
-    .select(['vidsha', 'vidloc'])
+    .select(['vidhash', 'vidloc'])
     .where('locid', '=', locid)
     .where('hidden', '=', 0)
     .execute();
@@ -268,7 +268,7 @@ async function getMediaFilesForLocation(
     try {
       const stats = await fs.stat(vid.vidloc);
       files.push({
-        hash: vid.vidsha,
+        hash: vid.vidhash,
         path: vid.vidloc,
         type: 'video',
         size: stats.size,
@@ -281,7 +281,7 @@ async function getMediaFilesForLocation(
   // Get documents
   const docs = await db
     .selectFrom('docs')
-    .select(['docsha', 'docloc'])
+    .select(['dochash', 'docloc'])
     .where('locid', '=', locid)
     .where('hidden', '=', 0)
     .execute();
@@ -290,7 +290,7 @@ async function getMediaFilesForLocation(
     try {
       const stats = await fs.stat(doc.docloc);
       files.push({
-        hash: doc.docsha,
+        hash: doc.dochash,
         path: doc.docloc,
         type: 'document',
         size: stats.size,
@@ -303,7 +303,7 @@ async function getMediaFilesForLocation(
   // Get maps
   const maps = await db
     .selectFrom('maps')
-    .select(['mapsha', 'maploc'])
+    .select(['maphash', 'maploc'])
     .where('locid', '=', locid)
     .execute();
 
@@ -311,7 +311,7 @@ async function getMediaFilesForLocation(
     try {
       const stats = await fs.stat(map.maploc);
       files.push({
-        hash: map.mapsha,
+        hash: map.maphash,
         path: map.maploc,
         type: 'map',
         size: stats.size,

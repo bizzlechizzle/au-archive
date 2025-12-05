@@ -72,18 +72,18 @@ export function registerStatsHandlers(db: Kysely<Database>) {
           // Find a location with hero image for this type
           const loc = await db
             .selectFrom('locs')
-            .select(['locid', 'hero_imgsha'])
+            .select(['locid', 'hero_imghash'])
             .where('type', '=', t.type)
-            .where('hero_imgsha', 'is not', null)
+            .where('hero_imghash', 'is not', null)
             .limit(1)
             .executeTakeFirst();
 
           let heroThumbPath: string | undefined;
-          if (loc?.hero_imgsha) {
+          if (loc?.hero_imghash) {
             const img = await db
               .selectFrom('imgs')
               .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
-              .where('imgsha', '=', loc.hero_imgsha)
+              .where('imghash', '=', loc.hero_imghash)
               .executeTakeFirst();
             heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
           }
@@ -125,18 +125,18 @@ export function registerStatsHandlers(db: Kysely<Database>) {
           // Find a location with hero image for this state
           const loc = await db
             .selectFrom('locs')
-            .select(['locid', 'hero_imgsha'])
+            .select(['locid', 'hero_imghash'])
             .where('address_state', '=', s.state)
-            .where('hero_imgsha', 'is not', null)
+            .where('hero_imghash', 'is not', null)
             .limit(1)
             .executeTakeFirst();
 
           let heroThumbPath: string | undefined;
-          if (loc?.hero_imgsha) {
+          if (loc?.hero_imghash) {
             const img = await db
               .selectFrom('imgs')
               .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
-              .where('imgsha', '=', loc.hero_imgsha)
+              .where('imghash', '=', loc.hero_imghash)
               .executeTakeFirst();
             heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
           }
@@ -172,15 +172,15 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       // Get media counts imported by this user
       const [imageCount, videoCount, docCount] = await Promise.all([
         db.selectFrom('imgs')
-          .select((eb) => eb.fn.count('imgsha').as('count'))
+          .select((eb) => eb.fn.count('imghash').as('count'))
           .where('imported_by_id', '=', validatedUserId)
           .executeTakeFirst(),
         db.selectFrom('vids')
-          .select((eb) => eb.fn.count('vidsha').as('count'))
+          .select((eb) => eb.fn.count('vidhash').as('count'))
           .where('imported_by_id', '=', validatedUserId)
           .executeTakeFirst(),
         db.selectFrom('docs')
-          .select((eb) => eb.fn.count('docsha').as('count'))
+          .select((eb) => eb.fn.count('dochash').as('count'))
           .where('imported_by_id', '=', validatedUserId)
           .executeTakeFirst(),
       ]);
@@ -251,11 +251,11 @@ export function registerStatsHandlers(db: Kysely<Database>) {
           'users.user_id',
           'users.username',
           'users.display_name',
-          (eb) => eb.fn.count('imgs.imgsha').as('count'),
+          (eb) => eb.fn.count('imgs.imghash').as('count'),
         ])
         .where('users.is_active', '=', 1)
         .groupBy(['users.user_id', 'users.username', 'users.display_name'])
-        .having((eb) => eb.fn.count('imgs.imgsha'), '>', 0)
+        .having((eb) => eb.fn.count('imgs.imghash'), '>', 0)
         .orderBy('count', 'desc')
         .limit(validatedLimit)
         .execute();
@@ -307,15 +307,15 @@ export function registerStatsHandlers(db: Kysely<Database>) {
 
           const [imageCount, videoCount, docCount] = await Promise.all([
             db.selectFrom('imgs')
-              .select((eb) => eb.fn.count('imgsha').as('count'))
+              .select((eb) => eb.fn.count('imghash').as('count'))
               .where('imported_by_id', '=', user.user_id)
               .executeTakeFirst(),
             db.selectFrom('vids')
-              .select((eb) => eb.fn.count('vidsha').as('count'))
+              .select((eb) => eb.fn.count('vidhash').as('count'))
               .where('imported_by_id', '=', user.user_id)
               .executeTakeFirst(),
             db.selectFrom('docs')
-              .select((eb) => eb.fn.count('docsha').as('count'))
+              .select((eb) => eb.fn.count('dochash').as('count'))
               .where('imported_by_id', '=', user.user_id)
               .executeTakeFirst(),
           ]);

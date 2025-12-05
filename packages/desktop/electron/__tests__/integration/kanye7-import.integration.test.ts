@@ -78,11 +78,11 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
         auth_imp TEXT,
         regions TEXT,
         state TEXT,
-        hero_imgsha TEXT
+        hero_imghash TEXT
       );
 
       CREATE TABLE IF NOT EXISTS imgs (
-        imgsha TEXT PRIMARY KEY,
+        imghash TEXT PRIMARY KEY,
         imgnam TEXT NOT NULL,
         imgnamo TEXT NOT NULL,
         imgloc TEXT NOT NULL,
@@ -169,7 +169,7 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
 
       // Insert into database
       await db.insertInto('imgs').values({
-        imgsha: hash,
+        imghash: hash,
         imgnam: file,
         imgnamo: file,
         imgloc: destPath,
@@ -197,12 +197,12 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
     const heroImage = images[0];
 
     await locationRepo.update(testLocationId, {
-      hero_imgsha: heroImage.imgsha
+      hero_imghash: heroImage.imghash
     });
 
     const location = await locationRepo.findById(testLocationId);
-    console.log(`[Kanye7 Test] Set hero image: ${location?.hero_imgsha?.slice(0, 8)}...`);
-    expect(location?.hero_imgsha).toBe(heroImage.imgsha);
+    console.log(`[Kanye7 Test] Set hero image: ${location?.hero_imghash?.slice(0, 8)}...`);
+    expect(location?.hero_imghash).toBe(heroImage.imghash);
   });
 
   it('should verify location data integrity (AAA)', async () => {
@@ -211,13 +211,13 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
 
     console.log(`[Kanye7 Test] Location: ${location?.locnam}`);
     console.log(`[Kanye7 Test] Images: ${images.length}`);
-    console.log(`[Kanye7 Test] Hero: ${location?.hero_imgsha ? 'SET' : 'NOT SET'}`);
+    console.log(`[Kanye7 Test] Hero: ${location?.hero_imghash ? 'SET' : 'NOT SET'}`);
 
     // AAA: Data must be complete for research
     expect(location).toBeTruthy();
     expect(location?.locnam).toBe('DW Winkleman Co Inc');
     expect(images.length).toBe(5);
-    expect(location?.hero_imgsha).toBeTruthy();
+    expect(location?.hero_imghash).toBeTruthy();
   });
 
   it('should generate thumbnail paths (Premium Archive)', async () => {
@@ -228,14 +228,14 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
     let thumbnailsGenerated = 0;
     for (const img of images.slice(0, 2)) { // Generate for first 2
       try {
-        const result = await thumbnailService.generateAllSizes(img.imgloc, img.imgsha);
+        const result = await thumbnailService.generateAllSizes(img.imgloc, img.imghash);
         if (result.thumb_sm) {
           await db.updateTable('imgs')
             .set({
               thumb_path_sm: result.thumb_sm,
               thumb_path_lg: result.thumb_lg
             })
-            .where('imgsha', '=', img.imgsha)
+            .where('imghash', '=', img.imghash)
             .execute();
           thumbnailsGenerated++;
         }
@@ -260,7 +260,7 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
     console.log(`Type: ${location?.type} / ${location?.stype}`);
     console.log(`Address: ${location?.address?.city}, ${location?.address?.state}`);
     console.log(`Images Imported: ${images.length}`);
-    console.log(`Hero Image Set: ${location?.hero_imgsha ? 'YES' : 'NO'}`);
+    console.log(`Hero Image Set: ${location?.hero_imghash ? 'YES' : 'NO'}`);
     console.log('========================================');
     console.log('LILBITS Compliance: PASS (all files < 300 lines)');
     console.log('Kanye6 Fixes: PRESERVED');

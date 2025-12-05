@@ -46,7 +46,7 @@ async function getMediaFilesForBagIt(
   // Get images
   const images = await db
     .selectFrom('imgs')
-    .select(['imgsha', 'imgloc'])
+    .select(['imghash', 'imgloc'])
     .where('locid', '=', locid)
     .where('hidden', '=', 0)
     .execute();
@@ -55,7 +55,7 @@ async function getMediaFilesForBagIt(
     try {
       const stats = await fsPromises.stat(img.imgloc);
       files.push({
-        hash: img.imgsha,
+        hash: img.imghash,
         path: img.imgloc,
         type: 'image',
         size: stats.size,
@@ -66,7 +66,7 @@ async function getMediaFilesForBagIt(
   // Get videos
   const videos = await db
     .selectFrom('vids')
-    .select(['vidsha', 'vidloc'])
+    .select(['vidhash', 'vidloc'])
     .where('locid', '=', locid)
     .where('hidden', '=', 0)
     .execute();
@@ -75,7 +75,7 @@ async function getMediaFilesForBagIt(
     try {
       const stats = await fsPromises.stat(vid.vidloc);
       files.push({
-        hash: vid.vidsha,
+        hash: vid.vidhash,
         path: vid.vidloc,
         type: 'video',
         size: stats.size,
@@ -86,7 +86,7 @@ async function getMediaFilesForBagIt(
   // Get documents
   const docs = await db
     .selectFrom('docs')
-    .select(['docsha', 'docloc'])
+    .select(['dochash', 'docloc'])
     .where('locid', '=', locid)
     .where('hidden', '=', 0)
     .execute();
@@ -95,7 +95,7 @@ async function getMediaFilesForBagIt(
     try {
       const stats = await fsPromises.stat(doc.docloc);
       files.push({
-        hash: doc.docsha,
+        hash: doc.dochash,
         path: doc.docloc,
         type: 'document',
         size: stats.size,
@@ -106,7 +106,7 @@ async function getMediaFilesForBagIt(
   // Get maps
   const maps = await db
     .selectFrom('maps')
-    .select(['mapsha', 'maploc'])
+    .select(['maphash', 'maploc'])
     .where('locid', '=', locid)
     .execute();
 
@@ -114,7 +114,7 @@ async function getMediaFilesForBagIt(
     try {
       const stats = await fsPromises.stat(map.maploc);
       files.push({
-        hash: map.mapsha,
+        hash: map.maphash,
         path: map.maploc,
         type: 'map',
         size: stats.size,
@@ -150,12 +150,12 @@ async function detectLivePhotosForLocation(
 
   console.log(`[detectLivePhotos] Scanning ${images.length} images and ${videos.length} videos for location ${locid}`);
 
-  // Build map of image base names to {sha, ext} for fast lookup
-  const imageBaseNames = new Map<string, { imgsha: string; ext: string }>();
+  // Build map of image base names to {hash, ext} for fast lookup
+  const imageBaseNames = new Map<string, { imghash: string; ext: string }>();
   for (const img of images) {
     const ext = path.extname(img.imgnamo).toLowerCase();
     const baseName = path.basename(img.imgnamo, ext).toLowerCase();
-    imageBaseNames.set(baseName, { imgsha: img.imgsha, ext });
+    imageBaseNames.set(baseName, { imghash: img.imghash, ext });
   }
 
   let livePhotosHidden = 0;
@@ -170,9 +170,9 @@ async function detectLivePhotosForLocation(
       const matchingImage = imageBaseNames.get(baseName);
       // Only treat as Live Photo if the matching image is a phone-camera format
       if (matchingImage && LIVE_PHOTO_IMAGE_EXTENSIONS.has(matchingImage.ext)) {
-        await mediaRepo.setVideoHidden(vid.vidsha, true, 'live_photo');
-        await mediaRepo.setVideoLivePhoto(vid.vidsha, true);
-        await mediaRepo.setImageLivePhoto(matchingImage.imgsha, true);
+        await mediaRepo.setVideoHidden(vid.vidhash, true, 'live_photo');
+        await mediaRepo.setVideoLivePhoto(vid.vidhash, true);
+        await mediaRepo.setImageLivePhoto(matchingImage.imghash, true);
         livePhotosHidden++;
         console.log(`[detectLivePhotos] Detected Live Photo pair: ${baseName} (${matchingImage.ext})`);
       }
@@ -184,7 +184,7 @@ async function detectLivePhotosForLocation(
     if (/_sdr\./i.test(img.imgnamo)) {
       const hdrBaseName = path.basename(img.imgnamo.replace(/_sdr\./i, '.'), path.extname(img.imgnamo)).toLowerCase();
       if (imageBaseNames.has(hdrBaseName)) {
-        await mediaRepo.setImageHidden(img.imgsha, true, 'sdr_duplicate');
+        await mediaRepo.setImageHidden(img.imghash, true, 'sdr_duplicate');
         sdrHidden++;
         console.log(`[detectLivePhotos] Detected SDR duplicate: ${img.imgnamo}`);
       }
@@ -194,11 +194,11 @@ async function detectLivePhotosForLocation(
   // Check for Android Motion Photos (EXIF flag)
   for (const img of images) {
     try {
-      const imgData = await mediaRepo.findImageByHash(img.imgsha);
+      const imgData = await mediaRepo.findImageByHash(img.imghash);
       if (imgData?.meta_exiftool) {
         const exif = JSON.parse(imgData.meta_exiftool);
         if (exif.MotionPhoto === 1 || exif.MicroVideo || exif.MicroVideoOffset) {
-          await mediaRepo.setImageLivePhoto(img.imgsha, true);
+          await mediaRepo.setImageLivePhoto(img.imghash, true);
           console.log(`[detectLivePhotos] Detected Android Motion Photo: ${img.imgnamo}`);
         }
       }

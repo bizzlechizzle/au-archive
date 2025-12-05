@@ -39,12 +39,12 @@
     startIndex?: number;
     onClose: () => void;
     // Hero image props
-    heroImgsha?: string | null;
+    heroImghash?: string | null;
     focalX?: number;
     focalY?: number;
-    onSetHeroImage?: (imgsha: string, focalX: number, focalY: number) => void;
+    onSetHeroImage?: (imghash: string, focalX: number, focalY: number) => void;
     // Issue 7: Callback for setting host location hero from sub-location view
-    onSetHostHeroImage?: (imgsha: string, focalX: number, focalY: number) => void;
+    onSetHostHeroImage?: (imghash: string, focalX: number, focalY: number) => void;
     // Hidden status callback
     onHiddenChanged?: (hash: string, hidden: boolean) => void;
     // Delete and Move callbacks
@@ -58,7 +58,7 @@
     locid?: string;
   }
 
-  let { mediaList, startIndex = 0, onClose, heroImgsha, focalX = 0.5, focalY = 0.5, onSetHeroImage, onSetHostHeroImage, onHiddenChanged, onDeleted, onMoved, sublocations = [], currentSubid = null, locid }: Props = $props();
+  let { mediaList, startIndex = 0, onClose, heroImghash, focalX = 0.5, focalY = 0.5, onSetHeroImage, onSetHostHeroImage, onHiddenChanged, onDeleted, onMoved, sublocations = [], currentSubid = null, locid }: Props = $props();
 
   let currentIndex = $state(startIndex);
   let showExif = $state(false);
@@ -424,7 +424,7 @@
       // Second click: save to dashboard
       if (!currentMedia) return;
       try {
-        await window.electronAPI.settings.set('dashboard_hero_imgsha', currentMedia.hash);
+        await window.electronAPI.settings.set('dashboard_hero_imghash', currentMedia.hash);
         await window.electronAPI.settings.set('dashboard_hero_focal_x', String(pendingFocalX));
         await window.electronAPI.settings.set('dashboard_hero_focal_y', String(pendingFocalY));
         isEditingFocal = false;

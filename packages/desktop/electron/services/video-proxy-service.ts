@@ -65,11 +65,11 @@ function calculateProxySize(width: number, height: number): { width: number; hei
  * OPT-053: Hidden file alongside original: .{hash}.proxy.mp4
  *
  * @param videoDir - Directory containing the original video
- * @param vidsha - SHA256 hash of the video
+ * @param vidhash - BLAKE3 hash of the video
  * @returns Full path to proxy file
  */
-export function getProxyPathForVideo(videoDir: string, vidsha: string): string {
-  return path.join(videoDir, `.${vidsha}.proxy.mp4`);
+export function getProxyPathForVideo(videoDir: string, vidhash: string): string {
+  return path.join(videoDir, `.${vidhash}.proxy.mp4`);
 }
 
 /**
@@ -89,13 +89,13 @@ export async function getProxyCacheDir(archivePath: string): Promise<string> {
 export async function generateProxy(
   db: Kysely<Database>,
   archivePath: string,
-  vidsha: string,
+  vidhash: string,
   sourcePath: string,
   metadata: VideoMetadata
 ): Promise<ProxyResult> {
   // OPT-053: Proxy stored alongside original video
   const videoDir = path.dirname(sourcePath);
-  const proxyPath = getProxyPathForVideo(videoDir, vidsha);
+  const proxyPath = getProxyPathForVideo(videoDir, vidhash);
 
   // Check if proxy already exists
   try {
@@ -122,7 +122,7 @@ export async function generateProxy(
   // Build FFmpeg scale filter - always scale to calculated dimensions
   const scaleFilter = `scale=${targetWidth}:${targetHeight}`;
 
-  console.log(`[VideoProxy] Generating 720p proxy for ${vidsha.slice(0, 12)}...`);
+  console.log(`[VideoProxy] Generating 720p proxy for ${vidhash.slice(0, 12)}...`);
   console.log(`[VideoProxy]   Input: ${sourcePath}`);
   console.log(`[VideoProxy]   Size: ${metadata.width}x${metadata.height} -> ${targetWidth}x${targetHeight}`);
   console.log(`[VideoProxy]   Output: ${proxyPath}`);
@@ -158,7 +158,7 @@ export async function generateProxy(
           await db
             .insertInto('video_proxies')
             .values({
-              vidsha,
+              vidhash,
               proxy_path: proxyPath,
               generated_at: now,
               last_accessed: now, // Still set for backwards compat, but not used
@@ -170,7 +170,7 @@ export async function generateProxy(
               proxy_version: PROXY_VERSION
             })
             .onConflict((oc) => oc
-              .column('vidsha')
+              .column('vidhash')
               .doUpdateSet({
                 proxy_path: proxyPath,
                 generated_at: now,
@@ -190,7 +190,7 @@ export async function generateProxy(
           resolve({ success: false, error: `Database error: ${err}` });
         }
       } else {
-        console.error(`[VideoProxy] FFmpeg FAILED for ${vidsha.slice(0, 12)}`);
+        console.error(`[VideoProxy] FFmpeg FAILED for ${vidhash.slice(0, 12)}`);
         console.error(`[VideoProxy]   Input: ${sourcePath}`);
         console.error(`[VideoProxy]   Exit code: ${code}`);
         console.error(`[VideoProxy]   Error output:\n${stderr.slice(-1000)}`);
@@ -199,7 +199,7 @@ export async function generateProxy(
     });
 
     ffmpeg.on('error', (err) => {
-      console.error(`[VideoProxy] FFmpeg spawn error for ${vidsha.slice(0, 12)}:`, err.message);
+      console.error(`[VideoProxy] FFmpeg spawn error for ${vidhash.slice(0, 12)}:`, err.message);
       console.error(`[VideoProxy]   Input: ${sourcePath}`);
       resolve({ success: false, error: `FFmpeg spawn error: ${err.message}` });
     });
@@ -212,12 +212,12 @@ export async function generateProxy(
  */
 export async function getProxyPath(
   db: Kysely<Database>,
-  vidsha: string
+  vidhash: string
 ): Promise<string | null> {
   const proxy = await db
     .selectFrom('video_proxies')
-    .select(['proxy_path', 'vidsha'])
-    .where('vidsha', '=', vidsha)
+    .select(['proxy_path', 'vidhash'])
+    .where('vidhash', '=', vidhash)
     .executeTakeFirst();
 
   if (!proxy) return null;
@@ -229,10 +229,10 @@ export async function getProxyPath(
     return proxy.proxy_path;
   } catch {
     // File doesn't exist, clean up record
-    console.warn(`[VideoProxy] Proxy file missing, cleaning up record for ${vidsha}`);
+    console.warn(`[VideoProxy] Proxy file missing, cleaning up record for ${vidhash}`);
     await db
       .deleteFrom('video_proxies')
-      .where('vidsha', '=', vidsha)
+      .where('vidhash', '=', vidhash)
       .execute();
     return null;
   }
@@ -243,12 +243,12 @@ export async function getProxyPath(
  * OPT-053: Compute expected path from video location, no DB lookup needed.
  *
  * @param videoPath - Full path to the original video
- * @param vidsha - SHA256 hash of the video
+ * @param vidhash - BLAKE3 hash of the video
  * @returns true if proxy file exists
  */
-export async function proxyExistsForVideo(videoPath: string, vidsha: string): Promise<boolean> {
+export async function proxyExistsForVideo(videoPath: string, vidhash: string): Promise<boolean> {
   const videoDir = path.dirname(videoPath);
-  const proxyPath = getProxyPathForVideo(videoDir, vidsha);
+  const proxyPath = getProxyPathForVideo(videoDir, vidhash);
 
   try {
     await fs.access(proxyPath);
@@ -264,12 +264,12 @@ export async function proxyExistsForVideo(videoPath: string, vidsha: string): Pr
  */
 export async function hasProxy(
   db: Kysely<Database>,
-  vidsha: string
+  vidhash: string
 ): Promise<boolean> {
   const proxy = await db
     .selectFrom('video_proxies')
     .select('proxy_path')
-    .where('vidsha', '=', vidsha)
+    .where('vidhash', '=', vidhash)
     .executeTakeFirst();
 
   if (!proxy) return false;
@@ -289,12 +289,12 @@ export async function hasProxy(
  */
 export async function deleteProxy(
   db: Kysely<Database>,
-  vidsha: string
+  vidhash: string
 ): Promise<void> {
   const proxy = await db
     .selectFrom('video_proxies')
     .select('proxy_path')
-    .where('vidsha', '=', vidsha)
+    .where('vidhash', '=', vidhash)
     .executeTakeFirst();
 
   if (proxy) {
@@ -309,7 +309,7 @@ export async function deleteProxy(
     // Delete record
     await db
       .deleteFrom('video_proxies')
-      .where('vidsha', '=', vidsha)
+      .where('vidhash', '=', vidhash)
       .execute();
   }
 }

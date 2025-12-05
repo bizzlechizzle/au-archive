@@ -574,10 +574,10 @@ export class PhaseImportService {
       : type === 'map' ? 'maps'
       : 'docs';
 
-    const column = type === 'image' ? 'imgsha'
-      : type === 'video' ? 'vidsha'
-      : type === 'map' ? 'mapsha'
-      : 'docsha';
+    const column = type === 'image' ? 'imghash'
+      : type === 'video' ? 'vidhash'
+      : type === 'map' ? 'maphash'
+      : 'dochash';
 
     const result = await this.db
       .selectFrom(table as any)
@@ -716,7 +716,7 @@ export class PhaseImportService {
 
     if (type === 'image') {
       await trx.insertInto('imgs').values({
-        imgsha: hash,
+        imghash: hash,
         imgnam: archiveName,
         imgnamo: file.originalName,
         imgloc: archivePath,
@@ -737,7 +737,7 @@ export class PhaseImportService {
 
     } else if (type === 'video') {
       await trx.insertInto('vids').values({
-        vidsha: hash,
+        vidhash: hash,
         vidnam: archiveName,
         vidnamo: file.originalName,
         vidloc: archivePath,
@@ -760,7 +760,7 @@ export class PhaseImportService {
 
     } else if (type === 'map') {
       await trx.insertInto('maps').values({
-        mapsha: hash,
+        maphash: hash,
         mapnam: archiveName,
         mapnamo: file.originalName,
         maploc: archivePath,
@@ -780,7 +780,7 @@ export class PhaseImportService {
 
     } else if (type === 'document') {
       await trx.insertInto('docs').values({
-        docsha: hash,
+        dochash: hash,
         docnam: archiveName,
         docnamo: file.originalName,
         docloc: archivePath,

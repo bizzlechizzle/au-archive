@@ -76,6 +76,9 @@ export default defineConfig({
                 // unzipper has optional S3 support that requires this package
                 // we don't use S3 features, so mark as external to prevent crash
                 '@aws-sdk/client-s3',
+                // BLAKE3 has native bindings with WASM fallback
+                // Must be external to use the correct CJS/Node entry point
+                'blake3',
               ],
             },
           },

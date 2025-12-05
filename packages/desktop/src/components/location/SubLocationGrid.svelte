@@ -14,7 +14,7 @@
     ssubname: string | null;
     type: string | null;
     status: string | null;
-    hero_imgsha: string | null;
+    hero_imghash: string | null;
     is_primary: boolean;
     hero_thumb_path?: string;
   }
